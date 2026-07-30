@@ -259,7 +259,12 @@ class OllamaCleaner:
         # full rewrite; medium → full prompt, full rewrite; long → full prompt,
         # only flagged sentences. Low confidence always gets the full prompt and
         # the whole text: garbled words need every rule and all the context.
-        if not low_confidence and raw_words < SELECTIVE_THRESHOLD_WORDS:
+        # The mini tier is a latency trade, so it is only worth taking when the
+        # model is slow enough for prompt-eval to dominate. Measured here, the
+        # mini prompt costs a model that answers in ~300 ms most of its
+        # accuracy and buys nothing back.
+        use_mini = config.get_bool("FVMiniPrompt")
+        if use_mini and not low_confidence and raw_words < SELECTIVE_THRESHOLD_WORDS:
             if not self._affordable(raw, budget_ms):
                 return raw
             return self._clean_whole(raw, mini_system(vocabulary))
@@ -302,14 +307,19 @@ class OllamaCleaner:
         mini = mini_system(vocabulary)
         system = base_system(vocabulary)
 
+        prime_mini = config.get_bool("FVMiniPrompt")
+
         def run() -> None:
-            # Prime BOTH prefixes. Ollama caches per request shape, and short
-            # dictations — the common case — go through the mini prompt, which
-            # shares no prefix with the full one. Mini first: it serves the
-            # latency-critical path.
-            if not self._prime(mini):
+            # Prime BOTH prefixes when both are in use. Ollama caches per
+            # request shape, and short dictations — the common case — go
+            # through the mini prompt, which shares no prefix with the full
+            # one. Mini first: it serves the latency-critical path. With
+            # FVMiniPrompt off, that prefix is never used and priming it would
+            # just be one more round-trip on hotkey-down.
+            if prime_mini and not self._prime(mini):
                 return
-            self._prime(system)
+            if not self._prime(system):
+                return
             with self._warmup_lock:
                 self._last_warmup = time.monotonic()  # success only
 

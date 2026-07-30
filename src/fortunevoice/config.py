@@ -45,6 +45,11 @@ DEFAULTS: dict[str, Any] = {
     "FVSmartFix": True,
     "FVOllamaModel": "gemma3:4b",
     "FVOllamaHost": "http://localhost:11434",
+    # Use the stripped-down prompt for short dictations. Upstream's default,
+    # and correct when prompt-eval dominates the round-trip. Set false to send
+    # the full taxonomy every time: on a model that follows it and answers in
+    # ~300 ms, the mini prompt only loses accuracy. See PORT_NOTES.md.
+    "FVMiniPrompt": True,
     # Transcribe while the user is still talking.
     "FVStreaming": True,
     # Paste the stitched streaming result (vs. a full batch re-decode).

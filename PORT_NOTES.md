@@ -184,13 +184,111 @@ already in front when the user pressed the hotkey, and `app._deliver` rechecks
 that the same window still holds focus — with a 500 ms settle for transient
 popups — before typing anything.
 
+## Measured: the cleanup pass, and why it is worth distrusting here
+
+Ollama 0.32.5 with `gemma3:4b` (Q4_K_M) on the same box. The **mechanism** is
+healthy — the transport, the budget, the safety nets all behave:
+
+| | |
+|---|---|
+| Round-trip, 40–124 chars | 578–1094 ms, i.e. **under** the ported `900 + 6.25·chars` prediction in 5 of 5 runs |
+| 124-char sample against the real 1.5 s budget | declined up front (`over_budget=1`, 0 ms spent) — exactly the waste the predictor exists to prevent |
+| 35% word-drop safety net | fired twice on a 6→2-word rewrite and kept the raw text |
+| Cold model load during `warmup()` | **over 120 s**. `keep_alive` is 24h so it happens once, but the first dictation after a reboot gets raw text — which is the designed degradation, not a bug |
+
+The **output quality** is a different story. Three runs per prompt on Russian
+samples:
+
+| Sample | mini prompt (< 25 words) | full prompt |
+|---|---|---|
+| `ну я это, короче, хотел сказать…` | 3/3 edited, removed only «короче» | 3/3 edited, but emitted a leading `- ` bullet |
+| `нужно правильно это правильно писать…` | **0/3** — stumble not collapsed | 3/3 collapsed correctly, but emitted a leading `— ` |
+| `сделай кнопку синим, нет, красным` | **0/3** — self-correction not applied | 1/3 |
+| `Завтра встреча в десять утра.` (already clean) | 0/3 — correctly untouched | **3/3 changed it into a question** |
+
+So on this model: the mini prompt is *safe but weak* (it no-ops rather than
+mangles), and the full prompt is *actively unsafe* — the list rule leaks a
+stray `- `/`— ` onto the front of ordinary prose, and the punctuation rule
+turned a statement into a question. Turning clean text into a question is
+worse than doing nothing at all.
+
+Because dictations under 25 words take the mini path, the shipped defaults sit
+in the safe regime. Longer ones do not.
+
+This is a **model** finding, not a port bug — the prompts are byte-identical
+to upstream's.
+
+### Head to head against qwen2.5:3b
+
+Same samples, three runs per prompt tier, scored on two axes because they fail
+differently. *fixes* = made the edit the prompt asks for; *harms* = damaged the
+text (leading bullet/dash, meaning change, already-clean text rewritten).
+
+| Model / tier | fixes | harms | median |
+|---|---|---|---|
+| gemma3:4b, mini | 6/15 | 0/15 | 641 ms |
+| gemma3:4b, full | 9/15 | **9/15** | 703 ms |
+| qwen2.5:3b, mini | 9/15 | 0/15 | 297 ms |
+| **qwen2.5:3b, full** | **12/15** | 2/15 | **297 ms** |
+
+`qwen2.5:3b` on the full prompt collapses the stumble
+(`нужно правильно это правильно писать` → `нужно правильно это писать`, keeping
+the ё), applies the self-correction, removes the English filler, and never
+emits a stray leading dash. Its two harms are one run in three that
+lower-cased the opening word — a capitalisation flake, not a meaning change.
+It is also 2.4x faster and 1.9 GB against 3.3 GB, which matters on a 6 GB card
+that is already holding Whisper.
+
+**This inverted the mini-prompt trade.** The mini tier exists because
+prompt-eval dominates the round-trip on a slow model. On a model that answers
+in ~300 ms it only loses accuracy: measured, qwen's mini tier failed the
+stumble and self-correction cases its full tier passed, and stripped commas
+the full tier kept. Since upstream's routing is hard-coded, this port adds
+`FVMiniPrompt` (default `true`, i.e. upstream behaviour) so the tier can be
+turned off. `warmup()` skips priming the mini prefix when it is off, rather
+than paying a round-trip on hotkey-down for a prompt that will never be used.
+
+### What qwen still gets wrong
+
+Not a recommendation to trust it blindly. Through the real `clean()` path at
+the app's 1.5 s budget:
+
+- `ну я это, короче, хотел сказать что завтра встреча` →
+  `я хотел сказать, что завтра есть встреча` — **invented «есть»**, which the
+  prompt explicitly forbids.
+- `сделай кнопку синим, нет, красным цветом` → `сделай красным цветом` — the
+  self-correction is right but **«кнопку» was dropped**. Six words to three is
+  a 50% loss, and it slipped past the 35% safety net by exactly one word:
+  the guard is `clean < int(raw * 0.65)`, and `3 < int(3.9)` is `3 < 3`, false.
+  The threshold is upstream's and is left alone, but it is a hair's breadth
+  from catching this.
+
+So: qwen2.5:3b is clearly the better of the two, and cleanup is genuinely
+useful with it, but it is still an LLM rewriting the user's words. The raw
+transcript is always kept in History alongside the cleaned one for exactly
+this reason.
+
+### The cost predictor is now too conservative
+
+`predicted_ms = 900 + 6.25·chars` was fitted against live gemma3:4b runs on
+Apple silicon. qwen2.5:3b answers in ~280 ms where the model predicts 1200+.
+With the 1.5 s budget that means **anything past ~96 characters is declined up
+front** — the 124-char sample above spent 0 ms and returned raw, though qwen
+would have cleaned it in ~300 ms.
+
+Deliberately not refitted here: upstream's own comment warns that a synthetic
+benchmark underestimates the constant, because hammering Ollama keeps the
+model and prompt cache maximally hot while a real dictation arrives after a
+gap. `metrics.jsonl` records `cleanup_ms` and `chars` on every dictation
+precisely so this can be refitted from real use. Do that after a week of
+actual dictation, not from a loop like the one above.
+
 ## Still unverified
 
 - **Dictation with a real voice through a real microphone.** Everything up to
   and including the decode is exercised above, but nobody has spoken into it.
-- **Ollama cleanup.** Ollama is not installed on the dev machine, so the whole
-  `cleaner.py` path has only its unit tests behind it. `doctor` reports this
-  as a warning rather than a failure, because dictation works without it.
+- **A cleanup model that actually suits these prompts.** Only `gemma3:4b` has
+  been measured, and it is the one upstream benchmarked on Apple silicon.
 - **The CPU fallback rung** of the backend ladder — CUDA loaded first try, so
   the `cpu/int8` path was never exercised end to end.
 - **Long dictations** near the 300 s cap, and the recovery flow after a real

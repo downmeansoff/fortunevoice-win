@@ -103,7 +103,8 @@ without a restart. Only values you change are stored.
 | `FVLanguage` | `ru` | `ru`, `en`, … or `auto` |
 | `FVCleanupEnabled` | `true` | LLM cleanup pass |
 | `FVSmartFix` | `true` | Repair garbled transcripts even when cleanup is off |
-| `FVOllamaModel` | `gemma3:4b` | Cleanup model |
+| `FVOllamaModel` | `gemma3:4b` | Cleanup model — set `qwen2.5:3b`, see below |
+| `FVMiniPrompt` | `true` | Short prompt for short dictations; turn off on a fast model |
 | `FVStreaming` | `true` | Decode while you speak |
 | `FVMicrophone` | `""` | Input device name substring; empty = system default |
 | `FVPasteViaClipboard` | `false` | Clipboard + Ctrl+V instead of typing (for apps that ignore synthesized input) |
@@ -164,6 +165,41 @@ RTX 3060 Laptop (6 GB), `large-v3-turbo` at `cuda/float16`:
 Streaming pays off on longer dictations; on short ones it deliberately does
 nothing (the first pass is delayed 3 s, because a pass in flight at key-up
 would only delay the final decode).
+
+## About the AI cleanup
+
+**Use `qwen2.5:3b`, not the default `gemma3:4b`.** Measured on Russian
+(three runs per case, [PORT_NOTES.md](PORT_NOTES.md) has the table):
+gemma3:4b on the full prompt damaged the text in 9 of 15 runs — a stray
+leading `- `/`— ` on ordinary prose, and an already-clean statement rewritten
+as a question. qwen2.5:3b made the intended edit in 12 of 15, harmed 2, and
+ran 2.4x faster at 1.9 GB instead of 3.3 GB.
+
+```powershell
+ollama pull qwen2.5:3b
+```
+
+```json
+{ "FVOllamaModel": "qwen2.5:3b", "FVMiniPrompt": false }
+```
+
+`FVMiniPrompt: false` matters here. Short dictations normally take a
+stripped-down prompt to save prompt-eval time; on a model that answers in
+~300 ms that trade is pure loss, and qwen's mini tier failed cases its full
+tier passed.
+
+Even then it is an LLM rewriting your words — in testing it once invented a
+word and once dropped one. The raw transcript is always kept in History next
+to the cleaned one. If you would rather not have it edit at all:
+
+```json
+{ "FVCleanupEnabled": false }
+```
+
+`large-v3-turbo` already punctuates and capitalises well enough that the
+end-to-end transcripts above needed no cleanup. `FVSmartFix` stays useful
+either way — it only engages on low-confidence decodes, where the transcript
+is garbled enough that a rewrite can only help.
 
 ## Known limits
 
