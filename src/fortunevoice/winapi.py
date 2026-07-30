@@ -136,6 +136,109 @@ kernel32.GlobalUnlock.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalUnlock.restype = wintypes.BOOL
 
 
+# ── window styles (the floating overlays) ────────────────────────────────
+
+GWL_EXSTYLE = -20
+WS_EX_NOACTIVATE = 0x08000000
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_TOPMOST = 0x00000008
+WS_EX_TRANSPARENT = 0x00000020
+WS_EX_LAYERED = 0x00080000
+
+HWND_TOPMOST = -1
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
+
+# GetWindowLongPtr only exists on 64-bit; the 32-bit build has to use the
+# non-Ptr names, and calling the wrong one truncates the style word.
+if ctypes.sizeof(ctypes.c_void_p) == 8:
+    _get_long = user32.GetWindowLongPtrW
+    _set_long = user32.SetWindowLongPtrW
+    _get_long.restype = ctypes.c_longlong
+    _set_long.restype = ctypes.c_longlong
+    _get_long.argtypes = (wintypes.HWND, ctypes.c_int)
+    _set_long.argtypes = (wintypes.HWND, ctypes.c_int, ctypes.c_longlong)
+else:  # pragma: no cover - 32-bit Python is not a supported target
+    _get_long = user32.GetWindowLongW
+    _set_long = user32.SetWindowLongW
+
+user32.SetWindowPos.argtypes = (
+    wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+    ctypes.c_int, ctypes.c_int, wintypes.UINT,
+)
+user32.GetParent.argtypes = (wintypes.HWND,)
+user32.GetParent.restype = wintypes.HWND
+
+
+def toplevel_hwnd(window) -> int:
+    """The real top-level HWND behind a Tk window.
+
+    `winfo_id()` gives Tk's client window, which for a decorated toplevel is a
+    child of a wrapper frame — setting styles on the child would do nothing
+    visible. Tk exposes the frame through `wm_frame()`; fall back to walking up
+    with GetParent for the borderless case where there is no wrapper.
+    """
+    try:
+        return int(window.wm_frame(), 16)
+    except Exception:  # noqa: BLE001 - not all Tk builds expose wm_frame
+        hwnd = window.winfo_id()
+        parent = user32.GetParent(hwnd)
+        return int(parent or hwnd)
+
+
+def make_non_activating(window) -> None:
+    """Make a Tk window an overlay that never takes focus.
+
+    This is the single most important detail in the whole overlay: FortuneVoice
+    types into whatever window has focus. An overlay that activates when shown
+    would become that window, and the dictation would be typed into a 96x30
+    borderless panel instead of the user's editor.
+
+    WS_EX_NOACTIVATE keeps it from being activated by a click or by being
+    shown; WS_EX_TOOLWINDOW keeps it out of Alt-Tab and the taskbar.
+    """
+    hwnd = toplevel_hwnd(window)
+    if not hwnd:
+        return
+    style = _get_long(hwnd, GWL_EXSTYLE)
+    _set_long(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)
+
+
+def make_click_through(window) -> None:
+    """Let the mouse pass straight through an overlay.
+
+    The pill floats over whatever the user is working in. Without this, a
+    button underneath it silently stops responding for as long as a dictation
+    lasts — a bug that would look like the *other* app being broken.
+
+    WS_EX_TRANSPARENT only behaves on a layered window; Tk's
+    `-transparentcolor` already sets WS_EX_LAYERED, and the pill relies on it
+    for its rounded corners anyway.
+    """
+    hwnd = toplevel_hwnd(window)
+    if not hwnd:
+        return
+    style = _get_long(hwnd, GWL_EXSTYLE)
+    _set_long(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED)
+
+
+def raise_without_focus(window) -> None:
+    """Bring an overlay to the front without activating it.
+
+    Tk's own `lift()` calls SetWindowPos without SWP_NOACTIVATE, so it steals
+    focus from the app the user is dictating into.
+    """
+    hwnd = toplevel_hwnd(window)
+    if not hwnd:
+        return
+    user32.SetWindowPos(
+        hwnd, wintypes.HWND(HWND_TOPMOST), 0, 0, 0, 0,
+        SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+    )
+
+
 def foreground_window() -> int:
     return user32.GetForegroundWindow() or 0
 

@@ -123,18 +123,66 @@ pipeline gets its own worker thread. A press arriving mid-transcription is
 rejected by the state guard exactly as before; events older than a second are
 dropped so a queued press can't start a recording the user abandoned.
 
-## Deliberately dropped
+## The UI, rebuilt in Tk
 
-- **Main window, History UI, onboarding, the recording pill, the spectrum
-  orb.** All AppKit/SwiftUI. History is still written; it is JSON you can
-  open. The pill's purpose — knowing the app is listening — is served by the
-  tray icon colour and the start/stop tones.
-- **The result panel.** Replaced by a tray balloon plus "Copy last dictation".
-  The clipboard stays opt-in, which was the point of the panel upstream.
-- **Login item.** A shortcut in `shell:startup` does the same thing without
-  code.
+The AppKit/SwiftUI surface was dropped in the first pass and rebuilt after: an
+app whose only feedback was a tray colour gave no way to tell "listening" from
+"crashed". All of it is tkinter, which ships with Python — no extra wheel, and
+nothing to install on a machine that is already running the app.
+
+**Two GUI loops in one process.** pystray runs a Win32 message loop and wants
+the main thread; Tk wants a `mainloop` of its own. Tk gets a dedicated thread
+(`ui/__init__.py`), and every widget in the package lives on it. Callers hand
+a callable to `ui.call()`; nothing outside that module touches a Tk object.
+Tkinter is not thread-safe and breaking the rule does not raise — it corrupts
+the interpreter and crashes minutes later somewhere unrelated.
+
+**The overlay must not take focus.** This is the detail the whole pill depends
+on: FortuneVoice types into whatever window has focus, so an overlay that
+activated when shown would *become* that window and receive the dictation
+itself. `WS_EX_NOACTIVATE` plus `SetWindowPos(SWP_NOACTIVATE)` instead of
+Tk's `lift()` (which activates), plus `WS_EX_TOOLWINDOW` to stay out of
+Alt-Tab, plus `WS_EX_TRANSPARENT` so it never swallows a click meant for the
+app underneath.
+
+**Rounded corners** come from Tk's `-transparentcolor`: the capsule is drawn
+on a chroma-key background that Windows turns into a hole. The waveform is a
+scrolling history of per-block RMS — the app has no spectrum analyser, and a
+scrolling level history is an honest picture of what it does have.
+
+**ttk is avoided throughout.** On Windows the native theme engine overrides
+background colours on ttk widgets, so a dark `ttk.Notebook` renders grey. The
+tab strip is four labels and a bound click.
+
+Two layout bugs worth remembering, both found by screenshotting the windows
+rather than by reading the code:
+
+- Controls packed hard-right inside a scrollable canvas land *under* the
+  scrollbar and are clipped; the rows need explicit right padding.
+- `side="bottom"` only claims what is left at the moment of packing, so a
+  footer built last is pushed off the window entirely. It has to be packed
+  before the content above it.
+
+### Still deliberately dropped
+
+- **The spectrum orb.** The macOS pill ran a real FFT; this one shows an RMS
+  waveform. At 188x40 the difference is not visible.
+- **Login item.** `scripts/install_shortcut.py --startup` writes a shortcut to
+  the Startup folder, which is the same thing without code.
 - **Accessibility/microphone permission prompts.** Windows has no equivalent
   gate for either, so there is nothing to request.
+
+### The icon
+
+Generated in code (`assets.py`), not shipped as an opaque binary: one drawing
+produces the multi-resolution `.ico` for Explorer and the per-state tray
+bitmaps, so the tray and the desktop shortcut are visibly the same app, and
+the mark is reviewable in a diff.
+
+Pillow's ICO writer silently discards any requested size larger than the image
+being saved. Building the file from the 16 px render therefore produced a
+one-frame icon that Explorer upscaled — a blurry desktop icon with no error
+anywhere. The base has to be the largest frame; `tests/test_assets.py` pins it.
 
 ## Added
 

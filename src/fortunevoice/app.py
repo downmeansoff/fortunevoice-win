@@ -121,6 +121,9 @@ class App:
         # UI hooks (the tray sets these).
         self.on_state_change: Callable[[State], None] | None = None
         self.on_notify: Callable[[str, str], None] | None = None
+        # True once the Tk thread is up. Everything visual is optional: a
+        # machine with a broken Tk still dictates, it just does it blind.
+        self.ui_available = False
 
         self.recorder.on_level = self._on_level
         self.recorder.on_interrupted = lambda: self._events.put(("interrupted", time.monotonic()))
@@ -138,6 +141,7 @@ class App:
                 return
             self._state = state
             self.status_note = note
+        self._update_overlay(state)
         if self.on_state_change:
             try:
                 self.on_state_change(state)
@@ -157,6 +161,7 @@ class App:
     def start(self) -> None:
         self.recovery.prune_old()
         self.store.prune(config.get_int("FVRetentionDays"))
+        self._start_ui()
 
         self._controller = threading.Thread(
             target=self._controller_loop, name="controller", daemon=True
@@ -183,7 +188,59 @@ class App:
     def stop(self) -> None:
         if self._listener:
             self._listener.stop()
+        if self.ui_available:
+            from .ui import ui
+
+            ui.stop()
         self._events.put(("quit", time.monotonic()))
+
+    # ── UI ───────────────────────────────────────────────────────────────
+
+    def _start_ui(self) -> None:
+        try:
+            from .ui import ui
+            from .ui.onboarding import needed, onboarding
+        except Exception as exc:  # noqa: BLE001 - no Tk is survivable
+            logger.warning("UI unavailable (%s) — running headless", exc)
+            return
+        self.ui_available = ui.start()
+        if not self.ui_available:
+            return
+        if needed():
+            onboarding.show(self)
+
+    def open_main_window(self) -> None:
+        if not self.ui_available:
+            self.open_data_folder()  # the JSON files are the fallback UI
+            return
+        from .ui.main_window import window
+
+        window.show()
+
+    def show_onboarding(self) -> None:
+        if not self.ui_available:
+            return
+        from .ui.onboarding import onboarding
+
+        onboarding.show(self)
+
+    def _pill(self):
+        if not self.ui_available or not config.get_bool("FVOverlay"):
+            return None
+        from .ui.pill import pill
+
+        return pill
+
+    def _update_overlay(self, state: State) -> None:
+        pill = self._pill()
+        if pill is None:
+            return
+        if state is State.RECORDING:
+            pill.show("no-signal" if self.status_note else "recording")
+        elif state is State.PROCESSING:
+            pill.show("processing")
+        else:
+            pill.hide()
 
     @property
     def hotkey_label(self) -> str:
@@ -323,7 +380,10 @@ class App:
         self._auto_stop.start()
 
     def _on_level(self, level: float) -> None:
-        """Called from the audio thread — keep it to arithmetic."""
+        """Called from the audio thread — keep it to arithmetic and one store."""
+        pill = self._pill()
+        if pill is not None:
+            pill.push_level(level)
         if level > 0.2:
             self._last_loud = time.monotonic()
         self._peak_level = max(self._peak_level, level)
@@ -692,11 +752,18 @@ class App:
         )
 
     def _hold(self, reason: str, text: str) -> None:
-        """We couldn't type it. macOS showed a floating panel with a Copy
-        button; on Windows the transcript sits in History and the tray menu's
-        "Copy last dictation" puts it on the clipboard — deliberately opt-in,
-        so nothing the user dictated silently lands in their clipboard."""
+        """We couldn't type it — show the transcript with a Copy button.
+
+        Nothing is put on the clipboard until the user presses that button.
+        That is the whole reason the macOS build stopped routing dictations
+        through the clipboard, and a panel that pre-copied would undo it.
+        """
         logger.info("outcome = held (%s)", reason)
+        if self.ui_available:
+            from .ui.result import panel
+
+            panel.show(text, reason)
+            return
         preview = text if len(text) <= 120 else text[:117] + "…"
         self._notify(reason, preview)
 
