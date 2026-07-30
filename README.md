@@ -165,6 +165,24 @@ Streaming pays off on longer dictations; on short ones it deliberately does
 nothing (the first pass is delayed 3 s, because a pass in flight at key-up
 would only delay the final decode).
 
+## About the AI cleanup
+
+Measured with `gemma3:4b` on Russian, the round-trip is fast (~600–1100 ms,
+comfortably inside the 1.5 s budget) but the edits are unreliable: on short
+phrases it usually returns the text unchanged, and on the full-prompt path it
+sometimes prefixes prose with a stray `- ` or `— `, or rewrites a statement as
+a question. See [PORT_NOTES.md](PORT_NOTES.md) for the numbers.
+
+`large-v3-turbo` already punctuates and capitalises well, so if you dictate in
+Russian, consider running without it:
+
+```json
+{ "FVCleanupEnabled": false }
+```
+
+`FVSmartFix` stays useful either way — it only engages on low-confidence
+decodes, where the transcript is garbled enough that a rewrite can only help.
+
 ## Known limits
 
 - **No result panel.** When the text can't be typed (you switched windows, no

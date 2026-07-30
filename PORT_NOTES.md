@@ -184,13 +184,49 @@ already in front when the user pressed the hotkey, and `app._deliver` rechecks
 that the same window still holds focus — with a 500 ms settle for transient
 popups — before typing anything.
 
+## Measured: the cleanup pass, and why it is worth distrusting here
+
+Ollama 0.32.5 with `gemma3:4b` (Q4_K_M) on the same box. The **mechanism** is
+healthy — the transport, the budget, the safety nets all behave:
+
+| | |
+|---|---|
+| Round-trip, 40–124 chars | 578–1094 ms, i.e. **under** the ported `900 + 6.25·chars` prediction in 5 of 5 runs |
+| 124-char sample against the real 1.5 s budget | declined up front (`over_budget=1`, 0 ms spent) — exactly the waste the predictor exists to prevent |
+| 35% word-drop safety net | fired twice on a 6→2-word rewrite and kept the raw text |
+| Cold model load during `warmup()` | **over 120 s**. `keep_alive` is 24h so it happens once, but the first dictation after a reboot gets raw text — which is the designed degradation, not a bug |
+
+The **output quality** is a different story. Three runs per prompt on Russian
+samples:
+
+| Sample | mini prompt (< 25 words) | full prompt |
+|---|---|---|
+| `ну я это, короче, хотел сказать…` | 3/3 edited, removed only «короче» | 3/3 edited, but emitted a leading `- ` bullet |
+| `нужно правильно это правильно писать…` | **0/3** — stumble not collapsed | 3/3 collapsed correctly, but emitted a leading `— ` |
+| `сделай кнопку синим, нет, красным` | **0/3** — self-correction not applied | 1/3 |
+| `Завтра встреча в десять утра.` (already clean) | 0/3 — correctly untouched | **3/3 changed it into a question** |
+
+So on this model: the mini prompt is *safe but weak* (it no-ops rather than
+mangles), and the full prompt is *actively unsafe* — the list rule leaks a
+stray `- `/`— ` onto the front of ordinary prose, and the punctuation rule
+turned a statement into a question. Turning clean text into a question is
+worse than doing nothing at all.
+
+Because dictations under 25 words take the mini path, the shipped defaults sit
+in the safe regime. Longer ones do not.
+
+This is a **model** finding, not a port bug — the prompts are byte-identical to
+upstream's. `large-v3-turbo` already punctuates and capitalises well enough
+that the e2e transcripts above needed no cleanup at all, so `FVCleanupEnabled:
+false` is a defensible default on Russian here. Worth trying a different
+cleanup model before concluding anything about the feature itself.
+
 ## Still unverified
 
 - **Dictation with a real voice through a real microphone.** Everything up to
   and including the decode is exercised above, but nobody has spoken into it.
-- **Ollama cleanup.** Ollama is not installed on the dev machine, so the whole
-  `cleaner.py` path has only its unit tests behind it. `doctor` reports this
-  as a warning rather than a failure, because dictation works without it.
+- **A cleanup model that actually suits these prompts.** Only `gemma3:4b` has
+  been measured, and it is the one upstream benchmarked on Apple silicon.
 - **The CPU fallback rung** of the backend ladder — CUDA loaded first try, so
   the `cpu/int8` path was never exercised end to end.
 - **Long dictations** near the 300 s cap, and the recovery flow after a real
