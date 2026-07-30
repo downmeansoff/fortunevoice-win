@@ -31,5 +31,8 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 # Tests that need a real desktop session (they steal focus for a second) are
 # opt-in: `pytest -m live`.
-addopts = "-m 'not live'"
-markers = ["live: drives real Win32 input against a window the test owns"]
+addopts = "-m 'not live and not ui'"
+markers = [
+    "live: drives real Win32 input against a window the test owns",
+    "ui: builds real windows; needs a desktop session",
+]

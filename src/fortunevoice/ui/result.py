@@ -75,7 +75,7 @@ class ResultPanel:
 
         self._text = tk.Text(
             body, height=4, wrap="word", font=theme.font(10),
-            bg=theme.INK_RAISED, fg=theme.TEXT, relief="flat", bd=0,
+            bg=theme.CARD, fg=theme.TEXT, relief="flat", bd=0,
             padx=12, pady=10, highlightthickness=0, insertbackground=theme.TEXT,
         )
         self._text.pack(fill="both", expand=True, padx=18)

@@ -94,9 +94,9 @@ class Onboarding:
         ).pack(anchor="w", pady=(4, 22))
 
         # ── the hotkey, stated once and prominently ──
-        chord = tk.Frame(body, bg=theme.INK_RAISED)
+        chord = tk.Frame(body, bg=theme.CARD)
         chord.pack(fill="x")
-        inner = tk.Frame(chord, bg=theme.INK_RAISED)
+        inner = tk.Frame(chord, bg=theme.CARD)
         inner.pack(fill="x", padx=18, pady=16)
         hotkey = self._app.hotkey_label if self._app else config.get_str("FVHotkey")
         theme.label(inner, "Hold to talk", size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
@@ -110,7 +110,7 @@ class Onboarding:
         theme.label(body, "Microphone", size=11, weight="bold").pack(anchor="w", pady=(22, 6))
         self._mic_note = theme.label(body, "Say something…", size=9, colour=theme.TEXT_MUTED)
         self._mic_note.pack(anchor="w")
-        self._meter = tk.Frame(body, bg=theme.INK_RAISED, height=10)
+        self._meter = tk.Frame(body, bg=theme.CARD, height=10)
         self._meter.pack(fill="x", pady=(8, 0))
         self._meter_fill = tk.Frame(self._meter, bg=theme.OK, height=10)
         self._meter_fill.place(relwidth=0.0, relheight=1)
