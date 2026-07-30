@@ -215,11 +215,73 @@ worse than doing nothing at all.
 Because dictations under 25 words take the mini path, the shipped defaults sit
 in the safe regime. Longer ones do not.
 
-This is a **model** finding, not a port bug — the prompts are byte-identical to
-upstream's. `large-v3-turbo` already punctuates and capitalises well enough
-that the e2e transcripts above needed no cleanup at all, so `FVCleanupEnabled:
-false` is a defensible default on Russian here. Worth trying a different
-cleanup model before concluding anything about the feature itself.
+This is a **model** finding, not a port bug — the prompts are byte-identical
+to upstream's.
+
+### Head to head against qwen2.5:3b
+
+Same samples, three runs per prompt tier, scored on two axes because they fail
+differently. *fixes* = made the edit the prompt asks for; *harms* = damaged the
+text (leading bullet/dash, meaning change, already-clean text rewritten).
+
+| Model / tier | fixes | harms | median |
+|---|---|---|---|
+| gemma3:4b, mini | 6/15 | 0/15 | 641 ms |
+| gemma3:4b, full | 9/15 | **9/15** | 703 ms |
+| qwen2.5:3b, mini | 9/15 | 0/15 | 297 ms |
+| **qwen2.5:3b, full** | **12/15** | 2/15 | **297 ms** |
+
+`qwen2.5:3b` on the full prompt collapses the stumble
+(`нужно правильно это правильно писать` → `нужно правильно это писать`, keeping
+the ё), applies the self-correction, removes the English filler, and never
+emits a stray leading dash. Its two harms are one run in three that
+lower-cased the opening word — a capitalisation flake, not a meaning change.
+It is also 2.4x faster and 1.9 GB against 3.3 GB, which matters on a 6 GB card
+that is already holding Whisper.
+
+**This inverted the mini-prompt trade.** The mini tier exists because
+prompt-eval dominates the round-trip on a slow model. On a model that answers
+in ~300 ms it only loses accuracy: measured, qwen's mini tier failed the
+stumble and self-correction cases its full tier passed, and stripped commas
+the full tier kept. Since upstream's routing is hard-coded, this port adds
+`FVMiniPrompt` (default `true`, i.e. upstream behaviour) so the tier can be
+turned off. `warmup()` skips priming the mini prefix when it is off, rather
+than paying a round-trip on hotkey-down for a prompt that will never be used.
+
+### What qwen still gets wrong
+
+Not a recommendation to trust it blindly. Through the real `clean()` path at
+the app's 1.5 s budget:
+
+- `ну я это, короче, хотел сказать что завтра встреча` →
+  `я хотел сказать, что завтра есть встреча` — **invented «есть»**, which the
+  prompt explicitly forbids.
+- `сделай кнопку синим, нет, красным цветом` → `сделай красным цветом` — the
+  self-correction is right but **«кнопку» was dropped**. Six words to three is
+  a 50% loss, and it slipped past the 35% safety net by exactly one word:
+  the guard is `clean < int(raw * 0.65)`, and `3 < int(3.9)` is `3 < 3`, false.
+  The threshold is upstream's and is left alone, but it is a hair's breadth
+  from catching this.
+
+So: qwen2.5:3b is clearly the better of the two, and cleanup is genuinely
+useful with it, but it is still an LLM rewriting the user's words. The raw
+transcript is always kept in History alongside the cleaned one for exactly
+this reason.
+
+### The cost predictor is now too conservative
+
+`predicted_ms = 900 + 6.25·chars` was fitted against live gemma3:4b runs on
+Apple silicon. qwen2.5:3b answers in ~280 ms where the model predicts 1200+.
+With the 1.5 s budget that means **anything past ~96 characters is declined up
+front** — the 124-char sample above spent 0 ms and returned raw, though qwen
+would have cleaned it in ~300 ms.
+
+Deliberately not refitted here: upstream's own comment warns that a synthetic
+benchmark underestimates the constant, because hammering Ollama keeps the
+model and prompt cache maximally hot while a real dictation arrives after a
+gap. `metrics.jsonl` records `cleanup_ms` and `chars` on every dictation
+precisely so this can be refitted from real use. Do that after a week of
+actual dictation, not from a loop like the one above.
 
 ## Still unverified
 
