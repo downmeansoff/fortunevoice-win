@@ -67,6 +67,10 @@ DEFAULTS: dict[str, Any] = {
     "FVMicrophone": "",
     # Play a sound on start/success/error.
     "FVSounds": True,
+    # Floating pill showing recording/transcribing state over other windows.
+    "FVOverlay": True,
+    # Set once the first-run screen has been dismissed.
+    "FVOnboarded": False,
 }
 
 _lock = threading.Lock()

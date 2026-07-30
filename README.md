@@ -74,19 +74,39 @@ report comes down to one of those.
 ## Run
 
 ```powershell
-python -m fortunevoice
+python scripts\install_shortcut.py
 ```
 
-A tray icon appears: grey while the model loads, green idle, red recording,
-amber transcribing. Hold **Ctrl+Alt+Space**, speak, release.
-
-To start it without a console window, use `pythonw.exe`:
+Puts a FortuneVoice shortcut on your Desktop pointing at `pythonw.exe` (no
+console window). Add `--startup` to also launch it at login, `--remove` to
+take both away. Or run it directly:
 
 ```powershell
 .venv\Scripts\pythonw.exe -m fortunevoice
 ```
 
-Put a shortcut to that in `shell:startup` to have it running at login.
+## What you see
+
+A tray icon — the app mark, tinted: grey while the model loads, pale idle, red
+recording, amber transcribing. Its level bars grow while audio is arriving, so
+a dead microphone doesn't look like a working one.
+
+Hold **Ctrl+Alt+Space**, speak, release. While you hold it, a small pill floats
+near the bottom of the screen with a live waveform, so you can see it is
+listening without looking away from what you're writing. It never takes focus
+and never eats a click.
+
+If the text can't be typed — you switched windows, there's no editable field —
+a panel appears with the transcript and a Copy button. Nothing reaches your
+clipboard until you press it.
+
+The tray menu opens the main window: **History** (searchable, every dictation
+you've made), **Stats** (words per minute, day streak, where the words went,
+median wait), **Dictionary** (names Whisper keeps mishearing), and
+**Settings**. A first-run screen shows the hotkey and proves the microphone
+works with a live meter; reopen it any time from the tray.
+
+Set `"FVOverlay": false` if you'd rather not have the pill.
 
 ## Settings
 

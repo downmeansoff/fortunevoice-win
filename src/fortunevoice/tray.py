@@ -12,18 +12,18 @@ from __future__ import annotations
 
 import threading
 
-from . import audio, config, dictionary
+from . import assets, audio, config, dictionary
 from .app import App, State
 from .log import get as get_logger
 
 logger = get_logger("tray")
 
 _COLOURS = {
-    State.LOADING: (140, 140, 145),
-    State.IDLE: (110, 190, 130),
-    State.RECORDING: (225, 75, 75),
-    State.PROCESSING: (240, 170, 60),
-    State.ERROR: (235, 205, 70),
+    State.LOADING: assets.LOADING,
+    State.IDLE: assets.IDLE,
+    State.RECORDING: assets.RECORDING,
+    State.PROCESSING: assets.PROCESSING,
+    State.ERROR: assets.ERROR,
 }
 
 _LABELS = {
@@ -37,18 +37,10 @@ _LABELS = {
 LANGUAGES = [("ru", "Русский"), ("en", "English"), ("auto", "Auto-detect")]
 
 
-def _icon_image(state: State):
-    from PIL import Image, ImageDraw  # noqa: PLC0415
-
-    size = 64
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    colour = _COLOURS.get(state, (140, 140, 145))
-    draw.ellipse((6, 6, size - 6, size - 6), fill=colour + (255,))
-    if state == State.RECORDING:
-        # A filled ring reads as "live" at 16 px where a glyph would not.
-        draw.ellipse((20, 20, size - 20, size - 20), fill=(255, 255, 255, 235))
-    return image
+def _icon_image(state: State, level: float = 0.0):
+    """The app mark tinted for the current state. Same drawing the desktop
+    icon uses, so the tray and the shortcut are visibly the same app."""
+    return assets.tray_image(_COLOURS.get(state, assets.IDLE), level=level)
 
 
 class Tray:
@@ -79,6 +71,11 @@ class Tray:
         return pystray.Menu(
             item(lambda _i: self._status_text(), None, enabled=False),
             item(lambda _i: f"Hold {self.app.hotkey_label} to dictate", None, enabled=False),
+            separator,
+            # Default: a double-click on the tray icon opens the window, which
+            # is what people try first.
+            item("Open FortuneVoice", self._open_window, default=True),
+            item("Setup…", self._open_setup),
             separator,
             item("Language", pystray.Menu(*language_items)),
             item("Microphone", pystray.Menu(self._microphone_items)),
@@ -158,6 +155,12 @@ class Tray:
                 self.app.cleaner.warmup()
 
         return action
+
+    def _open_window(self, _icon=None, _item=None) -> None:
+        self.app.open_main_window()
+
+    def _open_setup(self, _icon=None, _item=None) -> None:
+        self.app.show_onboarding()
 
     def _copy_last(self, _icon=None, _item=None) -> None:
         if not self.app.copy_last():
