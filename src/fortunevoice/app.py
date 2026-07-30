@@ -215,7 +215,7 @@ class App:
             return
         from .ui.main_window import window
 
-        window.show()
+        window.show(self)
 
     def show_onboarding(self) -> None:
         if not self.ui_available:

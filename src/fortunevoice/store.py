@@ -91,6 +91,12 @@ class DictationStore:
                 records = records[-self.MAX_RECORDS :]
             self._write(records)
 
+    def clear(self) -> None:
+        """Delete every record. Only reachable from an explicit confirmation in
+        the UI — this is the vault every delivery path writes to first."""
+        with self._lock:
+            self._write([])
+
     def prune(self, older_than_days: int) -> None:
         if older_than_days <= 0:
             return

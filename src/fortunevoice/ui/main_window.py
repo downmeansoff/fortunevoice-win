@@ -1,65 +1,65 @@
-"""The main window: History, Stats, Dictionary, Settings.
+"""The main window: History, Insights, Dictionary, Settings.
 
-Everything the app already stores but had no way to show. History and metrics
-were JSON files you had to open in an editor; the dictionary and the settings
-were a file you had to know the key names for.
+Laid out like the macOS build — a nav rail on the left, one page at a time on
+the right, everything sitting in rounded cards on a deep navy surface.
 
-Rendering choices worth stating, because they look lazy and are not:
+Two structural notes:
 
-* **History is a Text widget, not a list of card frames.** A Text gives native
-  selection and Ctrl+C across records, find-as-you-type highlighting through
-  tags, and smooth scrolling over thousands of rows — all of which a stack of
-  Frames would need reimplementing, badly.
-* **ttk is avoided.** On Windows the native theme engine overrides background
-  colours on ttk widgets, so a dark ttk.Notebook comes out grey. The tab strip
-  here is four labels and a bound click.
+* **Pages are built once and raised, not rebuilt.** Settings holds live
+  widgets bound to config, and History can hold hundreds of rows; tearing them
+  down on every tab switch would drop scroll position and flicker.
+* **History rows are Labels in cards, not one big Text widget.** Cards are
+  what make the page read like the macOS original, and the selection a Text
+  would give is replaced by click-to-copy on the card itself.
 """
 
 from __future__ import annotations
 
-from .. import config, dictionary, metrics, paths, stats
+import datetime as dt
+
+from .. import config, dictionary, injector, metrics, paths, shortcut, stats
 from ..log import get as get_logger
 from ..store import DictationStore
-from . import theme, ui
+from . import icons, theme, widgets
 
 logger = get_logger("ui.main")
 
-WIDTH = 860
-HEIGHT = 600
+WIDTH = 1000
+HEIGHT = 680
+SIDEBAR_W = 232
+PAGES = [("History", "clock"), ("Insights", "chart"),
+         ("Dictionary", "book"), ("Settings", "gear")]
 
-TABS = ("History", "Stats", "Dictionary", "Settings")
-
-# (key, label, kind, hint). Only the settings worth changing without reading
-# the docs; the rest stay in config.json.
-SETTINGS = [
-    ("FVHotkey", "Hotkey", "text", "e.g. ctrl+alt+space, f9, rctrl"),
-    ("FVActivationMode", "Activation", "choice:hold,toggle", "hold = push-to-talk"),
-    ("FVLanguage", "Language", "choice:ru,en,auto", "auto detects per dictation"),
-    ("FVModel", "Whisper model", "text", "restart to apply"),
-    ("FVMicrophone", "Microphone", "text", "name fragment; empty = system default"),
-    ("FVStreaming", "Transcribe while speaking", "bool", "halves the wait on long dictations"),
-    ("FVCleanupEnabled", "AI cleanup (Ollama)", "bool", "rewrites filler and punctuation"),
-    ("FVSmartFix", "Auto-fix garbled words", "bool", "only on low-confidence decodes"),
-    ("FVOllamaModel", "Cleanup model", "text", "qwen2.5:3b recommended"),
-    ("FVMiniPrompt", "Short prompt for short phrases", "bool", "turn off on a fast model"),
-    ("FVSounds", "Sounds", "bool", ""),
-    ("FVPasteViaClipboard", "Paste via clipboard", "bool", "only for apps that ignore typing"),
-]
+# Icon tint per settings row. Colour carries the grouping when the eye skims.
+TINT_BLUE = "#2F7DF6"
+TINT_INDIGO = "#5E5CE6"
+TINT_TEAL = "#30B0C7"
+TINT_GREEN = "#34C759"
+TINT_ORANGE = "#FF9F0A"
+TINT_PINK = "#FF375F"
+TINT_GREY = "#5D6880"
 
 
 class MainWindow:
-    def __init__(self, store: DictationStore | None = None) -> None:
+    def __init__(self, store: DictationStore | None = None, app=None) -> None:
         self._store = store or DictationStore()
+        self._app = app
         self._window = None
-        self._tab = "History"
-        self._tab_labels: dict[str, object] = {}
+        self._page = "History"
+        self._nav: dict[str, widgets.NavItem] = {}
         self._pages: dict[str, object] = {}
+        self._images: list = []
         self._search_var = None
-        self._history_text = None
+        self._search_is_placeholder = lambda: False
+        self._history_body = None
+        self._insights_body = None
         self._dictionary_text = None
-        self._status = None
 
-    def show(self) -> None:
+    def show(self, app=None) -> None:
+        from . import ui
+
+        if app is not None:
+            self._app = app
         ui.call(self._show)
 
     # ── UI thread only ───────────────────────────────────────────────────
@@ -70,17 +70,18 @@ class MainWindow:
         self._window.deiconify()
         self._window.lift()
         self._window.focus_force()
-        self._select_tab(self._tab)
+        self._select(self._page)
 
     def _build(self) -> None:
         import tkinter as tk
 
         from .. import assets
+        from . import ui
 
         window = tk.Toplevel(ui.root)
         window.title("FortuneVoice")
         window.geometry(f"{WIDTH}x{HEIGHT}")
-        window.minsize(680, 460)
+        window.minsize(880, 560)
         window.configure(bg=theme.INK)
         try:
             window.iconbitmap(str(assets.icon_path()))
@@ -88,147 +89,361 @@ class MainWindow:
             pass
         # Closing hides: the app lives in the tray, and destroying the window
         # would throw away the loaded history for no reason.
-        window.protocol("WM_DELETE_WINDOW", lambda: window.withdraw())
-
-        header = tk.Frame(window, bg=theme.INK)
-        header.pack(fill="x", padx=22, pady=(18, 0))
-        theme.label(header, "FortuneVoice", size=15, weight="bold").pack(side="left")
-        self._status = theme.label(header, "", size=9, colour=theme.TEXT_FAINT)
-        self._status.pack(side="right", pady=6)
-
-        tabs = tk.Frame(window, bg=theme.INK)
-        tabs.pack(fill="x", padx=22, pady=(14, 0))
-        for name in TABS:
-            label = tk.Label(
-                tabs, text=name, font=theme.font(10), bg=theme.INK,
-                fg=theme.TEXT_MUTED, cursor="hand2", padx=2, pady=6,
-            )
-            label.pack(side="left", padx=(0, 22))
-            label.bind("<Button-1>", lambda _e, n=name: self._select_tab(n))
-            self._tab_labels[name] = label
-        tk.Frame(window, bg=theme.LINE, height=1).pack(fill="x", padx=22, pady=(0, 0))
-
-        container = tk.Frame(window, bg=theme.INK)
-        container.pack(fill="both", expand=True, padx=22, pady=16)
-        self._container = container
+        window.protocol("WM_DELETE_WINDOW", window.withdraw)
         self._window = window
 
-        self._pages["History"] = self._build_history(container)
-        self._pages["Stats"] = self._build_stats(container)
-        self._pages["Dictionary"] = self._build_dictionary(container)
-        self._pages["Settings"] = self._build_settings(container)
+        self._build_sidebar(window)
 
-    def _select_tab(self, name: str) -> None:
-        self._tab = name
-        for tab_name, label in self._tab_labels.items():
-            active = tab_name == name
-            label.configure(fg=theme.TEXT if active else theme.TEXT_MUTED,
-                            font=theme.font(10, "bold" if active else "normal"))
+        content = tk.Frame(window, bg=theme.INK)
+        content.pack(side="left", fill="both", expand=True, padx=(6, 26), pady=26)
+        self._content = content
+
+        for name, _glyph in PAGES:
+            page = tk.Frame(content, bg=theme.INK)
+            self._pages[name] = page
+            builder = getattr(self, f"_build_{name.lower()}")
+            builder(page)
+
+    # ── sidebar ──────────────────────────────────────────────────────────
+
+    def _build_sidebar(self, parent) -> None:
+        import tkinter as tk
+
+        rail = widgets.Card(parent, bg=theme.SIDEBAR, radius=16, padx=14, pady=18)
+        rail.frame.pack(side="left", fill="y", padx=(18, 0), pady=18)
+        rail.canvas.configure(width=SIDEBAR_W)
+
+        identity = tk.Frame(rail.body, bg=theme.SIDEBAR)
+        identity.pack(fill="x", pady=(2, 22))
+        mark = icons.photo(icons.tile("mic", 40, "#FFFFFF", theme.ACCENT, radius=0.30))
+        self._images.append(mark)
+        tk.Label(identity, image=mark, bg=theme.SIDEBAR).pack(side="left", padx=(2, 12))
+        text = tk.Frame(identity, bg=theme.SIDEBAR)
+        text.pack(side="left")
+        theme.label(text, "FortuneVoice", size=11, weight="bold", bg=theme.SIDEBAR).pack(anchor="w")
+        theme.label(text, "Local dictation", size=8, colour=theme.TEXT_MUTED,
+                    bg=theme.SIDEBAR).pack(anchor="w")
+
+        for name, glyph in PAGES:
+            item = widgets.NavItem(rail.body, name, glyph, self._select)
+            item.pack(fill="x", pady=2)
+            self._nav[name] = item
+
+        spacer = tk.Frame(rail.body, bg=theme.SIDEBAR, height=1)
+        spacer.pack(fill="both", expand=True, pady=10)
+        theme.label(rail.body, "Runs fully on your PC", size=8,
+                    colour=theme.TEXT_FAINT, bg=theme.SIDEBAR).pack(anchor="w", pady=(0, 2))
+
+    def _select(self, name: str) -> None:
+        self._page = name
+        for page_name, item in self._nav.items():
+            item.set_active(page_name == name)
         for page_name, page in self._pages.items():
-            page.pack_forget() if page_name != name else page.pack(fill="both", expand=True)
+            if page_name == name:
+                page.pack(fill="both", expand=True)
+            else:
+                page.pack_forget()
         refresh = getattr(self, f"_refresh_{name.lower()}", None)
         if refresh:
             refresh()
 
+    # ── shared page furniture ────────────────────────────────────────────
+
+    def _header(self, parent, title: str):
+        import tkinter as tk
+
+        bar = tk.Frame(parent, bg=theme.INK)
+        bar.pack(fill="x", pady=(0, 18))
+        theme.label(bar, title, size=20, weight="bold").pack(side="left")
+        return bar
+
+    def _scroll_area(self, parent):
+        """A vertically scrolling region that still stretches its content to
+        the full width — the default canvas window does not."""
+        import tkinter as tk
+
+        holder = tk.Frame(parent, bg=theme.INK)
+        holder.pack(fill="both", expand=True)
+        canvas = tk.Canvas(holder, bg=theme.INK, highlightthickness=0, bd=0)
+        bar = theme.scrollbar(holder, canvas.yview)
+        inner = tk.Frame(canvas, bg=theme.INK)
+        window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def on_inner(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def on_canvas(event) -> None:
+            canvas.itemconfigure(window, width=event.width)
+
+        inner.bind("<Configure>", on_inner)
+        canvas.bind("<Configure>", on_canvas)
+        canvas.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        def on_wheel(event) -> None:
+            canvas.yview_scroll(-event.delta // 120, "units")
+
+        for widget in (canvas, inner):
+            widget.bind("<MouseWheel>", on_wheel)
+        inner.bind(
+            "<Enter>",
+            lambda _e: canvas.bind_all("<MouseWheel>", on_wheel), add="+",
+        )
+        inner.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"), add="+")
+        return inner
+
     # ── History ──────────────────────────────────────────────────────────
 
-    def _build_history(self, parent):
+    def _build_history(self, page) -> None:
         import tkinter as tk
 
-        page = tk.Frame(parent, bg=theme.INK)
+        bar = self._header(page, "History")
+        widgets.IconButton(bar, "trash", self._clear_history,
+                           tooltip="Delete all history").pack(side="right")
+        widgets.IconButton(bar, "share", self._export_history,
+                           tooltip="Export to a text file").pack(side="right", padx=(0, 8))
 
-        bar = tk.Frame(page, bg=theme.INK)
-        bar.pack(fill="x", pady=(0, 12))
+        field = widgets.Card(page, radius=11, padx=14, pady=9)
+        field.pack(fill="x", pady=(0, 16))
+        glass = icons.photo(icons.image("search", 15, theme.TEXT_FAINT))
+        self._images.append(glass)
+        tk.Label(field.body, image=glass, bg=theme.CARD).pack(side="left", padx=(0, 10))
         self._search_var = tk.StringVar()
-        search = theme.entry(bar, self._search_var)
-        search.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 10))
+        search = theme.entry(field.body, self._search_var)
+        search.pack(side="left", fill="x", expand=True)
         self._search_var.trace_add("write", lambda *_: self._refresh_history())
-        # Placeholder rather than a label above: the bar is one row tall and an
-        # empty dark slab reads as broken rather than as "type here".
         self._search_is_placeholder = _placeholder(search, "Search dictations")
-        theme.button(bar, "Refresh", self._refresh_history).pack(side="left")
 
-        wrap = tk.Frame(page, bg=theme.INK)
-        wrap.pack(fill="both", expand=True)
-        text = tk.Text(
-            wrap, wrap="word", font=theme.font(10), bg=theme.INK_RAISED,
-            fg=theme.TEXT, relief="flat", bd=0, padx=16, pady=14,
-            highlightthickness=0, spacing1=2, spacing3=10, cursor="arrow",
-        )
-        bar_scroll = theme.scrollbar(wrap, text.yview)
-        text.configure(yscrollcommand=bar_scroll.set)
-        bar_scroll.pack(side="right", fill="y")
-        text.pack(side="left", fill="both", expand=True)
-
-        text.tag_configure("meta", foreground=theme.TEXT_FAINT, font=theme.font(8))
-        text.tag_configure("body", foreground=theme.TEXT, font=theme.font(10))
-        text.tag_configure("hit", background="#3A3F52", foreground=theme.TEXT)
-        text.tag_configure("empty", foreground=theme.TEXT_MUTED, font=theme.font(10))
-        self._history_text = text
-        return page
+        self._history_body = self._scroll_area(page)
 
     def _refresh_history(self) -> None:
-        text = self._history_text
-        if text is None:
+        import tkinter as tk
+
+        body = self._history_body
+        if body is None:
             return
-        query = "" if self._search_is_placeholder() else (self._search_var.get() or "").strip().lower()
-        records = list(reversed(self._store.all()))
-        if query:
-            records = [r for r in records if query in r.transcript.lower()]
+        for child in body.winfo_children():
+            child.destroy()
 
-        text.configure(state="normal")
-        text.delete("1.0", "end")
+        query = "" if self._search_is_placeholder() else self._search_var.get().strip().lower()
+        records = [r for r in reversed(self._store.all())
+                   if not query or query in r.transcript.lower()]
+
         if not records:
-            text.insert("end", "Nothing here yet.\n" if not query else "No matches.\n", "empty")
-        for record in records[:500]:
-            when = record.date.replace("T", " ")[:16]
-            app = f" · {record.app}" if record.app else ""
-            text.insert("end", f"{when}{app} · {record.words} words\n", "meta")
-            text.insert("end", f"{record.transcript}\n", "body")
-        text.configure(state="disabled")
+            theme.label(body, "No matches." if query else "Nothing here yet.",
+                        size=10, colour=theme.TEXT_MUTED).pack(anchor="w", pady=8)
+            return
 
-        if query:
-            self._highlight(text, query)
-        shown = min(len(records), 500)
-        self._status.configure(
-            text=f"{shown} of {len(records)} shown" if len(records) > 500
-            else f"{len(records)} dictations"
+        today = dt.date.today()
+        current_group = None
+        for record in records[:300]:
+            group = _day_label(record.date, today)
+            if group != current_group:
+                current_group = group
+                widgets.section_title(body, group).pack(anchor="w", pady=(14, 8))
+            self._history_card(body, record)
+
+        if len(records) > 300:
+            theme.label(body, f"{len(records) - 300} older dictations not shown — search to find them.",
+                        size=8, colour=theme.TEXT_FAINT).pack(anchor="w", pady=(14, 0))
+
+    def _history_card(self, parent, record) -> None:
+        import tkinter as tk
+
+        card = widgets.Card(parent, radius=12, padx=16, pady=13)
+        card.pack(fill="x", pady=4)
+
+        top = tk.Frame(card.body, bg=theme.CARD)
+        top.pack(fill="x", pady=(0, 6))
+        theme.label(top, record.date[11:16], size=9, colour=theme.TEXT_MUTED,
+                    bg=theme.CARD).pack(side="left")
+        if record.app:
+            widgets.Chip(top, record.app[:26]).pack(side="left", padx=(10, 0))
+
+        body = tk.Label(
+            card.body, text=record.transcript, font=theme.font(10), bg=theme.CARD,
+            fg=theme.TEXT, anchor="w", justify="left", wraplength=640,
         )
+        body.pack(fill="x")
+        # add="+" is load-bearing: Card binds its own auto-sizing handler to
+        # this same event, and a plain bind() replaces it — which left every
+        # card stuck at its initial height instead of hugging its text.
+        card.body.bind(
+            "<Configure>",
+            lambda e, w=body: w.configure(wraplength=max(240, e.width - 8)),
+            add="+",
+        )
+        for widget in (card.canvas, card.body, top, body):
+            widget.bind("<Button-1>", lambda _e, r=record, c=card: self._copy_record(r, c))
+            widget.configure(cursor="hand2")
 
-    @staticmethod
-    def _highlight(text, query: str) -> None:
-        text.tag_remove("hit", "1.0", "end")
-        index = "1.0"
-        while True:
-            index = text.search(query, index, nocase=True, stopindex="end")
-            if not index:
-                return
-            end = f"{index}+{len(query)}c"
-            text.tag_add("hit", index, end)
-            index = end
-
-    # ── Stats ────────────────────────────────────────────────────────────
-
-    def _build_stats(self, parent):
+    def _copy_record(self, record, card) -> None:
         import tkinter as tk
 
-        page = tk.Frame(parent, bg=theme.INK)
-        self._stats_tiles = tk.Frame(page, bg=theme.INK)
-        self._stats_tiles.pack(fill="x")
-        self._stats_detail = tk.Frame(page, bg=theme.INK)
-        self._stats_detail.pack(fill="both", expand=True, pady=(20, 0))
-        return page
+        if not injector.set_clipboard_text(record.transcript):
+            return
+        flash = tk.Label(card.body, text="Copied", font=theme.font(8, "bold"),
+                         bg=theme.CARD, fg=theme.OK)
+        flash.place(relx=1.0, y=0, anchor="ne")
+        card.body.after(1100, flash.destroy)
 
-    def _refresh_stats(self) -> None:
+    def _export_history(self) -> None:
+        records = self._store.all()
+        if not records:
+            return
+        target = paths.home() / "history-export.txt"
+        lines = [f"{r.date}  {r.app or ''}\n{r.transcript}\n" for r in records]
+        try:
+            target.write_text("\n".join(lines), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("could not export history: %s", exc)
+            return
+        import os
+
+        os.startfile(str(target))  # noqa: S606 - a file we just wrote
+
+    def _clear_history(self) -> None:
+        from tkinter import messagebox
+
+        # History is the vault every delivery path writes to first; wiping it
+        # is the one destructive thing this window can do.
+        if not messagebox.askyesno(
+            "Delete all history",
+            f"Permanently delete all {len(self._store.all())} dictations?\n\n"
+            "This cannot be undone.",
+            icon="warning", parent=self._window,
+        ):
+            return
+        self._store.clear()
+        self._refresh_history()
+
+    # ── Insights ─────────────────────────────────────────────────────────
+
+    def _build_insights(self, page) -> None:
+        self._header(page, "Insights")
+        self._insights_body = self._scroll_area(page)
+
+    def _refresh_insights(self) -> None:
         import tkinter as tk
 
-        for frame in (self._stats_tiles, self._stats_detail):
-            for child in frame.winfo_children():
-                child.destroy()
+        body = self._insights_body
+        if body is None:
+            return
+        for child in body.winfo_children():
+            child.destroy()
 
         records = self._store.all()
         rows = metrics.read_all()
-        typed = [r for r in rows if str(r.get("outcome", "")).startswith("pasted")]
+
+        tiles = tk.Frame(body, bg=theme.INK)
+        tiles.pack(fill="x")
+        for index, (glyph, value, caption, primary) in enumerate([
+            ("chart", f"{stats.words_per_minute(records):.0f}", "WORDS PER MINUTE", True),
+            ("book", f"{stats.total_words(records):,}".replace(",", " "), "TOTAL WORDS", False),
+            ("bolt", f"{stats.streak_days(records)}", "DAYS STREAK", False),
+        ]):
+            tiles.grid_columnconfigure(index, weight=1, uniform="tile")
+            self._metric_tile(tiles, glyph, value, caption, primary).grid(
+                row=0, column=index, sticky="ew", padx=(0 if index == 0 else 12, 0))
+
+        self._activity_card(body, records)
+        self._where_card(body, records)
+        if rows:
+            self._latency_card(body, rows)
+
+    def _metric_tile(self, parent, glyph: str, value: str, caption: str, primary: bool):
+        import tkinter as tk
+
+        bg = theme.ACCENT if primary else theme.CARD
+        card = widgets.Card(parent, bg=bg, radius=14, padx=18, pady=16)
+        icon = icons.photo(icons.image(glyph, 16,
+                                       "#FFFFFF" if primary else theme.TEXT_MUTED))
+        self._images.append(icon)
+        tk.Label(card.body, image=icon, bg=bg).pack(anchor="w", pady=(0, 10))
+        theme.label(card.body, value, size=22, weight="bold",
+                    colour="#FFFFFF" if primary else theme.TEXT, bg=bg).pack(anchor="w")
+        theme.label(card.body, caption, size=7, weight="bold",
+                    colour="#D6E6FF" if primary else theme.TEXT_FAINT,
+                    bg=bg).pack(anchor="w", pady=(2, 0))
+        return card.frame
+
+    def _activity_card(self, parent, records) -> None:
+        import tkinter as tk
+
+        card = widgets.Card(parent, radius=14, padx=18, pady=16)
+        card.pack(fill="x", pady=(14, 0))
+        theme.label(card.body, "Last 30 days", size=10, weight="bold",
+                    bg=theme.CARD).pack(anchor="w", pady=(0, 12))
+
+        today = dt.date.today()
+        counts = {today - dt.timedelta(days=i): 0 for i in range(29, -1, -1)}
+        for record in records:
+            try:
+                day = dt.datetime.fromisoformat(record.date).date()
+            except ValueError:
+                continue
+            if day in counts:
+                counts[day] += record.words
+
+        chart = tk.Canvas(card.body, height=120, bg=theme.CARD,
+                          highlightthickness=0, bd=0)
+        chart.pack(fill="x")
+        values = list(counts.values())
+
+        def draw(_event=None) -> None:
+            chart.delete("all")
+            width = chart.winfo_width()
+            if width < 10:
+                return
+            biggest = max(values) or 1
+            slot = width / len(values)
+            bar = max(3, slot * 0.55)
+            for index, value in enumerate(values):
+                x = index * slot + (slot - bar) / 2
+                # A day with nothing still gets a stub, so the axis reads as a
+                # timeline rather than as missing data.
+                height = 4 if value == 0 else 8 + (value / biggest) * 100
+                colour = theme.LINE if value == 0 else theme.ACCENT
+                theme.rounded_rect(chart, x, 116 - height, x + bar, 116,
+                                   min(3, bar / 2), fill=colour)
+
+        chart.bind("<Configure>", draw)
+
+    def _where_card(self, parent, records) -> None:
+        import tkinter as tk
+
+        by_app = stats.words_by_app(records)[:6]
+        card = widgets.Card(parent, radius=14, padx=18, pady=16)
+        card.pack(fill="x", pady=(14, 0))
+        theme.label(card.body, "Where you dictate", size=10, weight="bold",
+                    bg=theme.CARD).pack(anchor="w", pady=(0, 12))
+        if not by_app:
+            theme.label(card.body, "No dictations yet.", size=9,
+                        colour=theme.TEXT_MUTED, bg=theme.CARD).pack(anchor="w")
+            return
+        biggest = by_app[0][1] or 1
+        for name, words in by_app:
+            row = tk.Frame(card.body, bg=theme.CARD)
+            row.pack(fill="x", pady=4)
+            theme.label(row, name[:30], size=9, colour=theme.TEXT_MUTED,
+                        bg=theme.CARD).pack(side="left")
+            theme.label(row, f"{words:,}".replace(",", " "), size=9,
+                        colour=theme.TEXT_MUTED, bg=theme.CARD).pack(side="right")
+            meter = tk.Canvas(row, height=8, bg=theme.CARD, highlightthickness=0, bd=0)
+            meter.pack(side="left", fill="x", expand=True, padx=14)
+            meter.bind(
+                "<Configure>",
+                lambda e, m=meter, w=words: (
+                    m.delete("all"),
+                    theme.rounded_rect(m, 0, 1, e.width - 1, 7, 3, fill=theme.CARD_HI),
+                    theme.rounded_rect(m, 0, 1, max(6, (e.width - 1) * w / biggest), 7, 3,
+                                       fill=theme.ACCENT),
+                ),
+            )
+
+    def _latency_card(self, parent, rows) -> None:
+        import tkinter as tk
 
         def median(values):
             values = sorted(values)
@@ -237,69 +452,56 @@ class MainWindow:
             middle = len(values) // 2
             return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
-        tiles = [
-            ("Dictations", f"{len(records)}"),
-            ("Words", f"{stats.total_words(records):,}".replace(",", " ")),
-            ("Words / minute", f"{stats.words_per_minute(records):.0f}"),
-            ("Day streak", f"{stats.streak_days(records)}"),
-            ("Median wait", f"{median([r['total_ms'] for r in rows]):.0f} ms" if rows else "—"),
-            ("Typed straight in", f"{len(typed) * 100 // len(rows)}%" if rows else "—"),
-        ]
-        for index, (caption, value) in enumerate(tiles):
-            tile = tk.Frame(self._stats_tiles, bg=theme.INK_RAISED)
-            tile.grid(row=index // 3, column=index % 3, sticky="ew", padx=(0, 12), pady=(0, 12))
-            self._stats_tiles.grid_columnconfigure(index % 3, weight=1)
-            inner = tk.Frame(tile, bg=theme.INK_RAISED)
-            inner.pack(fill="x", padx=18, pady=14)
-            theme.label(inner, value, size=20, weight="bold").pack(anchor="w")
-            theme.label(inner, caption, size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
-
-        by_app = stats.words_by_app(records)[:8]
-        theme.label(self._stats_detail, "Where the words went", size=11, weight="bold").pack(anchor="w")
-        if not by_app:
-            theme.label(self._stats_detail, "No dictations yet.", size=10,
-                        colour=theme.TEXT_MUTED).pack(anchor="w", pady=(10, 0))
-            return
-        biggest = by_app[0][1] or 1
-        chart = tk.Frame(self._stats_detail, bg=theme.INK)
-        chart.pack(fill="x", pady=(12, 0))
-        for name, words in by_app:
-            row = tk.Frame(chart, bg=theme.INK)
+        typed = [r for r in rows if str(r.get("outcome", "")).startswith("pasted")]
+        card = widgets.Card(parent, radius=14, padx=18, pady=16)
+        card.pack(fill="x", pady=(14, 0))
+        theme.label(card.body, "Speed", size=10, weight="bold", bg=theme.CARD).pack(
+            anchor="w", pady=(0, 12))
+        for caption, value in [
+            ("Median key-up to typed", f"{median([r['total_ms'] for r in rows]):.0f} ms"),
+            ("Median decode", f"{median([r['stt_ms'] for r in rows]):.0f} ms"),
+            ("Typed straight into the app", f"{len(typed) * 100 // len(rows)}%"),
+        ]:
+            row = tk.Frame(card.body, bg=theme.CARD)
             row.pack(fill="x", pady=3)
-            theme.label(row, name[:44], size=9, colour=theme.TEXT_MUTED).pack(side="left")
-            theme.label(row, f"{words}", size=9, colour=theme.TEXT_FAINT).pack(side="right")
-            meter = tk.Frame(row, bg=theme.INK_RAISED, height=6)
-            meter.pack(side="left", fill="x", expand=True, padx=12)
-            fill = tk.Frame(meter, bg=theme.ACCENT, height=6)
-            fill.place(relwidth=words / biggest, relheight=1)
+            theme.label(row, caption, size=9, colour=theme.TEXT_MUTED,
+                        bg=theme.CARD).pack(side="left")
+            theme.label(row, value, size=9, weight="bold", bg=theme.CARD).pack(side="right")
 
     # ── Dictionary ───────────────────────────────────────────────────────
 
-    def _build_dictionary(self, parent):
+    def _build_dictionary(self, page) -> None:
         import tkinter as tk
 
-        page = tk.Frame(parent, bg=theme.INK)
-        theme.label(
+        self._header(page, "Dictionary")
+        caption = theme.label(
             page,
-            "Names and jargon Whisper keeps mishearing — one per line.\n"
-            "Fed to the decoder as a prompt, and to the cleanup model as preferred spellings.",
+            "Names and jargon Whisper keeps mishearing — one per line. Fed to the "
+            "decoder as a prompt, and to the cleanup model as preferred spellings.",
             size=9, colour=theme.TEXT_MUTED,
-        ).pack(anchor="w", pady=(0, 12))
+        )
+        caption.pack(anchor="w", fill="x", pady=(0, 14))
+        # Without a wraplength tied to the page a long caption runs off the
+        # right edge instead of flowing onto a second line.
+        page.bind("<Configure>",
+                  lambda e, w=caption: w.configure(wraplength=max(320, e.width - 8)),
+                  add="+")
 
+        card = widgets.Card(page, radius=14, padx=16, pady=14)
+        card.pack(fill="both", expand=True)
         text = tk.Text(
-            page, wrap="word", font=theme.mono(10), bg=theme.INK_RAISED, fg=theme.TEXT,
-            relief="flat", bd=0, padx=14, pady=12, highlightthickness=0,
-            insertbackground=theme.TEXT,
+            card.body, wrap="word", font=theme.mono(10), bg=theme.CARD, fg=theme.TEXT,
+            relief="flat", bd=0, highlightthickness=0, insertbackground=theme.TEXT,
+            height=14,
         )
         text.pack(fill="both", expand=True)
         self._dictionary_text = text
 
         footer = tk.Frame(page, bg=theme.INK)
-        footer.pack(fill="x", pady=(12, 0))
+        footer.pack(fill="x", pady=(14, 0))
         self._dictionary_status = theme.label(footer, "", size=9, colour=theme.TEXT_FAINT)
         self._dictionary_status.pack(side="left", pady=6)
         theme.button(footer, "Save", self._save_dictionary, primary=True).pack(side="right")
-        return page
 
     def _refresh_dictionary(self) -> None:
         self._dictionary_text.delete("1.0", "end")
@@ -310,115 +512,142 @@ class MainWindow:
         lines = [line.strip() for line in self._dictionary_text.get("1.0", "end").splitlines()]
         terms = [line for line in lines if line]
         dictionary.set_terms(terms)
-        # The prompt is capped, so say when the tail is being ignored rather
-        # than letting the user wonder why term 200 never helps.
         joined = ", ".join(terms)
         if len(joined) > dictionary.MAX_PROMPT_CHARS:
+            # The prompt is capped, so say when the tail is being ignored
+            # rather than letting the user wonder why term 200 never helps.
             self._dictionary_status.configure(
                 text=f"Saved {len(terms)} terms — only the first "
-                     f"{dictionary.MAX_PROMPT_CHARS} characters are sent to the model.",
-            )
+                     f"{dictionary.MAX_PROMPT_CHARS} characters reach the model.")
         else:
             self._dictionary_status.configure(text=f"Saved {len(terms)} terms.")
 
     # ── Settings ─────────────────────────────────────────────────────────
 
-    def _build_settings(self, parent):
+    def _build_settings(self, page) -> None:
         import tkinter as tk
 
-        page = tk.Frame(parent, bg=theme.INK)
-        canvas = tk.Canvas(page, bg=theme.INK, highlightthickness=0, bd=0)
-        scroll = theme.scrollbar(page, canvas.yview)
-        inner = tk.Frame(canvas, bg=theme.INK)
-        inner.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window_id, width=e.width))
-        canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+        self._header(page, "Settings")
+        body = self._scroll_area(page)
 
-        self._setting_widgets = {}
-        for key, label_text, kind, hint in SETTINGS:
-            row = tk.Frame(inner, bg=theme.INK)
-            # Right padding clears the scrollbar: the inner frame is stretched
-            # to the full canvas width, so a control packed hard right lands
-            # underneath it and gets visually clipped.
-            row.pack(fill="x", pady=7, padx=(0, 16))
-            left = tk.Frame(row, bg=theme.INK)
-            left.pack(side="left", fill="x", expand=True)
-            theme.label(left, label_text, size=10).pack(anchor="w")
-            if hint:
-                theme.label(left, hint, size=8, colour=theme.TEXT_FAINT).pack(anchor="w")
-            self._setting_widgets[key] = self._control(row, key, kind)
+        # DICTATION
+        widgets.section_title(body, "Dictation").pack(anchor="w", pady=(0, 8))
+        card = widgets.Card(body, radius=14, padx=16, pady=8)
+        card.pack(fill="x")
+        row = widgets.SettingRow(card.body, "tap", TINT_BLUE, "Activation",
+                                 "hold = push to talk")
+        widgets.Dropdown(row.control, [("hold", "Hold to talk"), ("toggle", "Tap to toggle")],
+                         lambda: config.get_str("FVActivationMode"),
+                         lambda v: config.set("FVActivationMode", v)).pack()
+        row = widgets.SettingRow(card.body, "keyboard", TINT_INDIGO, "Shortcut",
+                                 "e.g. ctrl+alt+space, f9, rctrl")
+        self._hotkey_var = tk.StringVar(value=config.get_str("FVHotkey"))
+        field = theme.entry(row.control, self._hotkey_var, bg=theme.CARD_HI)
+        field.configure(width=18, justify="center")
+        field.pack(ipady=5)
+        field.bind("<FocusOut>", lambda _e: self._save_hotkey())
+        field.bind("<Return>", lambda _e: self._save_hotkey())
+        row = widgets.SettingRow(card.body, "globe", TINT_TEAL, "Language")
+        widgets.Dropdown(row.control, [("ru", "Русский"), ("en", "English"),
+                                       ("auto", "Auto-detect")],
+                         lambda: config.get_str("FVLanguage"),
+                         self._set_language).pack()
+        row = widgets.SettingRow(card.body, "mic", TINT_PINK, "Microphone",
+                                 "empty = system default", last=True)
+        self._mic_var = tk.StringVar(value=config.get_str("FVMicrophone"))
+        mic = theme.entry(row.control, self._mic_var, bg=theme.CARD_HI)
+        mic.configure(width=22)
+        mic.pack(ipady=5)
+        mic.bind("<FocusOut>", lambda _e: config.set("FVMicrophone", self._mic_var.get()))
 
-        tk.Frame(inner, bg=theme.LINE, height=1).pack(fill="x", pady=16, padx=(0, 16))
-        footer = tk.Frame(inner, bg=theme.INK)
-        footer.pack(fill="x", padx=(0, 16))
-        theme.label(footer, f"Everything lives in {paths.home()}", size=8,
+        # TEXT PROCESSING
+        widgets.section_title(body, "Text processing").pack(anchor="w", pady=(20, 8))
+        card = widgets.Card(body, radius=14, padx=16, pady=8)
+        card.pack(fill="x")
+        self._switch_row(card.body, "bolt", TINT_ORANGE, "Streaming transcription",
+                         "decodes while you speak", "FVStreaming")
+        self._switch_row(card.body, "sparkle", TINT_INDIGO, "AI cleanup (Ollama)",
+                         "removes filler words and fixes punctuation", "FVCleanupEnabled")
+        row = widgets.SettingRow(card.body, "chip", TINT_GREY, "Cleanup model")
+        self._cleanup_var = tk.StringVar(value=config.get_str("FVOllamaModel"))
+        entry = theme.entry(row.control, self._cleanup_var, bg=theme.CARD_HI)
+        entry.configure(width=18)
+        entry.pack(ipady=5)
+        entry.bind("<FocusOut>", lambda _e: config.set("FVOllamaModel", self._cleanup_var.get()))
+        self._switch_row(card.body, "wand", TINT_GREEN, "Auto-fix garbled words",
+                         "only on low-confidence transcripts", "FVSmartFix", last=True)
+        theme.label(
+            body,
+            "Cleanup rewrites your words with a local model. The raw transcript is "
+            "always kept in History next to the cleaned one.",
+            size=8, colour=theme.TEXT_FAINT,
+        ).pack(anchor="w", pady=(8, 0))
+
+        # GENERAL
+        widgets.section_title(body, "General").pack(anchor="w", pady=(20, 8))
+        card = widgets.Card(body, radius=14, padx=16, pady=8)
+        card.pack(fill="x")
+        row = widgets.SettingRow(card.body, "power", TINT_GREEN, "Launch at login")
+        self._login_switch = widgets.Switch(
+            row.control, shortcut.launches_at_login,
+            lambda v: shortcut.set_launch_at_login(v))
+        self._login_switch.pack()
+        self._switch_row(card.body, "speaker", TINT_BLUE, "Sound feedback", "", "FVSounds")
+        self._switch_row(card.body, "mic", TINT_PINK, "Recording overlay",
+                         "the floating pill while you speak", "FVOverlay")
+        self._switch_row(card.body, "clipboard", TINT_GREY, "Paste via clipboard",
+                         "only for apps that ignore typed input",
+                         "FVPasteViaClipboard", last=True)
+
+        footer = tk.Frame(body, bg=theme.INK)
+        footer.pack(fill="x", pady=(20, 0))
+        theme.label(footer, f"Data and logs live in {paths.home()}", size=8,
                     colour=theme.TEXT_FAINT).pack(side="left", pady=6)
-        theme.button(footer, "Open data folder", self._open_folder).pack(side="right")
-        return page
+        theme.button(footer, "Open folder", self._open_folder).pack(side="right")
 
-    def _control(self, row, key: str, kind: str):
-        import tkinter as tk
+    def _switch_row(self, parent, glyph: str, tint: str, title: str, subtitle: str,
+                    key: str, last: bool = False) -> None:
+        row = widgets.SettingRow(parent, glyph, tint, title, subtitle, last=last)
+        switch = widgets.Switch(row.control, lambda: config.get_bool(key),
+                                lambda v: self._set_flag(key, v))
+        switch.pack()
 
-        if kind == "bool":
-            widget = tk.Label(
-                row, font=theme.font(9, "bold"), width=5, cursor="hand2",
-                relief="flat", bd=0, padx=10, pady=5,
-            )
+    def _set_flag(self, key: str, value: bool) -> None:
+        config.set(key, value)
+        if key in ("FVCleanupEnabled", "FVSmartFix") and value and self._app:
+            self._app.cleaner.warmup()
 
-            def toggle(_event=None) -> None:
-                config.set(key, not config.get_bool(key))
-                paint()
+    def _set_language(self, value: str) -> None:
+        config.set("FVLanguage", value)
+        if self._app:
+            self._app.transcriber.reset_session_language()
 
-            def paint() -> None:
-                on = config.get_bool(key)
-                widget.configure(text="ON" if on else "OFF",
-                                 bg=theme.OK if on else theme.INK_RAISED,
-                                 fg="#0B0D12" if on else theme.TEXT_MUTED)
+    def _save_hotkey(self) -> None:
+        """Validate before storing: a typo here silently produces a hotkey that
+        never fires, and the app would look dead rather than misconfigured."""
+        from tkinter import messagebox
 
-            widget.bind("<Button-1>", toggle)
-            paint()
-            widget.pack(side="right")
-            return widget
+        from ..hotkey import parse
 
-        if kind.startswith("choice:"):
-            options = kind.split(":", 1)[1].split(",")
-            holder = tk.Frame(row, bg=theme.INK)
-            holder.pack(side="right")
-            chips = {}
-
-            def choose(value: str) -> None:
-                config.set(key, value)
-                paint()
-
-            def paint() -> None:
-                current = config.get_str(key)
-                for value, chip in chips.items():
-                    active = value == current
-                    chip.configure(bg=theme.ACCENT if active else theme.INK_RAISED,
-                                   fg="#0B0D12" if active else theme.TEXT_MUTED)
-
-            for value in options:
-                chip = tk.Label(holder, text=value, font=theme.font(9), cursor="hand2",
-                                padx=10, pady=5)
-                chip.pack(side="left", padx=(6, 0))
-                chip.bind("<Button-1>", lambda _e, v=value: choose(v))
-                chips[value] = chip
-            paint()
-            return holder
-
-        variable = tk.StringVar(value=config.get_str(key))
-        field = theme.entry(row, variable)
-        field.configure(width=26)
-        field.pack(side="right", ipady=5)
-        field.bind("<FocusOut>", lambda _e: config.set(key, variable.get()))
-        field.bind("<Return>", lambda _e: config.set(key, variable.get()))
-        return field
+        value = self._hotkey_var.get().strip()
+        if value == config.get_str("FVHotkey"):
+            return
+        try:
+            parse(value)
+        except ValueError as exc:
+            messagebox.showwarning("Invalid shortcut", str(exc), parent=self._window)
+            self._hotkey_var.set(config.get_str("FVHotkey"))
+            return
+        config.set("FVHotkey", value)
+        messagebox.showinfo(
+            "Restart to apply",
+            "The shortcut changes when FortuneVoice restarts.", parent=self._window)
 
     def _refresh_settings(self) -> None:
-        pass  # controls read config on every paint
+        # Switches read config on every paint, but Launch-at-login reads the
+        # filesystem, which something else may have changed.
+        if hasattr(self, "_login_switch"):
+            self._login_switch.paint()
 
     @staticmethod
     def _open_folder() -> None:
@@ -427,14 +656,27 @@ class MainWindow:
         os.startfile(str(paths.home()))  # noqa: S606 - our own folder
 
 
+def _day_label(iso: str, today: dt.date) -> str:
+    try:
+        day = dt.datetime.fromisoformat(iso).date()
+    except ValueError:
+        return "Earlier"
+    if day == today:
+        return "Today"
+    if day == today - dt.timedelta(days=1):
+        return "Yesterday"
+    if (today - day).days < 7:
+        return day.strftime("%A")
+    return day.strftime("%d %B %Y")
+
+
 def _placeholder(entry, text: str):
-    """Grey hint text that clears on focus and comes back when left empty.
+    """Grey hint text that clears on focus and returns when left empty.
 
     Returns a predicate the caller MUST consult before treating the field's
     contents as input: inserting the placeholder fires the same change
     notification a keystroke does, so without it a freshly opened window would
-    immediately filter the history by the literal words "Search dictations"
-    and show nothing.
+    filter the history by the literal words "Search dictations".
     """
     state = {"showing": False}
 
@@ -443,7 +685,7 @@ def _placeholder(entry, text: str):
             return
         state["showing"] = True
         entry.insert(0, text)
-        entry.configure(fg=theme.TEXT_FAINT)
+        entry.configure(fg=theme.TEXT_MUTED)
 
     def clear(_event=None) -> None:
         if state["showing"]:

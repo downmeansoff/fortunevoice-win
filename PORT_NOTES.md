@@ -151,8 +151,39 @@ scrolling history of per-block RMS — the app has no spectrum analyser, and a
 scrolling level history is an honest picture of what it does have.
 
 **ttk is avoided throughout.** On Windows the native theme engine overrides
-background colours on ttk widgets, so a dark `ttk.Notebook` renders grey. The
-tab strip is four labels and a bound click.
+background colours on ttk widgets, so a dark `ttk.Notebook` renders grey and a
+`ttk.Button` refuses a dark fill. Every control here is a plain widget or a
+Canvas drawing: the nav rail, the iOS-style switches, the value dropdowns
+(a Canvas chip that posts a `tk.Menu`, which *does* honour colours), the
+chips, and the rounded cards.
+
+**`Card` is the recurring trick.** A Canvas paints the rounded rectangle and
+hosts an ordinary Frame inset far enough that the Frame's square corners never
+poke through the drawn ones. It auto-sizes from the content's requested
+height, because a Canvas otherwise has no idea what is inside it and falls
+back to its 7 cm default — which is what a "why is every history card 250 px
+tall" bug looks like.
+
+**Glyphs are drawn in code** (`ui/icons.py`). SF Symbols have no Windows
+equivalent worth depending on: Segoe Fluent Icons is Windows 11 only and
+addresses glyphs through private-use codepoints, and colour emoji clash with a
+flat blue accent.
+
+Four bugs from this pass, all found by looking at screenshots rather than by
+reading the code:
+
+- `ImageDraw.arc` takes an absolute **end** angle; the Tk canvas takes a
+  **sweep**. Writing the Tk form raised `TypeError` inside the first icon, which
+  aborted the whole window build and left it blank.
+- `bind("<Configure>", …)` **replaces** an existing binding. The history card
+  set its own wraplength handler on the same event `Card` uses to auto-size,
+  silently disabling it. `add="+"` is load-bearing.
+- A `PhotoImage` referenced only from a short-lived helper object is collected
+  and becomes a blank square. Tk keeps child *widgets* alive through
+  `master.children`, so the reference has to hang off the widget doing the
+  drawing, not off the helper.
+- Pillow's ICO writer silently discards requested sizes larger than the image
+  being saved (see below).
 
 Two layout bugs worth remembering, both found by screenshotting the windows
 rather than by reading the code:
