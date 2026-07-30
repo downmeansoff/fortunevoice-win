@@ -1,0 +1,23 @@
+# Core runtime. Everything here is a pure-Python or small binary wheel.
+faster-whisper>=1.1.0
+sounddevice>=0.4.6
+numpy>=1.24,<3
+pystray>=0.19.5
+pillow>=10.0
+
+# CUDA runtime libraries.
+#
+# CTranslate2 needs cuBLAS and cuDNN 9 and does NOT bundle them. Installing
+# them from pip is ~1 GB, which is why they are commented out rather than
+# pulled in silently — uncomment (or run the pip line by hand) if you want GPU
+# decoding, which on an RTX 3060 is roughly 10x faster than the CPU path:
+#
+#   pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+#
+# On Windows the DLLs land inside site-packages and are NOT on the loader
+# path; fortunevoice registers those directories itself at model load
+# (see _add_cuda_dll_directories in transcriber.py), so no manual DLL copying
+# into System32 is needed.
+#
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12>=9.0

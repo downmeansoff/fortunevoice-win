@@ -1,0 +1,769 @@
+"""The dictation state machine.
+
+Port of Sources/FortuneVoice/AppDelegate.swift. Every timeout, threshold and
+ordering decision here was paid for with a real bug on macOS; the comments say
+which one, because without that context they all look arbitrary and the next
+person to "simplify" them will reintroduce the bug.
+
+Threading, which is where this differs structurally from the Swift original:
+
+* The hotkey hook calls us from inside a Windows hook callback that must
+  return in milliseconds. It only enqueues; nothing else.
+* A **controller** thread drains that queue and drives the state machine. It
+  stays responsive — a press arriving mid-transcription is rejected on the
+  spot by the state guard, exactly as the `@MainActor` version rejected it.
+* Each dictation's transcribe → clean → deliver pipeline runs on its **own**
+  worker thread, so a slow decode never wedges the controller.
+"""
+
+from __future__ import annotations
+
+import enum
+import queue
+import threading
+import time
+from typing import Callable
+
+import numpy as np
+
+from . import config, dictionary, injector, metrics, paths, sound, winapi
+from .audio import AudioError, AudioRecorder, max_window_rms
+from .cleaner import OllamaCleaner
+from .hotkey import HotkeyListener, parse as parse_hotkey
+from .log import get as get_logger
+from .store import DictationRecord, DictationStore, RecoveryStore
+from .streaming import StreamingSession
+from .textclean import collapse_repeats, word_count
+from .timeout import run as run_with_timeout
+from .transcriber import Result, Transcriber, TranscriberError
+
+logger = get_logger("app")
+
+SAMPLE_RATE = 16_000
+
+
+class State(enum.Enum):
+    LOADING = "loading"
+    IDLE = "idle"
+    RECORDING = "recording"
+    PROCESSING = "processing"
+    ERROR = "error"
+
+
+class App:
+    # Drop the transcript instead of typing it when this much time passed since
+    # key-up — the user has moved focus elsewhere by then.
+    STALE_PASTE_LIMIT = 20.0
+    # How long recording continues past key-up to catch the final syllable.
+    # Users release the key on the last syllable and Whisper chews the final
+    # word otherwise. This is a fixed cost on EVERY dictation, so it is kept to
+    # the shortest span that still catches a trailing syllable.
+    TAIL_CAPTURE = 0.2
+    # Watchdog for a wedged transcription (should never trigger post-warmup).
+    TRANSCRIBE_TIMEOUT = 90.0
+    # Headroom over the decode timeout for cleanup and delivery.
+    PROCESSING_WATCHDOG_SLACK = 30.0
+    # What the LLM cleanup is allowed to SPEND. The predictor declines work
+    # that doesn't fit rather than starting it and being cut off: macOS metrics
+    # showed 24 of 60 cleanup runs burning a flat 3 s deadline and having their
+    # output discarded — 3 s of waiting for the raw transcript the user would
+    # have got anyway.
+    CLEANUP_BUDGET = 1.5
+    # Garbled (low-confidence) transcripts get more. Polishing punctuation on a
+    # confident decode is worth ~1.5 s at most; reconstructing text the user
+    # otherwise cannot read is worth the wait.
+    SMART_FIX_BUDGET = 3.0
+    # Backstop for an Ollama that stalls instead of generating, added on top of
+    # the budget so a well-behaved call is never cut off by it.
+    CLEANUP_DEADLINE_SLACK = 0.5
+    # Below this the decode is treated as garbled and cleanup may rewrite words.
+    LOW_CONFIDENCE_LOGPROB = -0.9
+    # Dead-mic early warning: if the first seconds carry no signal at all, say
+    # so while the user can still fix it, instead of after an empty transcript.
+    NO_SIGNAL_CHECK_DELAY = 2.5
+    NO_SIGNAL_LOUDNESS = 0.05
+    # 4 s, not 2: a two-second pause is a normal mid-sentence think — cutting
+    # there loses the continuation. 4 s only ends genuinely finished speech.
+    SILENCE_STOP_SECONDS = 4.0
+    # Hard cap. Hold mode relies on a key-up that can simply never arrive
+    # (focus stolen mid-press, the machine sleeping), and without a cap that
+    # leaves the app recording forever with the state stuck outside idle —
+    # which silently kills the hotkey for the rest of the session.
+    MAX_RECORDING_SECONDS = 300.0
+    # Ignore only true accidental taps. Anything longer is transcribed; if it
+    # turns out empty the empty-text guard handles it — we never drop a real
+    # short word ("да", "нет", "стоп") unheard.
+    MIN_SAMPLES = 1_600
+
+    def __init__(self) -> None:
+        self.recorder = AudioRecorder()
+        self.transcriber = Transcriber()
+        self.cleaner = OllamaCleaner()
+        self.store = DictationStore()
+        self.recovery = RecoveryStore()
+
+        self._state = State.LOADING
+        self._state_lock = threading.Lock()
+        self._events: queue.Queue = queue.Queue()
+        self._controller: threading.Thread | None = None
+        self._listener: HotkeyListener | None = None
+        self._session: StreamingSession | None = None
+
+        self._watchdog: threading.Timer | None = None
+        self._auto_stop: threading.Thread | None = None
+        self._recording_started = 0.0
+        self._last_loud = 0.0
+        self._peak_level = 0.0
+        self._no_signal_shown = False
+
+        self.last_transcript = ""
+        self.status_note = ""
+        # UI hooks (the tray sets these).
+        self.on_state_change: Callable[[State], None] | None = None
+        self.on_notify: Callable[[str, str], None] | None = None
+
+        self.recorder.on_level = self._on_level
+        self.recorder.on_interrupted = lambda: self._events.put(("interrupted", time.monotonic()))
+
+    # ── state ────────────────────────────────────────────────────────────
+
+    @property
+    def state(self) -> State:
+        with self._state_lock:
+            return self._state
+
+    def _set_state(self, state: State, note: str = "") -> None:
+        with self._state_lock:
+            if self._state == state and self.status_note == note:
+                return
+            self._state = state
+            self.status_note = note
+        if self.on_state_change:
+            try:
+                self.on_state_change(state)
+            except Exception:  # noqa: BLE001 - a broken tray must not stop dictation
+                logger.exception("state-change handler failed")
+
+    def _notify(self, title: str, body: str) -> None:
+        logger.info("%s — %s", title, body)
+        if self.on_notify:
+            try:
+                self.on_notify(title, body)
+            except Exception:  # noqa: BLE001
+                logger.debug("notification failed", exc_info=True)
+
+    # ── lifecycle ────────────────────────────────────────────────────────
+
+    def start(self) -> None:
+        self.recovery.prune_old()
+        self.store.prune(config.get_int("FVRetentionDays"))
+
+        self._controller = threading.Thread(
+            target=self._controller_loop, name="controller", daemon=True
+        )
+        self._controller.start()
+
+        try:
+            spec = parse_hotkey(config.get_str("FVHotkey"))
+        except ValueError as exc:
+            logger.error("%s — falling back to ctrl+alt+space", exc)
+            self._notify("Bad hotkey in config.json", str(exc))
+            spec = parse_hotkey("ctrl+alt+space")
+        self._listener = HotkeyListener(
+            spec,
+            on_press=lambda: self._events.put(("press", time.monotonic())),
+            on_release=lambda: self._events.put(("release", time.monotonic())),
+        )
+        self._listener.start()
+
+        threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
+        if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
+            self.cleaner.warmup()
+
+    def stop(self) -> None:
+        if self._listener:
+            self._listener.stop()
+        self._events.put(("quit", time.monotonic()))
+
+    @property
+    def hotkey_label(self) -> str:
+        return self._listener.spec.label if self._listener else config.get_str("FVHotkey")
+
+    def _load_model(self) -> None:
+        self._set_state(State.LOADING)
+        try:
+            self.transcriber.load()
+        except TranscriberError as exc:
+            logger.error("model load failed: %s", exc)
+            self._set_state(State.ERROR, "Model failed to load")
+            self._notify("FortuneVoice couldn't load the model", str(exc).split("\n")[0])
+            return
+        self._set_state(State.IDLE)
+
+    def reload_model(self) -> None:
+        threading.Thread(target=self._load_model, name="model-reload", daemon=True).start()
+
+    # ── controller ───────────────────────────────────────────────────────
+
+    def _controller_loop(self) -> None:
+        while True:
+            kind, stamp = self._events.get()
+            if kind == "quit":
+                return
+            # A press that waited behind something slow is not a press the user
+            # still means; acting on it would start a recording they abandoned.
+            if kind in ("press", "release") and time.monotonic() - stamp > 1.0:
+                logger.debug("dropping stale %s event", kind)
+                continue
+            try:
+                if kind == "press":
+                    self._on_press()
+                elif kind == "release":
+                    self._on_release()
+                elif kind == "interrupted":
+                    self._on_interrupted()
+            except Exception:  # noqa: BLE001 - one bad event must not end the loop
+                logger.exception("controller failed on %s", kind)
+                self._set_state(State.IDLE)
+
+    def _on_press(self) -> None:
+        if config.get_str("FVActivationMode") == "toggle":
+            if self.state == State.RECORDING:
+                self._stop_dictation()
+            else:
+                self._start_dictation()
+        else:
+            self._start_dictation()
+
+    def _on_release(self) -> None:
+        if config.get_str("FVActivationMode") == "toggle":
+            return
+        self._stop_dictation()
+
+    def _on_interrupted(self) -> None:
+        """Input device died mid-recording. Don't throw away what was already
+        captured — transcribe and deliver it (truncated is far better than
+        erased), exactly like a normal key-up."""
+        if self.state != State.RECORDING:
+            return
+        logger.warning("recording interrupted — salvaging captured audio")
+        self._finish_dictation(time.monotonic(), winapi.foreground_window())
+
+    # ── dictation ────────────────────────────────────────────────────────
+
+    def _start_dictation(self) -> None:
+        state = self.state
+        logger.info("hotkey DOWN (state = %s)", state.value)
+        if state != State.IDLE:
+            return
+        try:
+            self.recorder.start(config.get_str("FVMicrophone"))
+        except AudioError as exc:
+            logger.error("recording failed: %s", exc)
+            self._notify("FortuneVoice can't hear you", str(exc))
+            sound.play("error")
+            return
+
+        self._recording_started = time.monotonic()
+        self._last_loud = self._recording_started
+        self._peak_level = 0.0
+        self._no_signal_shown = False
+        self._set_state(State.RECORDING)
+        sound.play("start")
+        self._arm_auto_stop()
+
+        # Load the cleanup model now, while the user is still talking — a cold
+        # Ollama load costs ~9 s if it happens after they release.
+        if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
+            self.cleaner.warmup()
+        # Same idea for Whisper: after a long idle the pipeline has to spin back
+        # up, and that cost otherwise lands inside the key-up → paste wait.
+        self.transcriber.reset_session_language()
+        self.transcriber.warmup()
+
+        if config.get_bool("FVStreaming"):
+            # Hand the cleaner in so confirmed prefixes get cleaned DURING the
+            # recording; at key-up only the tail is left to clean.
+            live_cleaner = self.cleaner if config.get_bool("FVCleanupEnabled") else None
+            self._session = StreamingSession(
+                self.transcriber, self.recorder,
+                cleaner=live_cleaner, vocabulary=dictionary.prompt_string(),
+            )
+            self._session.start()
+
+    def _stop_dictation(self) -> None:
+        if self.state != State.RECORDING:
+            return
+        key_up = time.monotonic()
+        # Remember where the user was aiming so we never type into a window
+        # they switched to while we were transcribing.
+        target = winapi.foreground_window()
+        # Tail capture; see TAIL_CAPTURE.
+        time.sleep(self.TAIL_CAPTURE)
+        self._finish_dictation(key_up, target)
+
+    def _arm_auto_stop(self) -> None:
+        """Auto-stop the recording. In toggle mode a run of silence ends it, so
+        the user never has to remember to. In BOTH modes the hard cap applies."""
+        silence_stops = config.get_str("FVActivationMode") == "toggle"
+
+        def watch() -> None:
+            while self.state == State.RECORDING:
+                time.sleep(0.4)
+                now = time.monotonic()
+                if silence_stops and now - self._last_loud > self.SILENCE_STOP_SECONDS:
+                    self._events.put(("release", time.monotonic()))
+                    return
+                if now - self._recording_started > self.MAX_RECORDING_SECONDS:
+                    logger.warning("recording hit the %.0fs cap", self.MAX_RECORDING_SECONDS)
+                    self._events.put(("release", time.monotonic()))
+                    return
+
+        self._auto_stop = threading.Thread(target=watch, name="auto-stop", daemon=True)
+        self._auto_stop.start()
+
+    def _on_level(self, level: float) -> None:
+        """Called from the audio thread — keep it to arithmetic."""
+        if level > 0.2:
+            self._last_loud = time.monotonic()
+        self._peak_level = max(self._peak_level, level)
+        if (
+            not self._no_signal_shown
+            and self.state == State.RECORDING
+            and time.monotonic() - self._recording_started > self.NO_SIGNAL_CHECK_DELAY
+            and self._peak_level < self.NO_SIGNAL_LOUDNESS
+        ):
+            self._no_signal_shown = True
+            self._set_state(State.RECORDING, "no signal from the microphone")
+
+    def _arm_watchdog(self, seconds: float) -> None:
+        """Last-resort guard on PROCESSING.
+
+        The hotkey is gated on the app being idle, so any pipeline step that
+        never returns doesn't just lose one dictation — it kills dictation for
+        the rest of the session, with no recovery and nothing on screen to
+        explain it. The per-step timeouts are the real defense; this is the
+        backstop for the step nobody thought to bound.
+        """
+        self._cancel_watchdog()
+
+        def fire() -> None:
+            if self.state != State.PROCESSING:
+                return
+            logger.error("processing never finished after %.0f s — forcing idle", seconds)
+            sound.play("error")
+            self._set_state(State.IDLE)
+
+        self._watchdog = threading.Timer(seconds, fire)
+        self._watchdog.daemon = True
+        self._watchdog.start()
+
+    def _cancel_watchdog(self) -> None:
+        if self._watchdog:
+            self._watchdog.cancel()
+            self._watchdog = None
+
+    def _finish_dictation(self, key_up: float, target_window: int) -> None:
+        if self.state != State.RECORDING:
+            return
+        samples = self.recorder.stop()
+        session, self._session = self._session, None
+        audio_seconds = samples.size / SAMPLE_RATE
+        logger.info("captured %.1fs of audio", audio_seconds)
+
+        if samples.size <= self.MIN_SAMPLES:
+            if session:
+                session.abort()
+            self._set_state(State.IDLE)
+            return
+
+        self._set_state(State.PROCESSING)
+        # The watchdog must exceed the longest possible decode: a multi-minute
+        # dictation can take longer than a flat 90 s. Scale it with audio length
+        # so a legitimate long recording is never timed out and lost.
+        decode_timeout = max(self.TRANSCRIBE_TIMEOUT, audio_seconds * 3)
+        self._arm_watchdog(decode_timeout + self.PROCESSING_WATCHDOG_SLACK)
+
+        threading.Thread(
+            target=self._pipeline,
+            args=(samples, session, key_up, target_window, decode_timeout),
+            name="pipeline",
+            daemon=True,
+        ).start()
+
+    def _pipeline(
+        self,
+        samples: np.ndarray,
+        session: StreamingSession | None,
+        key_up: float,
+        target_window: int,
+        decode_timeout: float,
+    ) -> None:
+        started = time.monotonic()
+        audio_seconds = samples.size / SAMPLE_RATE
+        stream_passes = session.pass_count if session else 0
+        try:
+            # Clear any warmup decode out of the pipeline so it can't sit in
+            # front of the real one.
+            self.transcriber.cancel_warmup()
+
+            stt_started = time.monotonic()
+            # The prefix cleaned during recording is only usable when the
+            # stitched decode is what we ended up with. Bind it here rather than
+            # reading it later: a finish() that lost to the watchdog can still
+            # set it from the background, and splicing that prefix onto the
+            # batch text would duplicate the opening of the dictation.
+            pre_cleaned: tuple[str, str] | None = None
+            if session:
+                try:
+                    result = run_with_timeout(decode_timeout, lambda: session.finish(samples))
+                    pre_cleaned = session.last_pre_cleaned
+                except Exception as exc:  # noqa: BLE001
+                    # Streaming failed — fall back to the plain batch path so
+                    # the dictation is never lost.
+                    logger.warning("streaming failed (%s), batch fallback", exc)
+                    result = run_with_timeout(
+                        decode_timeout, lambda: self.transcriber.transcribe(samples)
+                    )
+            else:
+                result = run_with_timeout(
+                    decode_timeout, lambda: self.transcriber.transcribe(samples)
+                )
+            stt_ms = (time.monotonic() - stt_started) * 1000
+            stream_passes = session.pass_count if session else 0
+
+            raw_text = result.text
+            audio_level = max_window_rms(samples)
+
+            if not raw_text:
+                self._handle_empty(
+                    samples, result, audio_level, audio_seconds, stt_ms, key_up,
+                    stream_passes, decode_timeout, target_window, started,
+                )
+                return
+
+            # Silence-hallucination guard: Whisper invents "Спасибо" / "Thank
+            # you" on near-silent audio. Only drop when the model flags no
+            # speech AND the audio is genuinely silent by RMS. Even then, still
+            # save it to History (untyped) so a false positive is recoverable —
+            # never a truly silent drop.
+            if result.no_speech_prob > 0.6 and audio_level < 0.006:
+                logger.warning(
+                    "silence hallucination (no_speech %.2f, rms %.3f) — saved, not typed",
+                    result.no_speech_prob, audio_level,
+                )
+                self.store.add(
+                    DictationRecord(
+                        date=metrics.now(), words=word_count(raw_text),
+                        duration=audio_seconds, app=None, transcript=raw_text,
+                    )
+                )
+                sound.play("error")
+                self._record_drop("silence", raw_text, audio_seconds, stt_ms, key_up,
+                                  stream_passes, result)
+                return
+
+            text, cleanup_ms, pre_cleaned_words = self._run_cleanup(
+                raw_text, result, pre_cleaned
+            )
+            self._deliver(
+                text, raw_text, samples, result, key_up, started, stt_ms, cleanup_ms,
+                target_window, retried=False, stream_passes=stream_passes,
+                shadow=session.last_shadow if session else None,
+                pre_cleaned_words=pre_cleaned_words,
+            )
+        except Exception as exc:  # noqa: BLE001 - the words are not lost, see below
+            logger.error("transcription failed: %s", exc, exc_info=True)
+            # Audio goes to the recovery pad; the tray gains a Recover item.
+            self.recovery.save(samples)
+            sound.play("error")
+            self._notify(
+                "FortuneVoice couldn't transcribe that",
+                "The audio was saved — use “Recover failed dictation” in the tray menu.",
+            )
+            metrics.record(
+                metrics.DictationMetric(
+                    date=metrics.now(), capture_sec=audio_seconds,
+                    stt_ms=(time.monotonic() - started) * 1000, cleanup_ms=0,
+                    total_ms=(time.monotonic() - key_up) * 1000, chars=0,
+                    outcome="error", cleanup_skipped=True, retried=False,
+                    stream_passes=stream_passes, logprob=0.0,
+                    model=self.transcriber.loaded_model or "?",
+                    device=self.transcriber.device,
+                )
+            )
+        finally:
+            self._cancel_watchdog()
+            self._set_state(State.IDLE)
+
+    def _handle_empty(
+        self, samples, result, audio_level, audio_seconds, stt_ms, key_up,
+        stream_passes, decode_timeout, target_window, started,
+    ) -> None:
+        """Empty transcript. If the audio was actually loud, the decoder failed
+        on real speech — retry once (timed) before giving up."""
+        if audio_level > 0.02:
+            logger.warning("empty transcript on loud audio (rms %.3f), retrying", audio_level)
+            try:
+                retry = run_with_timeout(
+                    decode_timeout, lambda: self.transcriber.transcribe(samples)
+                )
+            except Exception:  # noqa: BLE001
+                retry = None
+            if retry and retry.text:
+                self._deliver(
+                    retry.text, retry.text, samples, retry, key_up, started, stt_ms, 0.0,
+                    target_window, retried=True, stream_passes=stream_passes,
+                )
+                return
+
+        logger.warning("empty transcript (rms %.3f), nothing to type", audio_level)
+        if audio_level > 0.02:
+            # Loud audio, two failed decodes — that was real speech the decoder
+            # lost. Keep the audio for a manual retry.
+            self.recovery.save(samples)
+        # Never end a dictation without telling the user what happened — a
+        # silent drop reads as "the app ate my words".
+        sound.play("error")
+        if audio_level < 0.006:
+            self._notify(
+                "FortuneVoice didn't hear anything",
+                "The microphone picked up no signal — check the input device in the tray menu.",
+            )
+        self._record_drop(
+            "silence" if audio_level < 0.006 else "empty", "", audio_seconds, stt_ms,
+            key_up, stream_passes, result,
+        )
+
+    def _run_cleanup(
+        self, raw_text: str, result: Result, pre_cleaned: tuple[str, str] | None
+    ) -> tuple[str, float, int | None]:
+        """Cleanup with its own safety net. Hard deadline: macOS metrics showed
+        a cold Ollama load stalling this for ~16 s — raw Whisper text NOW beats
+        perfect text later, so past the deadline we type raw and let the LLM
+        finish unused."""
+        cleanup_enabled = config.get_bool("FVCleanupEnabled")
+        smart_fix = config.get_bool("FVSmartFix")
+        low_confidence = result.avg_logprob < self.LOW_CONFIDENCE_LOGPROB
+        if not (cleanup_enabled or (low_confidence and smart_fix)):
+            return raw_text, 0.0, None
+
+        started = time.monotonic()
+        vocabulary = dictionary.prompt_string()
+        # The confirmed prefix was already cleaned while the user was still
+        # speaking, so only the unconfirmed tail is on the clock here. Low
+        # confidence opts out: reconstructing garbled words needs the whole
+        # text as context.
+        if low_confidence:
+            pre_cleaned = None
+        to_clean = pre_cleaned[1] if pre_cleaned else raw_text
+        budget = self.SMART_FIX_BUDGET if low_confidence else self.CLEANUP_BUDGET
+
+        try:
+            cleaned_part = run_with_timeout(
+                budget + self.CLEANUP_DEADLINE_SLACK,
+                lambda: self.cleaner.clean(
+                    to_clean, low_confidence=low_confidence,
+                    vocabulary=vocabulary, budget=budget,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - raw text is always acceptable
+            logger.info("cleanup did not land in time (%s), using raw text", exc)
+            cleaned_part = to_clean
+
+        if pre_cleaned:
+            text = self._assemble(pre_cleaned[0], cleaned_part, raw_text)
+            pre_cleaned_words = word_count(pre_cleaned[0])
+        else:
+            text = cleaned_part
+            pre_cleaned_words = None
+        return text, (time.monotonic() - started) * 1000, pre_cleaned_words
+
+    @staticmethod
+    def _assemble(prefix: str, remainder: str, raw: str) -> str:
+        """Join the prefix cleaned during recording with the freshly cleaned
+        tail. Same safety net as the whole-text path: if the assembled result
+        lost more than ~35% of the spoken words, something ate content — use
+        the raw transcript. Losing punctuation beats losing sentences."""
+        joined = collapse_repeats(" ".join(p for p in (prefix, remainder) if p))
+        raw_words = word_count(raw)
+        joined_words = word_count(joined)
+        if not joined or (raw_words >= 6 and joined_words < int(raw_words * 0.65)):
+            logger.warning(
+                "assembled cleanup dropped too much (%d→%d words), using raw",
+                raw_words, joined_words,
+            )
+            return raw
+        return joined
+
+    # ── delivery ─────────────────────────────────────────────────────────
+
+    def _deliver(
+        self, text: str, raw: str, samples: np.ndarray, result: Result, key_up: float,
+        started: float, stt_ms: float, cleanup_ms: float, target_window: int,
+        retried: bool = False, stream_passes: int = 0, shadow=None,
+        pre_cleaned_words: int | None = None,
+    ) -> None:
+        """Deliver the final transcript.
+
+        ORDER MATTERS for reliability: the text is saved to History FIRST (the
+        vault — it can never be lost from here on), then routed to the focused
+        app. Every path keeps the text recoverable; nothing is ever silently
+        discarded.
+        """
+        if not text:
+            return
+        audio_seconds = samples.size / SAMPLE_RATE
+        self.last_transcript = text
+
+        # ── Vault: persist before any step that could fail. Keep the raw
+        # transcript too when cleanup changed it, so the exact spoken words are
+        # always recoverable even if the LLM mis-edited. ──
+        self.store.add(
+            DictationRecord(
+                date=metrics.now(), words=word_count(text), duration=audio_seconds,
+                app=winapi.foreground_app_name(), transcript=text,
+                raw=None if raw == text else raw,
+            )
+        )
+
+        total_ms = (time.monotonic() - key_up) * 1000
+        if config.get_bool("FVDebugTimings"):
+            logger.info(
+                "timings capture=%.1fs stt=%.0fms cleanup=%.0fms total=%.0fms "
+                "logprob=%.2f chars=%d",
+                audio_seconds, stt_ms, cleanup_ms, total_ms, result.avg_logprob, len(text),
+            )
+        else:
+            logger.info("key-up → typed %.0f ms (%d chars)", total_ms, len(text))
+
+        # Focus guard: a transient popup can steal focus and hand it back, so
+        # recheck once after a short settle before deciding.
+        current = winapi.foreground_window()
+        focus_held = target_window == 0 or current == target_window
+        if not focus_held:
+            time.sleep(0.5)
+            focus_held = winapi.foreground_window() == target_window
+
+        stale = time.monotonic() - started >= self.STALE_PASTE_LIMIT
+        editable = injector.focused_element_is_editable()
+
+        # Sub-reason in the outcome so metrics can tell WHY the text wasn't
+        # typed — a plain "panel" hid four very different failure modes.
+        if stale:
+            outcome = "panel-stale"
+            self._hold("Took a while — saved to History", text)
+        elif not focus_held:
+            outcome = "panel-focus"
+            sound.play("success")
+            self._hold("You switched windows — saved to History", text)
+        elif editable is False:
+            outcome = "panel-noedit"
+            sound.play("success")
+            self._hold("No text field — saved to History", text)
+        elif injector.inject(text):
+            outcome = "pasted" if editable is True else "pasted-blind"
+            logger.info("outcome = typed (editable = %s)", "yes" if editable else "unknown")
+            sound.play("success")
+        else:
+            outcome = "panel-failed"
+            self._hold("Couldn't type it — saved to History", text)
+
+        metrics.record(
+            metrics.DictationMetric(
+                date=metrics.now(), capture_sec=audio_seconds, stt_ms=stt_ms,
+                cleanup_ms=cleanup_ms, total_ms=total_ms, chars=len(text),
+                outcome=outcome,
+                # < 20 ms means no LLM round-trip happened (disabled, or
+                # needs_cleanup said the text was already clean) — an HTTP call
+                # is never that fast.
+                cleanup_skipped=cleanup_ms < 20, retried=retried,
+                stream_passes=stream_passes, logprob=result.avg_logprob,
+                model=self.transcriber.loaded_model or "?",
+                device=self.transcriber.device,
+                cleanup_chunks=self.cleaner.last_chunk_count or None,
+                cleanup_skipped_sentences=self.cleaner.last_skipped_sentences or None,
+                shadow_diff_words=shadow.diff_words if shadow else None,
+                stitched_ms=shadow.stitched_ms if shadow else None,
+                batch_ms=shadow.batch_ms if shadow else None,
+                pre_cleaned_words=pre_cleaned_words,
+                cleanup_over_budget=self.cleaner.last_over_budget_chunks or None,
+            )
+        )
+
+    def _hold(self, reason: str, text: str) -> None:
+        """We couldn't type it. macOS showed a floating panel with a Copy
+        button; on Windows the transcript sits in History and the tray menu's
+        "Copy last dictation" puts it on the clipboard — deliberately opt-in,
+        so nothing the user dictated silently lands in their clipboard."""
+        logger.info("outcome = held (%s)", reason)
+        preview = text if len(text) <= 120 else text[:117] + "…"
+        self._notify(reason, preview)
+
+    def _record_drop(
+        self, outcome: str, text: str, audio_seconds: float, stt_ms: float,
+        key_up: float, stream_passes: int, result: Result,
+    ) -> None:
+        metrics.record(
+            metrics.DictationMetric(
+                date=metrics.now(), capture_sec=audio_seconds, stt_ms=stt_ms,
+                cleanup_ms=0, total_ms=(time.monotonic() - key_up) * 1000,
+                chars=len(text), outcome=outcome, cleanup_skipped=True, retried=False,
+                stream_passes=stream_passes, logprob=result.avg_logprob,
+                model=self.transcriber.loaded_model or "?",
+                device=self.transcriber.device,
+            )
+        )
+
+    # ── recovery ─────────────────────────────────────────────────────────
+
+    def recover_failed(self) -> None:
+        """Re-decode the newest failed recording; success lands in History."""
+        if self.state != State.IDLE:
+            return
+        pending = self.recovery.pending()
+        if not pending:
+            return
+        path = pending[-1]
+        samples = self.recovery.load(path)
+        if samples is None:
+            return
+        self._set_state(State.PROCESSING)
+
+        def run() -> None:
+            try:
+                timeout = max(self.TRANSCRIBE_TIMEOUT, samples.size / SAMPLE_RATE * 3)
+                result = run_with_timeout(
+                    timeout, lambda: self.transcriber.transcribe(samples)
+                )
+                if not result.text:
+                    sound.play("error")  # still nothing — keep the WAV for later
+                    return
+                self.last_transcript = result.text
+                self.store.add(
+                    DictationRecord(
+                        date=metrics.now(), words=word_count(result.text),
+                        duration=samples.size / SAMPLE_RATE, app=None,
+                        transcript=result.text,
+                    )
+                )
+                self.recovery.delete(path)
+                sound.play("success")
+                self._notify("Recovered — saved to History", result.text[:120])
+            except Exception as exc:  # noqa: BLE001 - the WAV stays for another attempt
+                logger.error("recovery decode failed: %s", exc)
+                sound.play("error")
+            finally:
+                self._set_state(State.IDLE)
+
+        threading.Thread(target=run, name="recover", daemon=True).start()
+
+    def copy_last(self) -> bool:
+        if not self.last_transcript:
+            return False
+        return injector.set_clipboard_text(self.last_transcript)
+
+    def open_data_folder(self) -> None:
+        import os
+
+        os.startfile(str(paths.home()))  # noqa: S606 - opening our own folder

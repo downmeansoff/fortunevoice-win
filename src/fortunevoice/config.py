@@ -1,0 +1,135 @@
+"""User settings.
+
+macOS used `defaults write com.fortunevoice.app FVModel …`. Windows has no
+equivalent worth emulating (the registry is hostile to hand-editing), so the
+same keys live in a JSON file the user can open in any editor:
+
+    %APPDATA%\\FortuneVoice\\config.json
+
+Key names are kept identical to the macOS `FV*` defaults so the two ports'
+documentation, metrics and bug reports stay comparable.
+
+Reads are cached with an mtime check: the dictation hot path touches config
+several times per keypress, and re-parsing the file each time is pointless —
+but a user editing the file mid-session should still see it take effect
+without a restart.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from typing import Any
+
+from . import paths
+
+DEFAULTS: dict[str, Any] = {
+    # Hold this to dictate. Modifiers: ctrl, alt, shift, win. See hotkey.py for
+    # the accepted key names. NOT alt+space like macOS: on Windows that is the
+    # system window menu, and swallowing it globally breaks a real OS shortcut.
+    "FVHotkey": "ctrl+alt+space",
+    # "hold" (push-to-talk) or "toggle" (tap to start, tap to stop).
+    "FVActivationMode": "hold",
+    # Whisper weights. Prefix-matched names from the macOS build don't apply:
+    # faster-whisper takes a CTranslate2 repo id or a local path.
+    "FVModel": "large-v3-turbo",
+    # Fallback when FVModel won't load (no VRAM, bad download).
+    "FVFallbackModel": "small",
+    # "cuda", "cpu", or "auto" (cuda when available, else cpu).
+    "FVDevice": "auto",
+    # "ru", "en", … or "auto" to detect per dictation.
+    "FVLanguage": "ru",
+    # LLM cleanup through a local Ollama.
+    "FVCleanupEnabled": True,
+    # Repair garbled (low-confidence) transcripts even when cleanup is off.
+    "FVSmartFix": True,
+    "FVOllamaModel": "gemma3:4b",
+    "FVOllamaHost": "http://localhost:11434",
+    # Transcribe while the user is still talking.
+    "FVStreaming": True,
+    # Paste the stitched streaming result (vs. a full batch re-decode).
+    "FVStreamingV2": True,
+    # Compute both and paste the batch one, logging the diff. Costs a second
+    # full decode per dictation — for validating a change, not for daily use.
+    "FVStreamingShadow": False,
+    # Route text through the clipboard + Ctrl+V instead of typing it. Escape
+    # hatch for apps that ignore synthesized unicode input.
+    "FVPasteViaClipboard": False,
+    "FVDebugTimings": False,
+    # Days of dictation history to keep. 0 = forever.
+    "FVRetentionDays": 0,
+    # Input device name substring; empty = system default.
+    "FVMicrophone": "",
+    # Play a sound on start/success/error.
+    "FVSounds": True,
+}
+
+_lock = threading.Lock()
+_cache: dict[str, Any] = {}
+_cache_mtime: float | None = None
+
+
+def _load() -> dict[str, Any]:
+    global _cache, _cache_mtime
+    path = paths.config_file()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = None
+    with _lock:
+        if mtime == _cache_mtime and _cache:
+            return _cache
+        data: dict[str, Any] = {}
+        if mtime is not None:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                # A corrupt config must never stop the app from dictating.
+                data = {}
+        merged = dict(DEFAULTS)
+        if isinstance(data, dict):
+            merged.update(data)
+        _cache = merged
+        _cache_mtime = mtime
+        return merged
+
+
+def get(key: str, default: Any = None) -> Any:
+    return _load().get(key, DEFAULTS.get(key, default))
+
+
+def get_bool(key: str) -> bool:
+    return bool(get(key))
+
+
+def get_int(key: str) -> int:
+    try:
+        return int(get(key))
+    except (TypeError, ValueError):
+        return int(DEFAULTS.get(key, 0))
+
+
+def get_str(key: str) -> str:
+    value = get(key)
+    return "" if value is None else str(value)
+
+
+def set(key: str, value: Any) -> None:  # noqa: A001 - mirrors UserDefaults.set
+    global _cache_mtime
+    path = paths.config_file()
+    current = dict(_load())
+    current[key] = value
+    # Only persist what differs from the defaults, so a future default change
+    # reaches users who never touched that setting.
+    stored = {k: v for k, v in current.items() if DEFAULTS.get(k) != v}
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(stored, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+    with _lock:
+        _cache_mtime = None  # force a reload on the next read
+
+
+def toggle(key: str) -> bool:
+    value = not get_bool(key)
+    set(key, value)
+    return value
