@@ -268,3 +268,130 @@ def foreground_app_name() -> str | None:
     """
     title = window_title(foreground_window())
     return title or None
+
+
+# ── single instance ──────────────────────────────────────────────────────
+
+ERROR_ALREADY_EXISTS = 183
+# Per-user, not global: two different Windows accounts on one machine each get
+# their own tray app, their own hotkey and their own history, which is right.
+_MUTEX_NAME = "Local\FortuneVoice.SingleInstance"
+_instance_mutex = None
+
+
+def claim_single_instance() -> bool:
+    """True when this process is the only FortuneVoice.
+
+    Two instances is not a cosmetic problem: each installs its own low-level
+    keyboard hook, so one press starts two recordings and the transcript is
+    typed twice into the user's document. The handle is deliberately leaked
+    for the life of the process — Windows releases it on exit.
+    """
+    global _instance_mutex
+
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = (wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR)
+    _instance_mutex = kernel32.CreateMutexW(None, True, _MUTEX_NAME)
+    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
+
+
+# ── DPI ──────────────────────────────────────────────────────────────────
+
+DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
+DPI_AWARENESS_CONTEXT_SYSTEM_AWARE = ctypes.c_void_p(-2)
+
+
+def set_dpi_awareness() -> None:
+    """Ask Windows to stop bitmap-stretching this process.
+
+    Without it a 150% display renders the whole UI at 100% and scales the
+    result up: blurry text, blurry icons, and a recording pill that lands in
+    the wrong place because the coordinates it reports are virtualised.
+
+    Must run before any window exists. Per-monitor v2 first (Windows 10 1703+),
+    system-aware as the fallback; both can legitimately fail if the process
+    manifest already set awareness, which is fine.
+    """
+    try:
+        user32.SetProcessDpiAwarenessContext.argtypes = (ctypes.c_void_p,)
+        if user32.SetProcessDpiAwarenessContext(
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        ):
+            return
+        if user32.SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE):
+            return
+    except AttributeError:
+        pass
+    try:  # Windows 8.1
+        ctypes.WinDLL("shcore").SetProcessDpiAwareness(2)
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        user32.SetProcessDPIAware()
+    except Exception:  # noqa: BLE001 - nothing left to try
+        pass
+
+
+def scale_factor(hwnd: int = 0) -> float:
+    """Display scale for a window (1.0 = 100%, 1.5 = 150%).
+
+    Tk sizes widgets in raw pixels, so a DPI-aware process draws a 40 px row
+    as 40 physical pixels — correct on 100%, half the intended size on 200%.
+    Layout constants are multiplied by this.
+    """
+    try:
+        user32.GetDpiForWindow.argtypes = (wintypes.HWND,)
+        dpi = user32.GetDpiForWindow(wintypes.HWND(hwnd)) if hwnd else 0
+    except AttributeError:
+        dpi = 0
+    if not dpi:
+        try:
+            dpi = user32.GetDpiForSystem()
+        except AttributeError:
+            dpi = 96
+    return (dpi or 96) / 96.0
+
+
+# ── monitors ─────────────────────────────────────────────────────────────
+
+MONITOR_DEFAULTTONEAREST = 2
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+def work_area_of_window(hwnd: int) -> tuple[int, int, int, int]:
+    """Work area (screen minus taskbar) of the monitor holding `hwnd`.
+
+    The overlay used to be placed on the primary monitor's screen size, which
+    on a two-monitor desk put it on the wrong screen entirely — and even on
+    one screen, ignoring the work area meant it could sit under the taskbar.
+    Falls back to the primary monitor when there is no window to follow.
+    """
+    monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+    info = MONITORINFO()
+    info.cbSize = ctypes.sizeof(MONITORINFO)
+    if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        r = info.rcWork
+        return r.left, r.top, r.right, r.bottom
+    return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+
+
+VK_ESCAPE = 0x1B
+
+
+def key_is_down(vk: int) -> bool:
+    """Is this key physically down right now?
+
+    GetAsyncKeyState's high bit is the live state; the low bit ("pressed since
+    last call") is deliberately ignored, because it is consumed by whoever
+    reads it first and would race with anything else polling the same key.
+    """
+    return bool(user32.GetAsyncKeyState(vk) & 0x8000)

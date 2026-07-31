@@ -372,3 +372,68 @@ actual dictation, not from a loop like the one above.
   the `cpu/int8` path was never exercised end to end.
 - **Long dictations** near the 300 s cap, and the recovery flow after a real
   decode failure.
+
+## Polish pass: what a tray app has to get right
+
+Things that are invisible when they work and confusing when they do not.
+
+**One instance, enforced.** A named mutex (`Local\FortuneVoice.SingleInstance`,
+per-user so two Windows accounts each get their own). Two copies is not a
+cosmetic problem: each installs its own low-level keyboard hook, so one press
+starts two recordings and the transcript is typed twice into the user's
+document. A second launch shows a message box and exits — silent would look
+exactly like failing to start, and the user double-clicks again.
+
+**DPI awareness, set before any window exists.** Asking afterwards is ignored
+and Windows bitmap-stretches the whole UI: blurry text, blurry icons, and a
+pill that lands in the wrong place because the coordinates it reports are
+virtualised. `theme.px()` scales the layout constants and Tk's own `tk
+scaling` handles fonts. **Unverified at anything but 100%** — the only display
+here is 100%.
+
+**The overlay follows the user.** Tk's `winfo_screenwidth/height` describe the
+*primary* monitor, so on a two-screen desk the pill appeared on the wrong one,
+and even on one screen it ignored the taskbar. Both the pill and the result
+panel now position against the work area of the monitor holding the foreground
+window.
+
+**Esc cancels.** The audio is dropped without a decode — no transcript, no
+history entry, nothing typed. Polled from the thread that already runs for the
+life of a recording, rather than through a second global hook, because another
+hook is another thing that can wedge the input queue. Deliberately the
+opposite of the device-interrupted path, which *salvages*: there the user
+still wants their words.
+
+**The shortcut is recorded, not typed.** It is the one setting where a typo is
+invisible — a bad string parses into nothing, the hook never fires, and the
+app looks dead rather than misconfigured. Changing it rebinds the hook
+immediately, because a shortcut you cannot try until after a restart is one
+you cannot tell is wrong. Modifier state is read from the physical keyboard
+when the trigger key arrives, not from Tk's `event.state`, whose Alt bit
+differs between Tk builds.
+
+**Lists instead of free text** for the microphone and both models. The
+microphone list stores a *name fragment* rather than an index, because indices
+are reassigned as devices come and go and a saved index quietly starts
+pointing at a different microphone. The Ollama list shows only what is
+actually pulled — offering a model that is not installed produces a setting
+that looks applied and fails at the first dictation.
+
+### The cost model now learns
+
+`predicted_ms` was the one number in the port fitted on hardware nobody here
+owns: gemma3:4b on Apple silicon, 900 + 6.25·chars. Measured against
+qwen2.5:3b on this 3060 it was so conservative that **nothing past ~96
+characters was ever attempted** — the budget declined work the machine could
+do in a third of the time.
+
+It now fits itself from `metrics.jsonl`, which has recorded `cleanup_ms` and
+`chars` per dictation since the first commit precisely so this could be done
+from real use rather than from a synthetic loop. Guards, because the failure
+direction is asymmetric — underestimating starts work that then runs past the
+deadline and is thrown away:
+
+- fewer than 12 recorded cleanups: keep the shipped fit,
+- a non-positive slope (longer text coming out cheaper) is noise, not a model,
+- the intercept is floored at 250 ms, since a run of cache-hot samples can
+  regress to nearly zero.

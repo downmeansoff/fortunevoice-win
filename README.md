@@ -57,7 +57,7 @@ For the optional cleanup pass, install [Ollama](https://ollama.com/download)
 and pull the model:
 
 ```powershell
-ollama pull gemma3:4b
+ollama pull qwen2.5:3b
 ```
 
 ## Check the machine before trusting it
@@ -85,6 +85,15 @@ take both away. Or run it directly:
 .venv\Scripts\pythonw.exe -m fortunevoice
 ```
 
+## While you dictate
+
+Press **Esc** to throw a recording away — no decode, no transcript, nothing
+typed. A misfired hotkey otherwise costs a full decode and whatever the model
+invents out of room noise.
+
+Only one copy runs at a time. A second launch says so and exits, because two
+instances would each install a keyboard hook and type every dictation twice.
+
 ## What you see
 
 A tray icon — the app mark, tinted: grey while the model loads, pale idle, red
@@ -100,11 +109,17 @@ If the text can't be typed — you switched windows, there's no editable field �
 a panel appears with the transcript and a Copy button. Nothing reaches your
 clipboard until you press it.
 
-The tray menu opens the main window: **History** (searchable, every dictation
-you've made), **Stats** (words per minute, day streak, where the words went,
-median wait), **Dictionary** (names Whisper keeps mishearing), and
-**Settings**. A first-run screen shows the hotkey and proves the microphone
-works with a live meter; reopen it any time from the tray.
+The tray menu opens the main window: **History** (searchable; click a card to
+copy it, ✕ to delete it), **Insights** (words per minute, day streak, where
+the words went, measured latency), **Dictionary** (names Whisper keeps
+mishearing) and **Settings**. A first-run screen shows the hotkey and proves
+the microphone with a live meter; reopen it any time from the tray.
+
+Settings is the same file as `config.json`, with the fiddly parts made
+safe: the shortcut is **recorded** rather than typed (click it, press the
+keys) and applies immediately without a restart, the microphone and both
+models are picked from lists of what is actually installed, and *Launch at
+login* writes a real Startup shortcut.
 
 Set `"FVOverlay": false` if you'd rather not have the pill.
 
@@ -130,6 +145,10 @@ without a restart. Only values you change are stored.
 | `FVPasteViaClipboard` | `false` | Clipboard + Ctrl+V instead of typing (for apps that ignore synthesized input) |
 | `FVDebugTimings` | `false` | Log the full latency breakdown |
 | `FVRetentionDays` | `0` | Days of history to keep; 0 = forever |
+| `FVOverlay` | `true` | The floating pill while you speak |
+| `FVSounds` | `true` | Start/success/error/cancel tones |
+| `FVWindowGeometry` | `""` | Remembered main-window size and position |
+| `FVOnboarded` | `false` | Set once the first-run screen is dismissed |
 
 Custom vocabulary — names and jargon Whisper keeps mishearing — goes in
 `%APPDATA%\FortuneVoice\dictionary.json` as a JSON list of strings.
@@ -155,11 +174,22 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-90 tests: the macOS project's own suite ported over (sentence splitting,
+116 tests: the macOS project's own suite ported over (sentence splitting,
 repeat collapsing, the cleanup skip heuristic and cost model, the streaming
 silence rules, the decoder gate's bounded waits, timeouts, history, recovery,
 stats) plus Windows-specific ones for hotkey parsing, the hook's swallow/fire
-decisions, and the config file.
+decisions, the config file, the generated icon, the prompt-tier routing, the
+learned cleanup cost model and the remembered window geometry.
+
+Two more opt-in suites, both needing a desktop session:
+
+```powershell
+pytest -m ui      # builds every window for real
+```
+
+`-m ui` exists because a window that raises inside a UI callback is
+swallowed by the event pump and simply never appears — which looks exactly
+like the app not starting.
 
 There is also an opt-in test that drives real Win32 input:
 

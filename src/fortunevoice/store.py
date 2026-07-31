@@ -91,6 +91,21 @@ class DictationStore:
                 records = records[-self.MAX_RECORDS :]
             self._write(records)
 
+    def remove(self, record: "DictationRecord") -> bool:
+        """Delete one dictation, matched on timestamp and text.
+
+        Matched on content rather than index because the caller is a UI list
+        that was built from a filtered, reversed copy — an index into that is
+        not an index into the file, and using one would delete a neighbour.
+        """
+        records = self.all()
+        for position, existing in enumerate(records):
+            if existing.date == record.date and existing.transcript == record.transcript:
+                del records[position]
+                self._write(records)
+                return True
+        return False
+
     def clear(self) -> None:
         """Delete every record. Only reachable from an explicit confirmation in
         the UI — this is the vault every delivery path writes to first."""

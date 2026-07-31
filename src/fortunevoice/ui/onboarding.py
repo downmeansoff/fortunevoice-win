@@ -21,8 +21,8 @@ from . import theme, ui
 
 logger = get_logger("ui.onboarding")
 
-WIDTH = 520
-HEIGHT = 480
+WIDTH = theme.px(520)
+HEIGHT = theme.px(480)
 
 
 def needed() -> bool:

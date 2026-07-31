@@ -71,6 +71,9 @@ DEFAULTS: dict[str, Any] = {
     "FVOverlay": True,
     # Set once the first-run screen has been dismissed.
     "FVOnboarded": False,
+    # Last size and position of the main window, "WxH+X+Y". Empty = centre
+    # it at the default size.
+    "FVWindowGeometry": "",
 }
 
 _lock = threading.Lock()

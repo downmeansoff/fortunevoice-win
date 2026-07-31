@@ -19,19 +19,20 @@ from . import icons, theme
 class Card:
     """A rounded panel. Add content to `.body`."""
 
-    def __init__(self, parent, *, bg: str = theme.CARD, radius: int = 14,
-                 outline: str = "", padx: int = 18, pady: int = 16,
+    def __init__(self, parent, *, bg: str = theme.CARD, radius: int = 0,
+                 outline: str = "", padx: int = 0, pady: int = 0,
                  parent_bg: str | None = None) -> None:
         import tkinter as tk
 
         self._bg = bg
-        self._radius = radius
+        self._radius = theme.px(radius or 14)
         self._outline = outline
         self._parent_bg = parent_bg or parent["bg"]
 
         self.frame = tk.Frame(parent, bg=self._parent_bg)
         self.canvas = tk.Canvas(self.frame, bg=self._parent_bg, highlightthickness=0, bd=0)
         self.canvas.pack(fill="both", expand=True)
+        padx, pady = theme.px(padx or 18), theme.px(pady or 16)
         self.body = tk.Frame(self.canvas, bg=bg)
         self._window = self.canvas.create_window(padx, pady, anchor="nw", window=self.body)
         self._padx, self._pady = padx, pady
@@ -70,7 +71,7 @@ class Switch:
     """An iOS-style toggle. Reads and writes through the callbacks it is given,
     so it can never drift from the value it displays."""
 
-    W, H = 42, 24
+    W, H = theme.px(42), theme.px(24)
 
     def __init__(self, parent, get: Callable[[], bool], set_: Callable[[bool], None]) -> None:
         import tkinter as tk
@@ -192,7 +193,7 @@ class NavItem:
         self._glyph = glyph
         self._active = False
         self._images: list = []
-        self.canvas = tk.Canvas(parent, height=40, bg=parent["bg"],
+        self.canvas = tk.Canvas(parent, height=theme.px(40), bg=parent["bg"],
                                 highlightthickness=0, bd=0, cursor="hand2")
         self.canvas._images = []
         self.canvas.bind("<Button-1>", lambda _e: on_click(name))
@@ -229,11 +230,11 @@ class NavItem:
 class IconButton:
     """A square rounded button holding one glyph — the actions above History."""
 
-    def __init__(self, parent, glyph: str, command, size: int = 34, tooltip: str = "") -> None:
+    def __init__(self, parent, glyph: str, command, size: int = 0, tooltip: str = "") -> None:
         import tkinter as tk
 
         self._glyph = glyph
-        self._size = size
+        self._size = size = theme.px(size or 34)
         self.canvas = tk.Canvas(parent, width=size, height=size, bg=parent["bg"],
                                 highlightthickness=0, bd=0, cursor="hand2")
         self.canvas._images = []
@@ -318,3 +319,100 @@ def section_title(parent, text: str):
     """Small-caps group heading above a settings card."""
     return theme.label(parent, text.upper(), size=8, colour=theme.TEXT_FAINT,
                        weight="bold")
+
+
+class ShortcutRecorder:
+    """Click, then press the combination you want.
+
+    Typing a shortcut as text is the wrong interaction for the one setting
+    where a typo is invisible: a bad string parses into nothing, the hook
+    never fires, and the app looks dead rather than misconfigured. Capturing
+    the real keypress means what you pressed is what gets stored.
+
+    Modifier state is read from the physical keyboard at the moment the
+    trigger key arrives rather than from Tk's `event.state`, whose Alt bit
+    differs between Tk builds and window managers.
+    """
+
+    # Tk keysym → the name the hotkey parser knows. Only the ones that differ;
+    # letters, digits and F-keys fall through lowercased.
+    _KEYSYM = {
+        "space": "space", "Return": "enter", "Tab": "tab", "BackSpace": "backspace",
+        "Insert": "insert", "Delete": "delete", "Home": "home", "End": "end",
+        "Prior": "pageup", "Next": "pagedown", "Left": "left", "Up": "up",
+        "Right": "right", "Down": "down", "grave": "`", "minus": "-",
+        "equal": "=", "semicolon": ";", "apostrophe": "'", "comma": ",",
+        "period": ".", "slash": "/", "backslash": "\\",
+        "bracketleft": "[", "bracketright": "]",
+    }
+    _IGNORED = {
+        "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
+        "Super_L", "Super_R", "Caps_Lock", "Num_Lock", "Scroll_Lock", "ISO_Level3_Shift",
+    }
+
+    def __init__(self, parent, get: Callable[[], str], set_: Callable[[str], bool]) -> None:
+        import tkinter as tk
+
+        self._get, self._set = get, set_
+        self._listening = False
+        self.canvas = tk.Canvas(parent, height=theme.px(30), width=theme.px(150),
+                                bg=parent["bg"], highlightthickness=0, bd=0,
+                                cursor="hand2", takefocus=1)
+        self.canvas.bind("<Button-1>", self._begin)
+        self.canvas.bind("<KeyPress>", self._captured)
+        self.canvas.bind("<FocusOut>", lambda _e: self._end())
+        self.paint()
+
+    def pack(self, **kwargs):
+        self.canvas.pack(**kwargs)
+        return self
+
+    def _begin(self, _event=None) -> None:
+        self._listening = True
+        self.canvas.focus_set()
+        self.paint()
+
+    def _end(self) -> None:
+        self._listening = False
+        self.paint()
+
+    def _captured(self, event) -> str | None:
+        if not self._listening:
+            return None
+        if event.keysym == "Escape":
+            self._end()
+            return "break"
+        if event.keysym in self._IGNORED:
+            return "break"  # a modifier alone is not a shortcut
+
+        key = self._KEYSYM.get(event.keysym, event.keysym.lower())
+        modifiers = []
+        try:
+            from .. import winapi
+
+            if winapi.key_is_down(winapi.VK_CONTROL):
+                modifiers.append("ctrl")
+            if winapi.key_is_down(winapi.VK_MENU):
+                modifiers.append("alt")
+            if winapi.key_is_down(winapi.VK_SHIFT):
+                modifiers.append("shift")
+        except Exception:  # noqa: BLE001 - fall back to no modifiers
+            pass
+
+        self._set("+".join([*modifiers, key]))
+        self._end()
+        return "break"
+
+    def paint(self) -> None:
+        width = int(self.canvas["width"])
+        self.canvas.delete("all")
+        if self._listening:
+            theme.rounded_rect(self.canvas, 0, 2, width - 1, theme.px(28), theme.px(7),
+                               fill=theme.ACCENT)
+            self.canvas.create_text(width / 2, theme.px(15), text="Press keys…",
+                                    fill="#FFFFFF", font=theme.font(9, "bold"))
+            return
+        theme.rounded_rect(self.canvas, 0, 2, width - 1, theme.px(28), theme.px(7),
+                           fill=theme.CARD_HI)
+        self.canvas.create_text(width / 2, theme.px(15), text=self._get() or "—",
+                                fill=theme.TEXT, font=theme.font(9))
