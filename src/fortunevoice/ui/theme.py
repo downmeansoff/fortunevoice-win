@@ -12,6 +12,37 @@ somewhere else.
 
 from __future__ import annotations
 
+
+def _display_scale() -> float:
+    """Read the display scale once, at import.
+
+    Safe to do here because `__main__` calls `set_dpi_awareness()` before any
+    of this package is imported, so the number is already the real one. Doing
+    it at import rather than per-window means module-level layout constants
+    can be written in scaled pixels directly.
+    """
+    try:
+        from .. import winapi
+
+        return winapi.scale_factor()
+    except Exception:  # noqa: BLE001 - tests and non-Windows imports
+        return 1.0
+
+
+SCALE = _display_scale()
+
+
+def px(value: float) -> int:
+    """Layout pixels, scaled for this display.
+
+    Tk sizes widgets in raw pixels, and a DPI-aware process gets *physical*
+    pixels — so a 40 px row really is 40 dots, which is right at 100% and half
+    the intended size at 200%. Fonts are handled separately, by Tk's own
+    `tk scaling`.
+    """
+    return int(round(value * SCALE))
+
+
 # Surfaces, darkest to lightest.
 INK = "#0E1420"          # window
 SIDEBAR = "#131B2A"      # nav rail

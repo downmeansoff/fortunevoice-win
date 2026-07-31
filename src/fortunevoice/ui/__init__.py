@@ -56,6 +56,7 @@ class UiThread:
             # run the loop. Every real window is a Toplevel.
             self._root.withdraw()
             self._root.title("FortuneVoice")
+            self._apply_scaling()
             self._apply_icon()
         except Exception as exc:  # noqa: BLE001 - a headless or broken Tk is survivable
             self._failed = True
@@ -69,6 +70,21 @@ class UiThread:
             self._root.mainloop()
         except Exception:  # noqa: BLE001
             logger.exception("UI loop died")
+
+    def _apply_scaling(self) -> None:
+        """Teach Tk this display's DPI.
+
+        `tk scaling` is pixels per point. Tk assumes 96 DPI (96/72 = 1.333);
+        on a 150% display the process is now DPI-aware, so points must map to
+        more pixels or every label comes out two-thirds of its intended size.
+        Widget dimensions are handled separately by `theme.px`.
+        """
+        from . import theme
+
+        try:
+            self._root.tk.call("tk", "scaling", theme.SCALE * 96 / 72)
+        except Exception:  # noqa: BLE001 - cosmetic
+            logger.debug("could not set Tk scaling", exc_info=True)
 
     def _apply_icon(self) -> None:
         from .. import assets

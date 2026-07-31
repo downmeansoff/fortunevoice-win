@@ -17,16 +17,25 @@ from __future__ import annotations
 
 import datetime as dt
 
-from .. import config, dictionary, injector, metrics, paths, shortcut, stats
+from .. import (
+    config,
+    dictionary,
+    injector,
+    metrics,
+    paths,
+    shortcut,
+    stats,
+    winapi,
+)
 from ..log import get as get_logger
 from ..store import DictationStore
 from . import icons, theme, widgets
 
 logger = get_logger("ui.main")
 
-WIDTH = 1000
-HEIGHT = 680
-SIDEBAR_W = 232
+WIDTH = theme.px(1000)
+HEIGHT = theme.px(680)
+SIDEBAR_W = theme.px(232)
 PAGES = [("History", "clock"), ("Insights", "chart"),
          ("Dictionary", "book"), ("Settings", "gear")]
 
@@ -80,8 +89,8 @@ class MainWindow:
 
         window = tk.Toplevel(ui.root)
         window.title("FortuneVoice")
-        window.geometry(f"{WIDTH}x{HEIGHT}")
-        window.minsize(880, 560)
+        window.geometry(_remembered_geometry())
+        window.minsize(theme.px(880), theme.px(560))
         window.configure(bg=theme.INK)
         try:
             window.iconbitmap(str(assets.icon_path()))
@@ -89,7 +98,7 @@ class MainWindow:
             pass
         # Closing hides: the app lives in the tray, and destroying the window
         # would throw away the loaded history for no reason.
-        window.protocol("WM_DELETE_WINDOW", window.withdraw)
+        window.protocol("WM_DELETE_WINDOW", self._on_close)
         self._window = window
 
         self._build_sidebar(window)
@@ -103,6 +112,20 @@ class MainWindow:
             self._pages[name] = page
             builder = getattr(self, f"_build_{name.lower()}")
             builder(page)
+
+    def _on_close(self) -> None:
+        """Remember where the window was before hiding it.
+
+        Saved on close rather than on every <Configure>: dragging a window
+        fires that event dozens of times a second, and each one would rewrite
+        config.json.
+        """
+        try:
+            if self._window.state() == "normal":
+                config.set("FVWindowGeometry", self._window.winfo_geometry())
+        except Exception:  # noqa: BLE001 - never block closing over this
+            logger.debug("could not save window geometry", exc_info=True)
+        self._window.withdraw()
 
     # ── sidebar ──────────────────────────────────────────────────────────
 
@@ -260,6 +283,13 @@ class MainWindow:
                     bg=theme.CARD).pack(side="left")
         if record.app:
             widgets.Chip(top, record.app[:26]).pack(side="left", padx=(10, 0))
+        remove = theme.label(top, "\u2715", size=9, colour=theme.TEXT_FAINT,
+                             bg=theme.CARD)
+        remove.configure(cursor="hand2")
+        remove.pack(side="right")
+        remove.bind("<Button-1>", lambda _e, r=record: self._delete_record(r))
+        remove.bind("<Enter>", lambda _e, w=remove: w.configure(fg=theme.ERROR))
+        remove.bind("<Leave>", lambda _e, w=remove: w.configure(fg=theme.TEXT_FAINT))
 
         body = tk.Label(
             card.body, text=record.transcript, font=theme.font(10), bg=theme.CARD,
@@ -287,6 +317,13 @@ class MainWindow:
                          bg=theme.CARD, fg=theme.OK)
         flash.place(relx=1.0, y=0, anchor="ne")
         card.body.after(1100, flash.destroy)
+
+    def _delete_record(self, record) -> str:
+        """Remove one dictation. No confirmation: it is one row, the action is
+        explicit, and a dialog for every deletion is worse than the mistake."""
+        self._store.remove(record)
+        self._refresh_history()
+        return "break"  # don't let the click fall through to copy-the-card
 
     def _export_history(self) -> None:
         records = self._store.all()
@@ -540,25 +577,18 @@ class MainWindow:
                          lambda: config.get_str("FVActivationMode"),
                          lambda v: config.set("FVActivationMode", v)).pack()
         row = widgets.SettingRow(card.body, "keyboard", TINT_INDIGO, "Shortcut",
-                                 "e.g. ctrl+alt+space, f9, rctrl")
-        self._hotkey_var = tk.StringVar(value=config.get_str("FVHotkey"))
-        field = theme.entry(row.control, self._hotkey_var, bg=theme.CARD_HI)
-        field.configure(width=18, justify="center")
-        field.pack(ipady=5)
-        field.bind("<FocusOut>", lambda _e: self._save_hotkey())
-        field.bind("<Return>", lambda _e: self._save_hotkey())
+                                 "click, then press the keys you want")
+        widgets.ShortcutRecorder(
+            row.control, lambda: config.get_str("FVHotkey"), self._save_hotkey).pack()
         row = widgets.SettingRow(card.body, "globe", TINT_TEAL, "Language")
         widgets.Dropdown(row.control, [("ru", "Русский"), ("en", "English"),
                                        ("auto", "Auto-detect")],
                          lambda: config.get_str("FVLanguage"),
                          self._set_language).pack()
-        row = widgets.SettingRow(card.body, "mic", TINT_PINK, "Microphone",
-                                 "empty = system default", last=True)
-        self._mic_var = tk.StringVar(value=config.get_str("FVMicrophone"))
-        mic = theme.entry(row.control, self._mic_var, bg=theme.CARD_HI)
-        mic.configure(width=22)
-        mic.pack(ipady=5)
-        mic.bind("<FocusOut>", lambda _e: config.set("FVMicrophone", self._mic_var.get()))
+        row = widgets.SettingRow(card.body, "mic", TINT_PINK, "Microphone", last=True)
+        widgets.Dropdown(row.control, _microphones(),
+                         lambda: config.get_str("FVMicrophone"),
+                         lambda v: config.set("FVMicrophone", v)).pack()
 
         # TEXT PROCESSING
         widgets.section_title(body, "Text processing").pack(anchor="w", pady=(20, 8))
@@ -568,12 +598,11 @@ class MainWindow:
                          "decodes while you speak", "FVStreaming")
         self._switch_row(card.body, "sparkle", TINT_INDIGO, "AI cleanup (Ollama)",
                          "removes filler words and fixes punctuation", "FVCleanupEnabled")
-        row = widgets.SettingRow(card.body, "chip", TINT_GREY, "Cleanup model")
-        self._cleanup_var = tk.StringVar(value=config.get_str("FVOllamaModel"))
-        entry = theme.entry(row.control, self._cleanup_var, bg=theme.CARD_HI)
-        entry.configure(width=18)
-        entry.pack(ipady=5)
-        entry.bind("<FocusOut>", lambda _e: config.set("FVOllamaModel", self._cleanup_var.get()))
+        row = widgets.SettingRow(card.body, "chip", TINT_GREY, "Cleanup model",
+                                 "qwen2.5:3b follows these prompts best")
+        widgets.Dropdown(row.control, _ollama_models(),
+                         lambda: config.get_str("FVOllamaModel"),
+                         lambda v: config.set("FVOllamaModel", v)).pack()
         self._switch_row(card.body, "wand", TINT_GREEN, "Auto-fix garbled words",
                          "only on low-confidence transcripts", "FVSmartFix", last=True)
         theme.label(
@@ -595,6 +624,10 @@ class MainWindow:
         self._switch_row(card.body, "speaker", TINT_BLUE, "Sound feedback", "", "FVSounds")
         self._switch_row(card.body, "mic", TINT_PINK, "Recording overlay",
                          "the floating pill while you speak", "FVOverlay")
+        row = widgets.SettingRow(card.body, "chip", TINT_TEAL, "Whisper model",
+                                 "bigger is more accurate and slower")
+        widgets.Dropdown(row.control, _WHISPER_MODELS,
+                         lambda: config.get_str("FVModel"), self._set_whisper_model).pack()
         self._switch_row(card.body, "clipboard", TINT_GREY, "Paste via clipboard",
                          "only for apps that ignore typed input",
                          "FVPasteViaClipboard", last=True)
@@ -622,26 +655,38 @@ class MainWindow:
         if self._app:
             self._app.transcriber.reset_session_language()
 
-    def _save_hotkey(self) -> None:
-        """Validate before storing: a typo here silently produces a hotkey that
-        never fires, and the app would look dead rather than misconfigured."""
+    def _save_hotkey(self, value: str) -> bool:
+        """Validate, store, and rebind the hook immediately.
+
+        Applying it live is the point: a shortcut the user cannot try until
+        after a restart is one they cannot tell is wrong.
+        """
         from tkinter import messagebox
 
         from ..hotkey import parse
 
-        value = self._hotkey_var.get().strip()
-        if value == config.get_str("FVHotkey"):
-            return
+        value = value.strip()
+        if not value or value == config.get_str("FVHotkey"):
+            return False
         try:
             parse(value)
         except ValueError as exc:
-            messagebox.showwarning("Invalid shortcut", str(exc), parent=self._window)
-            self._hotkey_var.set(config.get_str("FVHotkey"))
-            return
+            messagebox.showwarning("That shortcut will not work", str(exc),
+                                   parent=self._window)
+            return False
         config.set("FVHotkey", value)
-        messagebox.showinfo(
-            "Restart to apply",
-            "The shortcut changes when FortuneVoice restarts.", parent=self._window)
+        if self._app is not None:
+            self._app.rebind_hotkey()
+        return True
+
+    def _set_whisper_model(self, value: str) -> None:
+        """Switching model reloads it in the background. The alternative is a
+        setting that appears to do nothing until the next launch."""
+        if value == config.get_str("FVModel"):
+            return
+        config.set("FVModel", value)
+        if self._app is not None:
+            self._app.reload_model()
 
     def _refresh_settings(self) -> None:
         # Switches read config on every paint, but Launch-at-login reads the
@@ -654,6 +699,84 @@ class MainWindow:
         import os
 
         os.startfile(str(paths.home()))  # noqa: S606 - our own folder
+
+
+# Whisper sizes faster-whisper can fetch by name, smallest first so the list
+# reads as a speed/accuracy dial.
+_WHISPER_MODELS = [
+    ("tiny", "tiny - fastest, roughest"),
+    ("base", "base"),
+    ("small", "small"),
+    ("medium", "medium"),
+    ("large-v3-turbo", "large-v3-turbo - recommended"),
+    ("large-v3", "large-v3 - most accurate, slowest"),
+]
+
+
+def _microphones() -> list[tuple[str, str]]:
+    """Real capture devices, with the system default first.
+
+    The setting stores a name fragment rather than an index on purpose:
+    indices are reassigned as devices come and go, so a saved index quietly
+    starts pointing at a different microphone.
+    """
+    from .. import audio
+
+    options = [("", "System default")]
+    try:
+        for _index, name in audio.input_devices():
+            options.append((name, name if len(name) <= 42 else name[:41] + "..."))
+    except Exception:  # noqa: BLE001 - a broken enumeration must not break Settings
+        logger.debug("could not list microphones", exc_info=True)
+    return options
+
+
+def _ollama_models() -> list[tuple[str, str]]:
+    """Whatever Ollama has actually pulled, plus whatever is configured.
+
+    Listing only installed models avoids offering a choice that would fail at
+    the first dictation; keeping the configured value in the list means a
+    model Ollama cannot currently report still shows as selected instead of
+    reading as blank.
+    """
+    from .. import cleaner
+
+    current = config.get_str("FVOllamaModel")
+    names: list[str] = []
+    try:
+        names = cleaner.installed_models()
+    except Exception:  # noqa: BLE001
+        logger.debug("could not list Ollama models", exc_info=True)
+    if current and current not in names:
+        names.insert(0, current)
+    if not names:
+        names = [current or "qwen2.5:3b"]
+    return [(name, name) for name in names]
+
+
+def _remembered_geometry() -> str:
+    """Where the window was last time, if that is still on a real screen.
+
+    A geometry saved on a monitor that has since been unplugged would put the
+    window off-screen with no way to reach it, so the position is dropped
+    unless its top-left corner still lands inside a work area.
+    """
+    saved = config.get_str("FVWindowGeometry")
+    default = f"{WIDTH}x{HEIGHT}"
+    if "+" not in saved:
+        return default
+    try:
+        size, x, y = saved.split("+", 2)
+        left, top, right, bottom = winapi.work_area_of_window(0)
+        px_, py = int(x), int(y)
+        visible_anywhere = (
+            left - 40 <= px_ <= right - 80 and top - 10 <= py <= bottom - 60
+        )
+        if not visible_anywhere:
+            return size or default
+        return saved
+    except Exception:  # noqa: BLE001 - a corrupt value must not stop the window
+        return default
 
 
 def _day_label(iso: str, today: dt.date) -> str:

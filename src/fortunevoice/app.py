@@ -168,22 +168,53 @@ class App:
         )
         self._controller.start()
 
+        self.rebind_hotkey()
+
+        threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
+        if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
+            self.cleaner.warmup()
+
+    def rebind_hotkey(self) -> bool:
+        """(Re)install the keyboard hook for whatever FVHotkey now says.
+
+        Called at startup and whenever Settings changes the shortcut. Doing it
+        live matters: the alternative is telling the user to restart the app,
+        and a shortcut they cannot try immediately is one they cannot tell is
+        wrong. Returns False when the configured value did not parse and the
+        fallback was used instead.
+        """
+        ok = True
         try:
             spec = parse_hotkey(config.get_str("FVHotkey"))
         except ValueError as exc:
             logger.error("%s — falling back to ctrl+alt+space", exc)
-            self._notify("Bad hotkey in config.json", str(exc))
+            self._notify("Bad hotkey", str(exc))
             spec = parse_hotkey("ctrl+alt+space")
+            ok = False
+
+        # Stop the old hook first. Two hooks for one chord would queue two
+        # press events and start the dictation twice.
+        if self._listener is not None:
+            self._listener.stop()
         self._listener = HotkeyListener(
             spec,
             on_press=lambda: self._events.put(("press", time.monotonic())),
             on_release=lambda: self._events.put(("release", time.monotonic())),
         )
         self._listener.start()
+        return ok
 
-        threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
-        if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
-            self.cleaner.warmup()
+    def cancel_dictation(self) -> bool:
+        """Throw away a recording in progress.
+
+        Wired to Esc while recording. Without it the only way out of a
+        misfired hotkey is to stay silent and wait for a decode of nothing,
+        which still costs a second and still types whatever it hallucinated.
+        """
+        if self.state != State.RECORDING:
+            return False
+        self._events.put(("cancel", time.monotonic()))
+        return True
 
     def stop(self) -> None:
         if self._listener:
@@ -279,6 +310,8 @@ class App:
                     self._on_release()
                 elif kind == "interrupted":
                     self._on_interrupted()
+                elif kind == "cancel":
+                    self._on_cancel()
             except Exception:  # noqa: BLE001 - one bad event must not end the loop
                 logger.exception("controller failed on %s", kind)
                 self._set_state(State.IDLE)
@@ -305,6 +338,29 @@ class App:
             return
         logger.warning("recording interrupted — salvaging captured audio")
         self._finish_dictation(time.monotonic(), winapi.foreground_window())
+
+    def _on_cancel(self) -> None:
+        """Esc during a recording: bin it.
+
+        The opposite of `_on_interrupted`, which salvages. Here the user is
+        saying they don't want this dictation, so the audio is dropped without
+        a decode — no transcript, no history entry, nothing typed. A misfired
+        hotkey otherwise costs a full decode and whatever the model invented
+        out of room noise.
+        """
+        if self.state != State.RECORDING:
+            return
+        logger.info("dictation cancelled by the user")
+        if self._session is not None:
+            self._session.abort()
+            self._session = None
+        self.recorder.stop()
+        self.recovery.clear()
+        sound.play("cancel")
+        pill = self._pill()
+        if pill is not None:
+            pill.flash("cancelled")
+        self._set_state(State.IDLE)
 
     # ── dictation ────────────────────────────────────────────────────────
 
@@ -370,6 +426,13 @@ class App:
                 now = time.monotonic()
                 if silence_stops and now - self._last_loud > self.SILENCE_STOP_SECONDS:
                     self._events.put(("release", time.monotonic()))
+                    return
+                if winapi.key_is_down(winapi.VK_ESCAPE):
+                    # Polled here rather than through a second keyboard hook:
+                    # this thread already exists for the life of the recording,
+                    # and another global hook is another thing that can wedge
+                    # the input queue.
+                    self._events.put(("cancel", time.monotonic()))
                     return
                 if now - self._recording_started > self.MAX_RECORDING_SECONDS:
                     logger.warning("recording hit the %.0fs cap", self.MAX_RECORDING_SECONDS)

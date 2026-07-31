@@ -28,24 +28,24 @@ from . import theme, ui
 
 logger = get_logger("ui.pill")
 
-HEIGHT = 40
+HEIGHT = theme.px(40)
 # Distance from the bottom of the work area. Clear of the taskbar, and clear of
 # the place most apps put their own status bars.
-BOTTOM_MARGIN = 96
+BOTTOM_MARGIN = theme.px(96)
 
 BARS = 20
-BAR_W = 3
-BAR_GAP = 3
-BAR_MAX = 20
-BAR_MIN = 2
+BAR_W = theme.px(3)
+BAR_GAP = theme.px(3)
+BAR_MAX = theme.px(20)
+BAR_MIN = theme.px(2)
 
-_PAD = 16
-_LABEL_GAP = 12
+_PAD = theme.px(16)
+_LABEL_GAP = theme.px(12)
 _BARS_W = BARS * BAR_W + (BARS - 1) * BAR_GAP
 # Room for the longest label ("No mic signal") at 8 pt. Sized once here rather
 # than measured at runtime: a pill whose width changed with its own state
 # would jump around under the user's eyes.
-_LABEL_W = 84
+_LABEL_W = theme.px(84)
 WIDTH = _PAD + _BARS_W + _LABEL_GAP + _LABEL_W + _PAD
 
 # Magenta is the colour key for the rounded corners: anything painted in it
@@ -57,12 +57,14 @@ _MODE_COLOUR = {
     "processing": theme.PROCESSING,
     "error": theme.ERROR,
     "no-signal": theme.TEXT_FAINT,
+    "cancelled": theme.TEXT_MUTED,
 }
 _MODE_TEXT = {
     "recording": "Listening",
     "processing": "Transcribing",
     "error": "Failed",
     "no-signal": "No mic signal",
+    "cancelled": "Cancelled",
 }
 
 
@@ -87,11 +89,18 @@ class Pill:
         ui.call(self._hide)
 
     def flash_error(self) -> None:
-        """Brief error indication after a failed dictation, then auto-hide.
-        Success needs no visual — the text appearing plus the sound cue say it."""
+        self.flash("error")
+
+    def flash(self, mode: str, seconds: float = 0.9) -> None:
+        """Show a state briefly, then auto-hide.
+
+        Used for the outcomes that leave nothing on screen to explain
+        themselves: a failed dictation and a cancelled one. Success needs no
+        visual — the text appearing plus the sound cue say it.
+        """
         def job() -> None:
-            self._show("error")
-            self._hide_after = time.monotonic() + 0.9
+            self._show(mode)
+            self._hide_after = time.monotonic() + seconds
         ui.call(job)
 
     def push_level(self, level: float) -> None:
@@ -125,10 +134,17 @@ class Pill:
         self._place()
 
     def _place(self) -> None:
-        screen_w = self._window.winfo_screenwidth()
-        screen_h = self._window.winfo_screenheight()
-        x = (screen_w - WIDTH) // 2
-        y = screen_h - BOTTOM_MARGIN - HEIGHT
+        """Centre it on the monitor the user is actually working on.
+
+        Tk's screenwidth/screenheight describe the primary monitor, so on a
+        two-screen desk the pill appeared on the wrong one — and even on a
+        single screen it ignored the taskbar and could sit underneath it.
+        The work area of the monitor holding the foreground window is the
+        right frame of reference on both counts.
+        """
+        left, top, right, bottom = winapi.work_area_of_window(winapi.foreground_window())
+        x = left + (right - left - WIDTH) // 2
+        y = bottom - BOTTOM_MARGIN - HEIGHT
         self._window.geometry(f"{WIDTH}x{HEIGHT}+{x}+{y}")
 
     def _show(self, mode: str) -> None:

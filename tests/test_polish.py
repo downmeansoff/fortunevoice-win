@@ -1,0 +1,154 @@
+"""The self-correcting cost model, deleting one dictation, and window geometry.
+
+Each of these has a failure mode that is silent rather than loud, which is why
+they are pinned here:
+
+* a cost fit that learns the wrong slope makes cleanup quietly stop running,
+* deleting by list position removes the wrong row when the list is filtered,
+* a remembered geometry from an unplugged monitor puts the window somewhere
+  the user cannot reach it.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from fortunevoice import cleaner
+from fortunevoice.store import DictationRecord, DictationStore
+
+
+@pytest.fixture(autouse=True)
+def _fresh_fit():
+    cleaner.reset_fit()
+    yield
+    cleaner.reset_fit()
+
+
+# ── the learned cleanup cost model ───────────────────────────────────────
+
+
+def _rows(pairs):
+    return [{"chars": c, "cleanup_ms": ms} for c, ms in pairs]
+
+
+def test_fit_needs_enough_samples(monkeypatch):
+    """Two runs are an anecdote. The shipped constants stay until there is
+    enough local data to beat them."""
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(_rows([(40, 300), (80, 400)])),
+                        raising=False)
+    assert cleaner._fit_from_metrics() is None
+
+
+def test_fit_learns_this_machines_cost(monkeypatch):
+    """The real case this exists for: qwen2.5:3b on a 3060 answers in ~280 ms
+    where the shipped gemma-on-Apple-silicon fit predicts 1200+, so the budget
+    was declining work it could comfortably afford."""
+    pairs = [(chars, 250 + chars * 1.5) for chars in range(20, 200, 10)]
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(_rows(pairs)), raising=False)
+    fixed, per_char = cleaner._fit_from_metrics()
+    assert fixed == pytest.approx(250, abs=15)
+    assert per_char == pytest.approx(1.5, abs=0.05)
+    # The whole point: a 124-char job now fits inside the 1.5 s budget.
+    assert fixed + 124 * per_char < 1500
+
+
+def test_fit_is_floored(monkeypatch):
+    """A run of cache-hot samples can regress to a near-zero intercept. Trusting
+    it would clear work the budget cannot actually afford — the exact waste the
+    predictor exists to prevent."""
+    pairs = [(chars, 5 + chars * 0.9) for chars in range(20, 200, 10)]
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(_rows(pairs)), raising=False)
+    fixed, _ = cleaner._fit_from_metrics()
+    assert fixed == cleaner.MIN_FIXED_MS
+
+
+def test_fit_rejects_a_negative_slope(monkeypatch):
+    """Longer text coming out cheaper is noise, not a model."""
+    pairs = [(chars, 900 - chars) for chars in range(20, 200, 10)]
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(_rows(pairs)), raising=False)
+    assert cleaner._fit_from_metrics() is None
+
+
+def test_predicted_ms_falls_back_without_data(monkeypatch):
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics([]), raising=False)
+    assert cleaner.predicted_ms(0) == cleaner.FALLBACK_FIXED_MS
+    assert cleaner.predicted_ms(100) == pytest.approx(
+        cleaner.FALLBACK_FIXED_MS + 100 * cleaner.FALLBACK_PER_CHAR_MS)
+
+
+class _FakeMetrics:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def read_all(self):
+        return self._rows
+
+
+# ── deleting one dictation ───────────────────────────────────────────────
+
+
+def _record(minute: int, text: str) -> DictationRecord:
+    return DictationRecord(date=f"2026-07-31T10:{minute:02d}:00", words=len(text.split()),
+                           duration=1.0, app="Editor", transcript=text)
+
+
+def test_remove_deletes_the_matching_record(tmp_path):
+    store = DictationStore(tmp_path / "history.json")
+    for index, text in enumerate(["первая", "вторая", "третья"]):
+        store.add(_record(index, text))
+
+    assert store.remove(_record(1, "вторая")) is True
+    assert [r.transcript for r in store.all()] == ["первая", "третья"]
+
+
+def test_remove_is_matched_on_content_not_position(tmp_path):
+    """The UI list is filtered and reversed, so its indices are not the file's.
+    Deleting by position would remove a neighbour."""
+    store = DictationStore(tmp_path / "history.json")
+    for index, text in enumerate(["alpha", "beta", "gamma"]):
+        store.add(_record(index, text))
+
+    reversed_view = list(reversed(store.all()))
+    store.remove(reversed_view[0])  # newest, which is LAST in the file
+    assert [r.transcript for r in store.all()] == ["alpha", "beta"]
+
+
+def test_remove_reports_a_miss(tmp_path):
+    store = DictationStore(tmp_path / "history.json")
+    store.add(_record(0, "one"))
+    assert store.remove(_record(9, "never stored")) is False
+    assert len(store.all()) == 1
+
+
+# ── remembered window geometry ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize("saved", ["", "not a geometry", "900x600"])
+def test_geometry_falls_back_to_the_default_size(saved, monkeypatch):
+    from fortunevoice.ui import main_window
+
+    monkeypatch.setattr(main_window.config, "get_str", lambda _key: saved)
+    result = main_window._remembered_geometry()
+    assert "+" not in result
+    assert "x" in result
+
+
+def test_geometry_keeps_an_on_screen_position(monkeypatch):
+    from fortunevoice.ui import main_window
+
+    monkeypatch.setattr(main_window.config, "get_str", lambda _key: "900x600+120+80")
+    monkeypatch.setattr(main_window.winapi, "work_area_of_window",
+                        lambda _hwnd: (0, 0, 1920, 1040))
+    assert main_window._remembered_geometry() == "900x600+120+80"
+
+
+def test_geometry_drops_a_position_on_a_vanished_monitor(monkeypatch):
+    """Saved while a second screen was plugged in; without this the window
+    reopens at x=2600 on a machine that now has one 1920-wide display, with no
+    way to drag it back."""
+    from fortunevoice.ui import main_window
+
+    monkeypatch.setattr(main_window.config, "get_str", lambda _key: "900x600+2600+400")
+    monkeypatch.setattr(main_window.winapi, "work_area_of_window",
+                        lambda _hwnd: (0, 0, 1920, 1040))
+    assert main_window._remembered_geometry() == "900x600"

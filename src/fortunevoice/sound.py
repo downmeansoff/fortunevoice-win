@@ -24,6 +24,9 @@ _TONES = {
     "start": [(880, 60)],
     "success": [(1320, 50)],
     "error": [(400, 120), (300, 120)],
+    # Cancel is not an error: two quick descending notes say "dropped, on
+    # purpose", where the error pair is slower and lower.
+    "cancel": [(700, 45), (520, 45)],
 }
 
 

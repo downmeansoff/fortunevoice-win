@@ -18,7 +18,7 @@ import time
 import urllib.error
 import urllib.request
 
-from . import config
+from . import config, metrics
 from .log import get as get_logger
 from .segmenter import chunk_cores, sentences
 from .textclean import squeeze, word_count
@@ -151,21 +151,113 @@ def needs_cleanup(text: str) -> bool:
     return False
 
 
+# Shipped fit: 908 + 6.36 chars, rounded. Measured against live gemma3:4b
+# dictations on Apple silicon, which is the only data that existed when the
+# budget was written.
+FALLBACK_FIXED_MS = 900.0
+FALLBACK_PER_CHAR_MS = 6.25
+# Below this many recorded cleanups the fit is noise; keep the shipped one.
+MIN_SAMPLES_TO_FIT = 12
+# Never trust a learned fit that claims cleanup is nearly free: a handful of
+# cache-hot runs can regress to an intercept near zero, and the predictor would
+# then clear work it cannot afford - the exact waste it exists to prevent.
+MIN_FIXED_MS = 250.0
+
+
 def predicted_ms(chars: int) -> float:
     """Predicted wall-clock cost of one cleanup round-trip over `chars`.
 
-    Fitted against real dictations, NOT a synthetic benchmark. Generation runs
-    at ~40 tok/s and a rewrite emits roughly one token per 4 characters of
-    Russian, giving ~6.25 ms per char; a back-to-back curl loop put the fixed
-    part at ~400 ms, but in production it is ~900 ms — a benchmark hammering
-    Ollama keeps the model and prompt cache maximally hot, while a real
-    dictation arrives after a gap. Regression over live runs: 908 + 6.36·chars.
+    Two sources, in order:
 
-    Underestimating is the expensive direction: at 400 ms the predictor cleared
-    work it could not afford, which then ran ~2 s and was discarded at the
-    deadline — exactly the waste this is meant to prevent.
+    1. **This machine's own history.** `metrics.jsonl` records `cleanup_ms` and
+       `chars` for every dictation that ran one, so after a dozen real
+       dictations the app knows what its own model, on its own GPU, actually
+       costs. This matters: the shipped constants were fitted against
+       gemma3:4b on Apple silicon, and qwen2.5:3b on a 3060 answers in ~280 ms
+       where they predict 1200+, so the budget was declining work it could
+       comfortably afford.
+    2. **The shipped fit**, until enough local samples exist.
+
+    Underestimating is the expensive direction - work is started, runs past the
+    deadline, and is thrown away - so the learned fit is floored and only
+    replaces the default once there is enough data to mean anything.
     """
-    return 900.0 + chars * 6.25
+    fixed, per_char = _fit()
+    return fixed + chars * per_char
+
+
+_fit_cache: tuple[float, float] | None = None
+_fit_stamp = 0.0
+# Re-read at most this often: the file grows one line per dictation, and
+# re-fitting on every call would parse it inside the latency-critical path.
+_FIT_TTL = 300.0
+
+
+def reset_fit() -> None:
+    """Forget the learned fit (tests, and after the model is changed)."""
+    global _fit_cache, _fit_stamp
+    _fit_cache, _fit_stamp = None, 0.0
+
+
+def _fit() -> tuple[float, float]:
+    global _fit_cache, _fit_stamp
+
+    now = time.monotonic()
+    if _fit_cache is not None and now - _fit_stamp < _FIT_TTL:
+        return _fit_cache
+    _fit_stamp = now
+    _fit_cache = _fit_from_metrics() or (FALLBACK_FIXED_MS, FALLBACK_PER_CHAR_MS)
+    return _fit_cache
+
+
+def _fit_from_metrics() -> tuple[float, float] | None:
+    """Least-squares fit of cleanup_ms against chars, from real dictations."""
+    try:
+        rows = [
+            (float(r["chars"]), float(r["cleanup_ms"]))
+            for r in metrics.read_all()
+            if r.get("cleanup_ms") and r.get("chars")
+        ]
+    except Exception:  # noqa: BLE001 - a missing or corrupt file is not fatal
+        return None
+    if len(rows) < MIN_SAMPLES_TO_FIT:
+        return None
+
+    n = len(rows)
+    sum_x = sum(x for x, _ in rows)
+    sum_y = sum(y for _, y in rows)
+    sum_xx = sum(x * x for x, _ in rows)
+    sum_xy = sum(x * y for x, y in rows)
+    denominator = n * sum_xx - sum_x * sum_x
+    if denominator <= 0:
+        return None  # every sample the same length; nothing to fit
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    intercept = (sum_y - slope * sum_x) / n
+    if slope <= 0:
+        return None  # longer text coming out cheaper is noise, not a model
+    fixed = max(MIN_FIXED_MS, intercept)
+    logger.debug("cleanup cost fitted from %d runs: %.0f + %.2f/char",
+                 n, fixed, slope)
+    return fixed, slope
+
+
+def installed_models() -> list[str]:
+    """Model names Ollama currently has pulled.
+
+    Used to populate the Settings dropdown: offering a model that is not
+    installed produces a setting that looks applied and then fails at the
+    first dictation.
+    """
+    host = config.get_str("FVOllamaHost").rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=2.0) as response:
+            if response.status != 200:
+                return []
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - Ollama not running is the normal case
+        return []
+    names = [m.get("name", "") for m in payload.get("models", [])]
+    return sorted(name for name in names if name)
 
 
 def base_system(vocabulary: str) -> str:

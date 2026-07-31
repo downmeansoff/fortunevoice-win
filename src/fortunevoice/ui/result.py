@@ -23,9 +23,9 @@ from . import theme, ui
 
 logger = get_logger("ui.result")
 
-WIDTH = 460
-HEIGHT = 178
-MARGIN = 24
+WIDTH = theme.px(460)
+HEIGHT = theme.px(178)
+MARGIN = theme.px(24)
 # Long enough to read a sentence and reach for the mouse, short enough that a
 # forgotten panel doesn't sit over the user's work.
 AUTO_HIDE_MS = 20_000
@@ -93,11 +93,13 @@ class ResultPanel:
         winapi.make_non_activating(window)
 
     def _place(self) -> None:
-        screen_w = self._window.winfo_screenwidth()
-        screen_h = self._window.winfo_screenheight()
-        # Bottom-right, where Windows puts notifications, and clear of the pill.
-        x = screen_w - WIDTH - MARGIN
-        y = screen_h - HEIGHT - MARGIN - 48
+        from .. import winapi
+
+        # Bottom-right of the monitor the user is on, where Windows puts its
+        # own notifications, and clear of the pill.
+        left, top, right, bottom = winapi.work_area_of_window(winapi.foreground_window())
+        x = right - WIDTH - MARGIN
+        y = bottom - HEIGHT - MARGIN
         self._window.geometry(f"{WIDTH}x{HEIGHT}+{x}+{y}")
 
     def _show(self, text: str, hint: str) -> None:
