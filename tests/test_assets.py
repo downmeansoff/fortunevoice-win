@@ -45,11 +45,33 @@ def test_mark_renders_at_the_requested_size():
 
 def test_tray_image_has_no_plate():
     """The tray icon sits directly on the user's taskbar colour, so its corners
-    must be transparent — a dark plate would show as a black box on a light
+    must be transparent — a plate of any kind would show as a box on a light
     taskbar."""
     image = assets.tray_image(assets.IDLE)
     assert image.getpixel((0, 0))[3] == 0
     assert image.getpixel((image.width - 1, 0))[3] == 0
+
+
+def test_logo_is_opaque_and_blue():
+    """The app icon is the product logo, not the tray silhouette: a filled
+    gradient tile matching the identity tile in the window's own sidebar. An
+    icon that doesn't match the app it opens looks like the wrong shortcut."""
+    image = assets.logo(64).convert("RGBA")
+    centre_top = image.getpixel((32, 6))
+    assert centre_top[3] == 255, "the tile must be opaque"
+    red, green, blue = centre_top[:3]
+    assert blue > red + 40 and blue > green + 20, f"expected blue, got {centre_top}"
+    # Corners are rounded, so they are transparent.
+    assert image.getpixel((0, 0))[3] < 40
+
+
+def test_logo_has_a_gradient():
+    """Flat colour reads as printed ink; the gradient is what makes it a
+    surface."""
+    image = assets.logo(128).convert("RGBA")
+    top = image.getpixel((64, 4))[:3]
+    bottom = image.getpixel((64, 123))[:3]
+    assert sum(top) > sum(bottom) + 60, f"{top} vs {bottom}"
 
 
 def test_level_changes_the_mark():
