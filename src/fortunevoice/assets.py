@@ -1,111 +1,144 @@
-"""The app's icon, drawn in code rather than shipped as a binary blob.
+"""The app icon, drawn in code rather than shipped as a binary blob.
 
 One generator produces every size the app needs — the multi-resolution .ico
-for the shortcut and the taskbar, and the per-state bitmaps for the tray. The
-mark is a microphone capsule with a level bar either side, which reads at 16 px
-where a detailed glyph turns to mush.
+for the shortcut, the taskbar and Alt-Tab, and the per-state bitmaps for the
+tray. Generating it means the icon is reviewable in a diff and regenerates if
+the palette changes, instead of being a file nobody can edit.
 
-Generating it means the icon is reviewable in a diff and regenerates if the
-palette changes, instead of being a file nobody can edit.
+Two different marks, deliberately:
+
+* **The app icon** is the product logo: a blue gradient tile with a white
+  microphone, matching the identity tile in the window's own sidebar. An icon
+  that doesn't match the app it opens looks like the wrong shortcut.
+* **The tray icon** is a monochrome silhouette on a transparent background,
+  tinted by state. It sits directly on the user's taskbar colour, so a plate
+  of any kind would show as a box; and at 16 px a two-tone glyph turns to
+  mush.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-# Tray state colours. The idle mark is deliberately low-contrast: the tray is
-# a place the user should be able to ignore until something is happening.
+# Tray state colours. Idle is deliberately low-contrast: the tray is a place
+# the user should be able to ignore until something is happening.
 IDLE = (150, 158, 178)
 LOADING = (120, 126, 145)
-RECORDING = (255, 77, 94)
-PROCESSING = (255, 176, 32)
+RECORDING = (255, 69, 58)
+PROCESSING = (255, 159, 10)
 ERROR = (255, 214, 79)
 
-_TILE = (18, 20, 27)
-_TILE_EDGE = (44, 49, 63)
+# The logo gradient, top to bottom. Same blue as theme.ACCENT at the midpoint.
+_TILE_TOP = (94, 156, 255)
+_TILE_BOTTOM = (37, 99, 235)
 
 
-def mark(size: int, colour: tuple[int, int, int], tile: bool = True, level: float = 0.0):
-    """The FortuneVoice mark at `size` px.
+def _microphone(draw, px: int, fill: tuple, stroke: float = 0.062) -> None:
+    """The mic silhouette, drawn into a box of side `px`.
 
-    `tile` draws the rounded dark plate behind it — right for a desktop icon,
-    wrong for a tray icon, which must sit directly on the user's taskbar
-    colour. `level` (0…1) raises the side bars, so the tray icon can show that
-    audio is actually arriving.
+    Proportions are tuned for 16 px first: the capsule clears the cradle so
+    the two shapes don't merge into a blob, and the cradle is an arc plus a
+    stem plus a foot, which is the silhouette everyone reads as "microphone"
+    without resolving any detail.
     """
-    from PIL import Image, ImageDraw
-
-    # Draw at 8x and downsample: PIL has no antialiased primitives, and a
-    # 16 px icon drawn directly looks like a broken QR code.
-    scale = 8
-    px = size * scale
-    image = Image.new("RGBA", (px, px), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-
-    if tile:
-        radius = int(px * 0.22)
-        draw.rounded_rectangle((0, 0, px - 1, px - 1), radius=radius,
-                               fill=_TILE + (255,), outline=_TILE_EDGE + (255,),
-                               width=max(1, int(px * 0.012)))
-
-    fill = colour + (255,)
+    width = max(1, int(px * stroke))
     centre = px / 2
-    stroke = max(1, int(px * 0.058))
 
-    # Microphone capsule. Kept clear of the cradle below it — at 16 px an
-    # overlap turns the two shapes into one blob.
-    capsule_w = px * 0.21
-    capsule_top = px * 0.19
-    capsule_bottom = px * 0.53
+    capsule_w = px * 0.22
+    capsule_top = px * 0.20
+    capsule_bottom = px * 0.545
     draw.rounded_rectangle(
         (centre - capsule_w / 2, capsule_top, centre + capsule_w / 2, capsule_bottom),
         radius=capsule_w / 2, fill=fill,
     )
 
-    # Cradle arc plus stem and foot: the silhouette everyone reads as
-    # "microphone" without needing to resolve any detail.
-    cradle_w = px * 0.46
-    cradle_top = px * 0.42
+    cradle_w = px * 0.44
+    cradle_top = px * 0.43
     cradle_bottom = px * 0.72
     draw.arc(
         (centre - cradle_w / 2, cradle_top, centre + cradle_w / 2, cradle_bottom),
-        start=0, end=180, fill=fill, width=stroke,
+        start=0, end=180, fill=fill, width=width,
     )
     stem_top = (cradle_top + cradle_bottom) / 2
-    draw.line((centre, stem_top, centre, px * 0.83), fill=fill, width=stroke)
-    foot = px * 0.13
-    draw.line((centre - foot, px * 0.83, centre + foot, px * 0.83), fill=fill, width=stroke)
+    draw.line((centre, stem_top, centre, px * 0.82), fill=fill, width=width)
+    foot = px * 0.12
+    draw.line((centre - foot, px * 0.82, centre + foot, px * 0.82), fill=fill, width=width)
 
-    # Level bars, centred on the capsule. At rest they are short ticks that
-    # balance the mark; `level` grows them symmetrically, which is what makes
-    # the tray icon show that audio is actually arriving.
-    capsule_mid = (capsule_top + capsule_bottom) / 2
-    for side in (-1, 1):
-        x = centre + side * px * 0.35
-        height = px * (0.12 + 0.26 * min(1.0, max(0.0, level)))
-        draw.line((x, capsule_mid - height / 2, x, capsule_mid + height / 2),
-                  fill=fill, width=stroke)
 
-    return image.resize((size, size), Image.LANCZOS)
+def logo(size: int):
+    """The product icon: white microphone on a blue gradient tile.
+
+    Drawn at 8x and downsampled, because PIL has no antialiased primitives and
+    a 32 px icon drawn directly looks like gravel.
+    """
+    from PIL import Image, ImageDraw
+
+    scale = 8
+    px = size * scale
+    radius = int(px * 0.225)  # close to the Windows 11 app-icon curve
+
+    # Vertical gradient, then masked to the rounded square.
+    gradient = Image.new("RGB", (1, px))
+    for y in range(px):
+        t = y / max(1, px - 1)
+        gradient.putpixel((0, y), tuple(
+            int(_TILE_TOP[i] + (_TILE_BOTTOM[i] - _TILE_TOP[i]) * t) for i in range(3)
+        ))
+    tile = gradient.resize((px, px)).convert("RGBA")
+
+    mask = Image.new("L", (px, px), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, px - 1, px - 1), radius=radius, fill=255)
+    tile.putalpha(mask)
+
+    draw = ImageDraw.Draw(tile)
+    # A hairline of lighter blue along the top edge: without it the tile reads
+    # as flat printed colour rather than as a surface.
+    draw.rounded_rectangle((0, 0, px - 1, px - 1), radius=radius,
+                           outline=(255, 255, 255, 46), width=max(1, int(px * 0.012)))
+    _microphone(draw, px, (255, 255, 255, 255), stroke=0.058)
+
+    return tile.resize((size, size), Image.LANCZOS)
 
 
 def tray_image(colour: tuple[int, int, int], level: float = 0.0):
-    """64 px, no plate — Windows scales tray icons down from this."""
-    return mark(64, colour, tile=False, level=level)
+    """Monochrome silhouette for the notification area, tinted by state.
+
+    `level` (0…1) raises the bars either side, so the tray shows that audio is
+    actually arriving — a dead microphone should not look like a working one.
+    """
+    from PIL import Image, ImageDraw
+
+    size, scale = 64, 8
+    px = size * scale
+    image = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    fill = colour + (255,)
+
+    _microphone(draw, px, fill, stroke=0.058)
+
+    bar_w = max(1, int(px * 0.05))
+    centre = px / 2
+    capsule_mid = px * 0.37
+    for side in (-1, 1):
+        x = centre + side * px * 0.34
+        height = px * (0.12 + 0.26 * min(1.0, max(0.0, level)))
+        draw.line((x, capsule_mid - height / 2, x, capsule_mid + height / 2),
+                  fill=fill, width=bar_w)
+
+    return image.resize((size, size), Image.LANCZOS)
 
 
 def write_ico(path: Path) -> Path:
     """Multi-resolution .ico for the shortcut, taskbar and Alt-Tab.
 
-    All the sizes Windows actually asks for. Missing one makes Explorer scale
-    the nearest, which is where blurry desktop icons come from.
+    All the sizes Windows actually asks for. Pillow's ICO writer silently
+    DISCARDS any requested size larger than the image being saved, so the
+    largest frame has to be the base — building from the 16 px render produced
+    a one-frame icon that Explorer upscaled, with no error anywhere.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-    images = [mark(s, IDLE, tile=True) for s in sizes]
-    # The LARGEST image has to be the base: Pillow's ICO writer silently drops
-    # any requested size bigger than the image it is saving, so building from
-    # the 16 px render produced a one-frame icon and a blurry desktop.
+    images = [logo(s) for s in sizes]
     base, rest = images[-1], images[:-1]
     base.save(path, format="ICO", sizes=[(s, s) for s in sizes], append_images=rest)
     return path
@@ -117,6 +150,12 @@ def icon_path() -> Path:
     if not path.exists():
         write_ico(path)
     return path
+
+
+# Kept for callers that want the mark on a plate at an arbitrary tint (the
+# window sidebar draws its own via ui.icons.tile).
+def mark(size: int, colour: tuple[int, int, int], tile: bool = True, level: float = 0.0):
+    return logo(size) if tile else tray_image(colour, level)
 
 
 if __name__ == "__main__":  # python -m fortunevoice.assets → regenerate

@@ -224,10 +224,19 @@ class Onboarding:
         self._window.after(1500, self._refresh_model)
 
     def _done(self) -> None:
+        """Dismiss setup and show the app itself.
+
+        Closing to nothing was the wrong ending: the tray icon is the only way
+        back in, and a user who has just been told "you're ready" and then
+        sees an empty desktop reasonably concludes the app closed. Opening the
+        main window once, here, is the moment to show what they actually got.
+        """
         config.set("FVOnboarded", True)
         self._stop_meter()
         if self._window is not None:
             self._window.withdraw()
+        if self._app is not None:
+            self._app.open_main_window()
 
 
 onboarding = Onboarding()
