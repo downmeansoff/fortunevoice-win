@@ -437,3 +437,76 @@ deadline and is thrown away:
 - a non-positive slope (longer text coming out cheaper) is noise, not a model,
 - the intercept is floored at 250 ms, since a run of cache-hot samples can
   regress to nearly zero.
+
+## Measured: the cleanup model costs 10x the decode speed on a 6 GB card
+
+The single biggest finding of the whole port, and it only shows up end to end.
+
+`KEEP_ALIVE = "24h"` is upstream's, and it is right there: Apple silicon has
+unified memory and lots of it, so parking the cleanup model costs nothing. On a
+6 GB discrete card it is a disaster. Same 12 s clip, same Whisper instance:
+
+| | VRAM used / free | decode |
+|---|---|---|
+| qwen2.5:3b resident | 5925 / **72 MiB** | 5766 ms — 2.1x realtime |
+| qwen2.5:3b unloaded | 3828 / 2169 MiB | **563 ms — 21.2x realtime** |
+
+`large-v3-turbo` at float16 plus its CUDA context is ~3.8 GB; a resident
+qwen2.5:3b adds ~2.1 GB. Together that is 5.9 of 6 GB, and CUDA spends the
+difference thrashing. Nothing on screen explains it — dictation just feels
+slow, forever.
+
+It reproduces inside a single run: with the GPU free, decodes came back at
+563 ms and 312 ms; the moment the test called Ollama and the model loaded, the
+next three decodes were 2859, 3406 and 3515 ms.
+
+`doctor` now checks GPU headroom and says so. On a card with 8 GB or more it
+stays quiet.
+
+### And the cleanup itself is not earning its keep
+
+Measured against Windows SAPI speech (a clean voice — an accuracy ceiling, not
+a typical result), Whisper transcribed all five samples correctly. What
+qwen2.5:3b then did to them:
+
+| Said | Cleaned |
+|---|---|
+| `Ну это самое, короче, надо бы проверить…` | `ну ладно, нужно бы проверить…` — **invented «ну ладно»**, swapped «надо»→«нужно» |
+| `Сделай кнопку синим, нет, красным цветом.` | `сделай кнопку красным?` — right edit, but **became a question** and lost «цветом» |
+| `Нужно правильно это правильно писать…` | `нужно правильно это писать…` — correct |
+
+Plus a consistent lower-casing of the opening word. Two of three edits damaged
+the text, on top of the 10x decode tax.
+
+So on this machine cleanup is off (`FVCleanupEnabled`, `FVSmartFix` both
+false). Whisper already punctuates and capitalises; the LLM pass was removing
+value in both directions. Worth revisiting with a model that fits beside
+Whisper — qwen2.5:1.5b — rather than treating this as settled.
+
+## The DPI pass was half-done, and I could not see it
+
+Worth recording as a method failure, not just a bug.
+
+`theme.px()` scaled the structural constants — window size, sidebar width, card
+radius, row heights. It did **not** scale what widgets draw inside themselves:
+dropdown chip geometry, the app badges, icon sizes, the pill's label column.
+Meanwhile `tk scaling` made every font 25% larger. So on the target machine —
+a **125%** display — the text grew and the boxes around it did not. Chevrons
+sat on top of the last word, icons looked undersized next to their labels, and
+the whole thing read as cheap.
+
+The reason it survived review is the more useful lesson: **every screenshot
+harness ran in a DPI-unaware process.** Windows virtualises those — they are
+told the display is 96 dpi no matter what it is — so every render I checked
+was a 100% render. `winapi.scale_factor()` called from such a process returns
+1.0 and looks like confirmation. The app itself calls `set_dpi_awareness()`
+in `__main__` and saw 1.25.
+
+Two changes came out of it:
+
+- `theme.text_width()` measures strings with `tkinter.font.measure` instead of
+  estimating "7 px per character". The estimate was calibrated at 100% and had
+  no way to be right anywhere else. Chips, dropdowns and the pill's label
+  column are now sized from the measurement.
+- Every screenshot harness calls `set_dpi_awareness()` before importing the
+  package, so what gets rendered is what the user gets.

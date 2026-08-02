@@ -117,7 +117,7 @@ class Dropdown:
         self._get, self._set = get, set_
 
         self.frame = tk.Frame(parent, bg=parent["bg"], cursor="hand2")
-        self.canvas = tk.Canvas(self.frame, height=30, bg=parent["bg"],
+        self.canvas = tk.Canvas(self.frame, height=theme.px(30), bg=parent["bg"],
                                 highlightthickness=0, bd=0, cursor="hand2")
         self.canvas.pack(fill="x")
         self._menu = tk.Menu(
@@ -151,17 +151,25 @@ class Dropdown:
 
     def paint(self) -> None:
         text = self._title()
-        # Sized to the text: a fixed-width chip either truncates "Auto-detect"
-        # or leaves a gap after "ru".
-        width = max(96, 34 + len(text) * 7)
-        self.canvas.configure(width=width)
+        # Measured, not estimated. The old "7 px per character" guess was
+        # calibrated at 100% scaling; on a 125% display the same string needs
+        # ~9 px per character, so every chip came out too narrow and the
+        # chevron sat on top of the last word.
+        pad, gap = theme.px(12), theme.px(10)
+        chevron_size = theme.px(12)
+        width = pad + theme.text_width(text, theme.font(9)) + gap + chevron_size + pad
+        height = theme.px(30)
+        self.canvas.configure(width=width, height=height)
         self.canvas.delete("all")
-        theme.rounded_rect(self.canvas, 0, 2, width - 1, 28, 7, fill=theme.CARD_HI)
-        self.canvas.create_text(12, 15, text=text, anchor="w",
+        theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, height - theme.px(2),
+                           theme.px(7), fill=theme.CARD_HI)
+        self.canvas.create_text(pad, height / 2, text=text, anchor="w",
                                 fill=theme.TEXT, font=theme.font(9))
-        chevron = icons.photo(icons.image("chevron", 12, theme.TEXT_MUTED, stroke=0.10))
+        chevron = icons.photo(icons.image("chevron", chevron_size, theme.TEXT_MUTED,
+                                          stroke=0.10))
         self.canvas._images = [chevron]
-        self.canvas.create_image(width - 16, 15, image=chevron)
+        self.canvas.create_image(width - pad - chevron_size / 2, height / 2,
+                                 image=chevron)
 
 
 class Chip:
@@ -172,11 +180,13 @@ class Chip:
                  fg: str = theme.ACCENT_TEXT, size: int = 8) -> None:
         import tkinter as tk
 
-        width = 14 + len(text) * 6
-        self.canvas = tk.Canvas(parent, width=width, height=19, bg=parent["bg"],
+        font = theme.font(size)
+        width = theme.px(14) + theme.text_width(text, font)
+        height = theme.px(19)
+        self.canvas = tk.Canvas(parent, width=width, height=height, bg=parent["bg"],
                                 highlightthickness=0, bd=0)
-        theme.rounded_rect(self.canvas, 0, 0, width - 1, 18, 6, fill=bg)
-        self.canvas.create_text(width / 2, 9, text=text, fill=fg, font=theme.font(size))
+        theme.rounded_rect(self.canvas, 0, 0, width - 1, height - 1, theme.px(6), fill=bg)
+        self.canvas.create_text(width / 2, height / 2, text=text, fill=fg, font=font)
 
     def pack(self, **kwargs):
         self.canvas.pack(**kwargs)
@@ -213,17 +223,20 @@ class NavItem:
         width = self.canvas.winfo_width() or 220
         self.canvas.delete("all")
         if self._active:
-            theme.rounded_rect(self.canvas, 0, 2, width - 1, 38, 10, fill=theme.ACCENT)
+            theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, theme.px(38),
+                               theme.px(10), fill=theme.ACCENT)
             colour = "#FFFFFF"
         elif hover:
-            theme.rounded_rect(self.canvas, 0, 2, width - 1, 38, 10, fill=theme.CARD)
+            theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, theme.px(38),
+                               theme.px(10), fill=theme.CARD)
             colour = theme.TEXT
         else:
             colour = theme.TEXT_MUTED
-        glyph = icons.photo(icons.image(self._glyph, 18, colour, stroke=0.085))
+        glyph = icons.photo(icons.image(self._glyph, theme.px(18), colour, stroke=0.085))
         self.canvas._images = [glyph]
-        self.canvas.create_image(20, 20, image=glyph)
-        self.canvas.create_text(44, 20, text=self.name, anchor="w", fill=colour,
+        self.canvas.create_image(theme.px(20), theme.px(20), image=glyph)
+        self.canvas.create_text(theme.px(44), theme.px(20), text=self.name,
+                                anchor="w", fill=colour,
                                 font=theme.font(11, "bold" if self._active else "normal"))
 
 
@@ -254,9 +267,10 @@ class IconButton:
 
     def paint(self, hover: bool = False) -> None:
         self.canvas.delete("all")
-        theme.rounded_rect(self.canvas, 0, 0, self._size - 1, self._size - 1, 9,
+        theme.rounded_rect(self.canvas, 0, 0, self._size - 1, self._size - 1,
+                           theme.px(9),
                            fill=theme.CARD_HI if hover else theme.CARD)
-        glyph = icons.photo(icons.image(self._glyph, 16,
+        glyph = icons.photo(icons.image(self._glyph, theme.px(16),
                                         theme.TEXT if hover else theme.TEXT_MUTED))
         self.canvas._images = [glyph]
         self.canvas.create_image(self._size / 2, self._size / 2, image=glyph)
@@ -294,11 +308,12 @@ class SettingRow:
         self.frame.pack(fill="x")
 
         row = tk.Frame(self.frame, bg=theme.CARD)
-        row.pack(fill="x", pady=9)
+        row.pack(fill="x", pady=theme.px(9))
 
-        tile = icons.photo(icons.tile(glyph, 28, "#FFFFFF", tint))
+        tile = icons.photo(icons.tile(glyph, theme.px(28), "#FFFFFF", tint))
         self.frame._images.append(tile)
-        tk.Label(row, image=tile, bg=theme.CARD).pack(side="left", padx=(0, 12))
+        tk.Label(row, image=tile, bg=theme.CARD).pack(side="left",
+                                                      padx=(0, theme.px(12)))
 
         text = tk.Frame(row, bg=theme.CARD)
         text.pack(side="left", fill="x", expand=True)
@@ -312,7 +327,8 @@ class SettingRow:
         if not last:
             # Inset separator, aligned with the text rather than the icon —
             # a full-width rule makes the list look like a table.
-            tk.Frame(self.frame, bg=theme.LINE, height=1).pack(fill="x", padx=(40, 0))
+            tk.Frame(self.frame, bg=theme.LINE, height=1).pack(
+                fill="x", padx=(theme.px(40), 0))
 
 
 def section_title(parent, text: str):
@@ -406,13 +422,14 @@ class ShortcutRecorder:
     def paint(self) -> None:
         width = int(self.canvas["width"])
         self.canvas.delete("all")
+        height = int(self.canvas["height"])
         if self._listening:
-            theme.rounded_rect(self.canvas, 0, 2, width - 1, theme.px(28), theme.px(7),
-                               fill=theme.ACCENT)
-            self.canvas.create_text(width / 2, theme.px(15), text="Press keys…",
+            theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
+                               height - theme.px(2), theme.px(7), fill=theme.ACCENT)
+            self.canvas.create_text(width / 2, height / 2, text="Press keys…",
                                     fill="#FFFFFF", font=theme.font(9, "bold"))
             return
-        theme.rounded_rect(self.canvas, 0, 2, width - 1, theme.px(28), theme.px(7),
-                           fill=theme.CARD_HI)
-        self.canvas.create_text(width / 2, theme.px(15), text=self._get() or "—",
+        theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
+                           height - theme.px(2), theme.px(7), fill=theme.CARD_HI)
+        self.canvas.create_text(width / 2, height / 2, text=self._get() or "—",
                                 fill=theme.TEXT, font=theme.font(9))

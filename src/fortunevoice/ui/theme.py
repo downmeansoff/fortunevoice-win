@@ -125,6 +125,27 @@ def scrollbar(parent, command):
     )
 
 
+def text_width(text: str, font_spec: tuple) -> int:
+    """Width of `text` in pixels, measured by Tk rather than estimated.
+
+    Guessing "N pixels per character" is how the dropdown chips came out too
+    narrow on a 125% display: the estimate was calibrated at 100% scaling and
+    Tk had since been told to draw fonts 25% larger, so the chevron ended up
+    on top of the last word. `font.measure` accounts for the scaling, the
+    typeface and the actual characters.
+
+    Falls back to a rough estimate when no Tk interpreter exists yet (import
+    time, or a headless test) — a wrong width is survivable, an exception at
+    module import is not.
+    """
+    try:
+        import tkinter.font as tkfont
+
+        return int(tkfont.Font(font=font_spec).measure(text))
+    except Exception:  # noqa: BLE001 - no interpreter, no display
+        return px(len(text) * 7)
+
+
 def rounded_rect(canvas, x0, y0, x1, y1, r, fill="", outline="", width=1):
     """A rounded rectangle on a canvas.
 

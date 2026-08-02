@@ -42,11 +42,18 @@ BAR_MIN = theme.px(2)
 _PAD = theme.px(16)
 _LABEL_GAP = theme.px(12)
 _BARS_W = BARS * BAR_W + (BARS - 1) * BAR_GAP
-# Room for the longest label ("No mic signal") at 8 pt. Sized once here rather
-# than measured at runtime: a pill whose width changed with its own state
-# would jump around under the user's eyes.
-_LABEL_W = theme.px(84)
-WIDTH = _PAD + _BARS_W + _LABEL_GAP + _LABEL_W + _PAD
+
+
+def _label_width() -> int:
+    """Room for the longest state label, measured rather than guessed.
+
+    Sized once for the LONGEST label, not per state: a pill that changed width
+    as it went from "Listening" to "Transcribing" would jump around under the
+    user's eyes. Measured because a hard-coded 84 px was calibrated at 100%
+    scaling and clipped the text on a 125% display.
+    """
+    font = theme.font(8)
+    return max(theme.text_width(text, font) for text in _MODE_TEXT.values())
 
 # Magenta is the colour key for the rounded corners: anything painted in it
 # becomes a hole in the window. Nothing else may use it.
@@ -66,6 +73,9 @@ _MODE_TEXT = {
     "no-signal": "No mic signal",
     "cancelled": "Cancelled",
 }
+
+_LABEL_W = _label_width()
+WIDTH = _PAD + _BARS_W + _LABEL_GAP + _LABEL_W + _PAD
 
 
 class Pill:
