@@ -395,3 +395,37 @@ def key_is_down(vk: int) -> bool:
     reads it first and would race with anything else polling the same key.
     """
     return bool(user32.GetAsyncKeyState(vk) & 0x8000)
+
+
+# ── window chrome ────────────────────────────────────────────────────────
+
+# Windows 10 1809 used 19; 1903+ and Windows 11 use 20. Setting both is
+# harmless — the build that doesn't know an attribute just returns an error.
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19
+
+
+def use_dark_titlebar(window) -> bool:
+    """Paint the title bar dark to match the window below it.
+
+    Tk styles the client area only, so a dark app gets a white Windows title
+    bar sitting on top of it — the single most "unfinished" thing about the
+    UI, and visible on every window at once. This is the documented way to fix
+    it; there is no Tk option for it.
+    """
+    hwnd = toplevel_hwnd(window)
+    if not hwnd:
+        return False
+    try:
+        dwm = ctypes.WinDLL("dwmapi")
+    except OSError:  # pragma: no cover - Windows without DWM
+        return False
+    value = ctypes.c_int(1)
+    for attribute in (DWMWA_USE_IMMERSIVE_DARK_MODE,
+                      DWMWA_USE_IMMERSIVE_DARK_MODE_OLD):
+        if dwm.DwmSetWindowAttribute(
+            wintypes.HWND(hwnd), ctypes.c_uint(attribute),
+            ctypes.byref(value), ctypes.sizeof(value),
+        ) == 0:
+            return True
+    return False

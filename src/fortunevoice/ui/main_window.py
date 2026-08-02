@@ -99,6 +99,10 @@ class MainWindow:
         # Closing hides: the app lives in the tray, and destroying the window
         # would throw away the loaded history for no reason.
         window.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Tk styles the client area only, so a dark app otherwise gets a white
+        # Windows title bar sitting on top of it.
+        window.update_idletasks()
+        winapi.use_dark_titlebar(window)
         self._window = window
 
         self._build_sidebar(window)

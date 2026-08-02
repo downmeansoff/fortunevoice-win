@@ -510,3 +510,16 @@ Two changes came out of it:
   column are now sized from the measurement.
 - Every screenshot harness calls `set_dpi_awareness()` before importing the
   package, so what gets rendered is what the user gets.
+
+### The white title bar
+
+Tk styles the client area only, so a dark app gets the default Windows title
+bar on top of it — light, with the app's own dark surface starting one pixel
+below. It is the single most "unfinished" thing about the UI and it shows on
+every window at once.
+
+There is no Tk option for it. `DwmSetWindowAttribute` with
+`DWMWA_USE_IMMERSIVE_DARK_MODE` is the documented fix; the attribute number
+changed between Windows 10 builds (19 before 1903, 20 after), so
+`winapi.use_dark_titlebar` tries both and stops at the first that returns
+success.
