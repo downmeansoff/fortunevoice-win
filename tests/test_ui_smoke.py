@@ -30,8 +30,15 @@ pytestmark = [
 ]
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def root():
+    """ONE Tk root for the whole module, which is what the app itself does.
+
+    Creating and destroying a root per test breaks Tcl after a couple of
+    cycles ("invalid command name tcl_findLibrary") and the remaining tests
+    skip themselves as if there were no display — a green run that tested
+    nothing.
+    """
     tkinter = pytest.importorskip("tkinter")
     try:
         widget = tkinter.Tk()

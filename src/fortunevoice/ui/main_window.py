@@ -605,12 +605,15 @@ class MainWindow:
                          lambda v: config.set("FVOllamaModel", v)).pack()
         self._switch_row(card.body, "wand", TINT_GREEN, "Auto-fix garbled words",
                          "only on low-confidence transcripts", "FVSmartFix", last=True)
+        self._ollama_status = theme.label(body, "checking Ollama…", size=8,
+                                          colour=theme.TEXT_FAINT)
+        self._ollama_status.pack(anchor="w", pady=(8, 0))
         theme.label(
             body,
             "Cleanup rewrites your words with a local model. The raw transcript is "
             "always kept in History next to the cleaned one.",
             size=8, colour=theme.TEXT_FAINT,
-        ).pack(anchor="w", pady=(8, 0))
+        ).pack(anchor="w", pady=(2, 0))
 
         # GENERAL
         widgets.section_title(body, "General").pack(anchor="w", pady=(20, 8))
@@ -693,6 +696,52 @@ class MainWindow:
         # filesystem, which something else may have changed.
         if hasattr(self, "_login_switch"):
             self._login_switch.paint()
+        self._refresh_ollama_status()
+
+    def _refresh_ollama_status(self) -> None:
+        """Say whether the cleanup model is actually reachable.
+
+        Cleanup degrades silently by design — every failure path returns the
+        raw transcript — which is right for a dictation app and terrible for
+        discoverability: with Ollama not running, the switch reads ON and
+        nothing it promises happens. Ollama does not install a startup entry
+        on Windows, so "not running" is the normal state after a reboot.
+
+        Probed on a worker thread: the HTTP call has a timeout, and a frozen
+        Settings page while it runs would be its own bug.
+        """
+        import threading
+
+        from . import ui
+
+        if not hasattr(self, "_ollama_status"):
+            return
+        if not config.get_bool("FVCleanupEnabled") and not config.get_bool("FVSmartFix"):
+            self._ollama_status.configure(text="Cleanup is off.", fg=theme.TEXT_FAINT)
+            return
+
+        wanted = config.get_str("FVOllamaModel")
+
+        def probe() -> None:
+            from .. import cleaner
+
+            models = cleaner.installed_models()
+            if not models:
+                text = "Ollama is not running — dictations are saved and typed raw."
+                colour = theme.PROCESSING
+            elif wanted not in models:
+                text = f"Ollama is running, but {wanted} is not pulled."
+                colour = theme.PROCESSING
+            else:
+                text = f"Ollama ready: {wanted}."
+                colour = theme.OK
+            ui.call(lambda: self._set_ollama_status(text, colour))
+
+        threading.Thread(target=probe, name="ollama-probe", daemon=True).start()
+
+    def _set_ollama_status(self, text: str, colour: str) -> None:
+        if hasattr(self, "_ollama_status") and self._ollama_status.winfo_exists():
+            self._ollama_status.configure(text=text, fg=colour)
 
     @staticmethod
     def _open_folder() -> None:
