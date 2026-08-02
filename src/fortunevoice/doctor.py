@@ -147,6 +147,67 @@ def _check_ollama() -> bool:
     return True
 
 
+def _check_vram() -> bool:
+    """Can the GPU hold Whisper and the cleanup model at the same time?
+
+    Measured on a 6 GB RTX 3060 Laptop: large-v3-turbo at float16 plus its CUDA
+    context takes ~3.8 GB, and a resident qwen2.5:3b takes another ~2.1 GB.
+    Together that is 5.9 GB of 6, leaving 72 MB free — and the decode of a 12 s
+    clip went from 563 ms (21x realtime) to 5766 ms (2.1x). A ten-fold
+    slowdown, with nothing on screen to explain it.
+
+    The app asks Ollama to keep the cleanup model loaded for 24h, which is
+    right on Apple silicon (unified memory, plenty of it) and wrong on a small
+    discrete card. This check exists so that trade is visible instead of being
+    a silent tax on every dictation.
+    """
+    if not (config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix")):
+        return True  # nothing will be loaded beside Whisper
+    free, total = _gpu_memory()
+    if total is None:
+        return True  # no NVIDIA GPU, or nvidia-smi missing: nothing to warn about
+    if total >= 8 * 1024:
+        _line(OK, f"GPU memory {total // 1024} GB — room for both models")
+        return True
+    if free is not None and free < 512:
+        _line(
+            WARN,
+            f"GPU memory nearly full ({free} MiB free of {total} MiB)",
+            "Whisper and the Ollama cleanup model are competing for the same card. "
+            "Measured cost: decodes run up to 10x slower. Either turn cleanup off "
+            '("FVCleanupEnabled": false, "FVSmartFix": false), pick a smaller '
+            'Whisper model, or set "FVDevice": "cpu" for the cleanup model\'s sake.',
+        )
+        return True
+    _line(
+        WARN,
+        f"GPU has {total // 1024} GB — tight for Whisper plus a cleanup model",
+        "If dictations feel slow, check `nvidia-smi`: with both models resident "
+        "there may be no headroom left, which costs far more than cleanup saves.",
+    )
+    return True
+
+
+def _gpu_memory() -> tuple[int | None, int | None]:
+    """(free, total) MiB from nvidia-smi, or (None, None)."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free,memory.total",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=8,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    line = out.stdout.strip().splitlines()[0] if out.stdout.strip() else ""
+    try:
+        free, total = (int(part.strip()) for part in line.split(","))
+    except ValueError:
+        return None, None
+    return free, total
+
+
 def _check_injection() -> bool:
     from . import injector
 
@@ -168,6 +229,7 @@ def run() -> int:
         _check_injection,
         _check_model,
         _check_ollama,
+        _check_vram,
     ]
     failed = 0
     for check in checks:
