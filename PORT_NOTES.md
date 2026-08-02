@@ -482,3 +482,31 @@ So on this machine cleanup is off (`FVCleanupEnabled`, `FVSmartFix` both
 false). Whisper already punctuates and capitalises; the LLM pass was removing
 value in both directions. Worth revisiting with a model that fits beside
 Whisper — qwen2.5:1.5b — rather than treating this as settled.
+
+## The DPI pass was half-done, and I could not see it
+
+Worth recording as a method failure, not just a bug.
+
+`theme.px()` scaled the structural constants — window size, sidebar width, card
+radius, row heights. It did **not** scale what widgets draw inside themselves:
+dropdown chip geometry, the app badges, icon sizes, the pill's label column.
+Meanwhile `tk scaling` made every font 25% larger. So on the target machine —
+a **125%** display — the text grew and the boxes around it did not. Chevrons
+sat on top of the last word, icons looked undersized next to their labels, and
+the whole thing read as cheap.
+
+The reason it survived review is the more useful lesson: **every screenshot
+harness ran in a DPI-unaware process.** Windows virtualises those — they are
+told the display is 96 dpi no matter what it is — so every render I checked
+was a 100% render. `winapi.scale_factor()` called from such a process returns
+1.0 and looks like confirmation. The app itself calls `set_dpi_awareness()`
+in `__main__` and saw 1.25.
+
+Two changes came out of it:
+
+- `theme.text_width()` measures strings with `tkinter.font.measure` instead of
+  estimating "7 px per character". The estimate was calibrated at 100% and had
+  no way to be right anywhere else. Chips, dropdowns and the pill's label
+  column are now sized from the measurement.
+- Every screenshot harness calls `set_dpi_awareness()` before importing the
+  package, so what gets rendered is what the user gets.
