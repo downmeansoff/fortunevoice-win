@@ -15,14 +15,17 @@ from __future__ import annotations
 
 import threading
 
-from .. import audio, config
+from .. import audio, config, winapi
 from ..log import get as get_logger
 from . import theme, ui
 
 logger = get_logger("ui.onboarding")
 
 WIDTH = theme.px(520)
-HEIGHT = theme.px(480)
+# Sized to the content rather than guessed: the previous height left a
+# band of dead space between the last section and the footer, which is
+# what an unfinished window looks like.
+HEIGHT = theme.px(430)
 
 
 def needed() -> bool:
@@ -71,15 +74,17 @@ class Onboarding:
         except Exception:  # noqa: BLE001 - cosmetic
             pass
         window.protocol("WM_DELETE_WINDOW", self._done)
+        window.update_idletasks()
+        winapi.use_dark_titlebar(window)
 
         body = tk.Frame(window, bg=theme.INK)
-        body.pack(fill="both", expand=True, padx=30, pady=26)
+        body.pack(fill="both", expand=True, padx=theme.px(30), pady=theme.px(24))
 
         # Packed FIRST so it reserves its strip at the bottom. `side="bottom"`
         # only claims what is left over at the moment of packing, so building
         # the footer last pushed it off the window entirely.
         footer = tk.Frame(body, bg=theme.INK)
-        footer.pack(fill="x", side="bottom")
+        footer.pack(fill="x", side="bottom", pady=(theme.px(18), 0))
         theme.button(footer, "Start dictating", self._done, primary=True).pack(side="right")
         theme.label(
             footer, "The tray icon has settings, history and this screen again.",
@@ -91,32 +96,37 @@ class Onboarding:
             body,
             "Everything runs on this machine. Audio never leaves it.",
             size=9, colour=theme.TEXT_MUTED,
-        ).pack(anchor="w", pady=(4, 22))
+        ).pack(anchor="w", pady=(theme.px(4), theme.px(18)))
 
         # ── the hotkey, stated once and prominently ──
         chord = tk.Frame(body, bg=theme.CARD)
         chord.pack(fill="x")
         inner = tk.Frame(chord, bg=theme.CARD)
-        inner.pack(fill="x", padx=18, pady=16)
+        inner.pack(fill="x", padx=theme.px(18), pady=theme.px(16))
         hotkey = self._app.hotkey_label if self._app else config.get_str("FVHotkey")
         theme.label(inner, "Hold to talk", size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
         theme.label(inner, hotkey, size=18, weight="bold", colour=theme.ACCENT).pack(anchor="w")
         theme.label(
             inner, "Hold it, speak, let go. The text is typed where your cursor is.",
             size=9, colour=theme.TEXT_MUTED,
-        ).pack(anchor="w", pady=(6, 0))
+        ).pack(anchor="w", pady=(theme.px(6), 0))
 
         # ── microphone, proven rather than asserted ──
-        theme.label(body, "Microphone", size=11, weight="bold").pack(anchor="w", pady=(22, 6))
+        theme.label(body, "Microphone", size=11, weight="bold").pack(
+            anchor="w", pady=(theme.px(20), theme.px(5)))
         self._mic_note = theme.label(body, "Say something…", size=9, colour=theme.TEXT_MUTED)
         self._mic_note.pack(anchor="w")
-        self._meter = tk.Frame(body, bg=theme.CARD, height=10)
-        self._meter.pack(fill="x", pady=(8, 0))
-        self._meter_fill = tk.Frame(self._meter, bg=theme.OK, height=10)
-        self._meter_fill.place(relwidth=0.0, relheight=1)
+        # Drawn on a canvas so the track and the fill can both be rounded; a
+        # flat Frame reads as a progress bar someone forgot to style.
+        self._meter = tk.Canvas(body, height=theme.px(12), bg=theme.INK,
+                                highlightthickness=0, bd=0)
+        self._meter.pack(fill="x", pady=(theme.px(8), 0))
+        self._meter.bind("<Configure>", lambda _e: self._paint_meter())
+        self._meter_level = 0.0
 
         # ── model ──
-        theme.label(body, "Model", size=11, weight="bold").pack(anchor="w", pady=(22, 6))
+        theme.label(body, "Model", size=11, weight="bold").pack(
+            anchor="w", pady=(theme.px(20), theme.px(5)))
         self._model_note = theme.label(body, "checking…", size=9, colour=theme.TEXT_MUTED)
         self._model_note.pack(anchor="w")
 
@@ -164,12 +174,27 @@ class Onboarding:
             self._stop_meter()
             return
         # Same scale as the pill, so "loud here" means "loud there".
-        value = min(1.0, (self._level / 0.22) ** 0.7)
-        self._meter_fill.configure(bg=theme.OK if value > 0.08 else theme.LINE)
-        self._meter_fill.place(relwidth=value, relheight=1)
-        if value > 0.25:
+        self._meter_level = min(1.0, (self._level / 0.22) ** 0.7)
+        self._paint_meter()
+        if self._meter_level > 0.25:
             self._mic_note.configure(text="Hearing you clearly.", fg=theme.OK)
         self._window.after(50, self._tick)
+
+    def _paint_meter(self) -> None:
+        width = self._meter.winfo_width()
+        height = self._meter.winfo_height()
+        if width < 4 or height < 2:
+            return
+        radius = height // 2
+        self._meter.delete("all")
+        # The track is a step lighter than a card: at CARD on INK it was so
+        # close to the background that the meter looked like a hairline.
+        theme.rounded_rect(self._meter, 0, 0, width - 1, height - 1, radius,
+                           fill=theme.CARD_HI)
+        filled = int((width - 1) * self._meter_level)
+        if filled > radius:
+            theme.rounded_rect(self._meter, 0, 0, filled, height - 1, radius,
+                               fill=theme.OK if self._meter_level > 0.08 else theme.LINE)
 
     def _stop_meter(self) -> None:
         self._listening = False
