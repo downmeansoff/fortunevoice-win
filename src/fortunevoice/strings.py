@@ -210,6 +210,25 @@ CATALOGUE: dict[str, dict[str, str]] = {
                              "ru": "Ollama работает, но модель {model} не скачана."},
     "ollama.ready": {"en": "Ollama ready: {model}.", "ru": "Ollama готова: {model}."},
 
+    # ── delivery outcomes (the result panel's reason line) ──────────────
+    "hold.stale": {"en": "Took a while — saved to History",
+                   "ru": "Долго считалось — сохранено в историю"},
+    "hold.focus": {"en": "You switched windows — saved to History",
+                   "ru": "Вы сменили окно — сохранено в историю"},
+    "hold.noedit": {"en": "No text field — saved to History",
+                    "ru": "Нет текстового поля — сохранено в историю"},
+    "hold.failed": {"en": "Couldn't type it — saved to History",
+                    "ru": "Не удалось напечатать — сохранено в историю"},
+
+    # ── notifications ───────────────────────────────────────────────────
+    "notify.bad_hotkey": {"en": "Bad hotkey", "ru": "Неверное сочетание клавиш"},
+    "notify.model_failed": {"en": "FortuneVoice couldn't load the model",
+                            "ru": "FortuneVoice не смог загрузить модель"},
+    "notify.no_audio": {"en": "FortuneVoice can't hear you",
+                        "ru": "FortuneVoice вас не слышит"},
+    "notify.recovered": {"en": "Recovered — saved to History",
+                         "ru": "Восстановлено — сохранено в историю"},
+
     # ── onboarding ──────────────────────────────────────────────────────
     "setup.title": {"en": "FortuneVoice — setup", "ru": "FortuneVoice — настройка"},
     "setup.heading": {"en": "Ready to dictate", "ru": "Готово к диктовке"},

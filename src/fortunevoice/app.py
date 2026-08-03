@@ -32,6 +32,7 @@ from .cleaner import OllamaCleaner
 from .hotkey import HotkeyListener, parse as parse_hotkey
 from .log import get as get_logger
 from .store import DictationRecord, DictationStore, RecoveryStore
+from .strings import t
 from .streaming import StreamingSession
 from .textclean import collapse_repeats, word_count
 from .timeout import run as run_with_timeout
@@ -188,7 +189,7 @@ class App:
             spec = parse_hotkey(config.get_str("FVHotkey"))
         except ValueError as exc:
             logger.error("%s — falling back to ctrl+alt+space", exc)
-            self._notify("Bad hotkey", str(exc))
+            self._notify(t("notify.bad_hotkey"), str(exc))
             spec = parse_hotkey("ctrl+alt+space")
             ok = False
 
@@ -373,7 +374,7 @@ class App:
             self.recorder.start(config.get_str("FVMicrophone"))
         except AudioError as exc:
             logger.error("recording failed: %s", exc)
-            self._notify("FortuneVoice can't hear you", str(exc))
+            self._notify(t("notify.no_audio"), str(exc))
             sound.play("error")
             return
 
@@ -775,22 +776,22 @@ class App:
         # typed — a plain "panel" hid four very different failure modes.
         if stale:
             outcome = "panel-stale"
-            self._hold("Took a while — saved to History", text)
+            self._hold(t("hold.stale"), text)
         elif not focus_held:
             outcome = "panel-focus"
             sound.play("success")
-            self._hold("You switched windows — saved to History", text)
+            self._hold(t("hold.focus"), text)
         elif editable is False:
             outcome = "panel-noedit"
             sound.play("success")
-            self._hold("No text field — saved to History", text)
+            self._hold(t("hold.noedit"), text)
         elif injector.inject(text):
             outcome = "pasted" if editable is True else "pasted-blind"
             logger.info("outcome = typed (editable = %s)", "yes" if editable else "unknown")
             sound.play("success")
         else:
             outcome = "panel-failed"
-            self._hold("Couldn't type it — saved to History", text)
+            self._hold(t("hold.failed"), text)
 
         metrics.record(
             metrics.DictationMetric(
@@ -879,7 +880,7 @@ class App:
                 )
                 self.recovery.delete(path)
                 sound.play("success")
-                self._notify("Recovered — saved to History", result.text[:120])
+                self._notify(t("notify.recovered"), result.text[:120])
             except Exception as exc:  # noqa: BLE001 - the WAV stays for another attempt
                 logger.error("recovery decode failed: %s", exc)
                 sound.play("error")
