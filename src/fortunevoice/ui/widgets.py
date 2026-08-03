@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from ..strings import t
 from . import icons, theme
 
 
@@ -365,9 +366,15 @@ class ShortcutRecorder:
         "period": ".", "slash": "/", "backslash": "\\",
         "bracketleft": "[", "bracketright": "]",
     }
+    # Keys that are never a shortcut on their own. Tk on Windows reports the
+    # Windows key as Win_L/Win_R, NOT the X11 name Super_L — listing only the
+    # X11 spelling let a lone Win press through as the literal key "win_l",
+    # which the parser then rejected with "unknown key".
     _IGNORED = {
         "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
-        "Super_L", "Super_R", "Caps_Lock", "Num_Lock", "Scroll_Lock", "ISO_Level3_Shift",
+        "Win_L", "Win_R", "Super_L", "Super_R", "Meta_L", "Meta_R",
+        "Caps_Lock", "Num_Lock", "Scroll_Lock", "ISO_Level3_Shift",
+        "App", "Menu",
     }
 
     def __init__(self, parent, get: Callable[[], str], set_: Callable[[str], bool],
@@ -454,6 +461,11 @@ class ShortcutRecorder:
                 modifiers.append("alt")
             if winapi.key_is_down(winapi.VK_SHIFT):
                 modifiers.append("shift")
+            # Win counts as a modifier, so Win+D records as "win+d" rather
+            # than being thrown away with the bare-Win presses.
+            if (winapi.key_is_down(winapi.VK_LWIN)
+                    or winapi.key_is_down(winapi.VK_RWIN)):
+                modifiers.append("win")
         except Exception:  # noqa: BLE001 - fall back to no modifiers
             pass
 
@@ -468,7 +480,8 @@ class ShortcutRecorder:
         if self._listening:
             theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
                                height - theme.px(2), theme.px(7), fill=theme.ACCENT)
-            self.canvas.create_text(width / 2, height / 2, text="Press keys…",
+            self.canvas.create_text(width / 2, height / 2,
+                                    text=t("settings.shortcut_press"),
                                     fill="#FFFFFF", font=theme.font(9, "bold"))
             return
         theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
