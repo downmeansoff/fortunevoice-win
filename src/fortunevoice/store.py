@@ -98,12 +98,17 @@ class DictationStore:
         that was built from a filtered, reversed copy — an index into that is
         not an index into the file, and using one would delete a neighbour.
         """
-        records = self.all()
-        for position, existing in enumerate(records):
-            if existing.date == record.date and existing.transcript == record.transcript:
-                del records[position]
-                self._write(records)
-                return True
+        with self._lock:
+            # Under the lock like every other mutation: a dictation landing
+            # between the read and the write would be lost, and the vault
+            # promise ("nothing is ever silently discarded") with it.
+            records = self.all()
+            for position, existing in enumerate(records):
+                if (existing.date == record.date
+                        and existing.transcript == record.transcript):
+                    del records[position]
+                    self._write(records)
+                    return True
         return False
 
     def clear(self) -> None:
