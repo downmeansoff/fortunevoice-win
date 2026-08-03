@@ -586,8 +586,15 @@ class MainWindow:
                          lambda v: config.set("FVActivationMode", v)).pack()
         row = widgets.SettingRow(card.body, "keyboard", TINT_INDIGO,
                                  t("settings.shortcut"), t("settings.shortcut_hint"))
-        widgets.ShortcutRecorder(
-            row.control, lambda: config.get_str("FVHotkey"), self._save_hotkey).pack()
+        recorder = widgets.ShortcutRecorder(
+            row.control, lambda: config.get_str("FVHotkey"), self._save_hotkey,
+            on_listening=self._hotkey_capture)
+        recorder.pack()
+        # The whole row, not just the chip: this is the setting people most
+        # want to change, and a click a pixel outside a 150 px target did
+        # nothing at all.
+        recorder.bind_clickable(row.frame, *row.frame.winfo_children())
+        self._recorder = recorder
         row = widgets.SettingRow(card.body, "globe", TINT_TEAL, t("settings.language"))
         widgets.Dropdown(row.control, [("ru", t("settings.lang_ru")),
                                        ("en", t("settings.lang_en")),
@@ -675,6 +682,20 @@ class MainWindow:
         config.set("FVLanguage", value)
         if self._app:
             self._app.transcriber.reset_session_language()
+
+    def _hotkey_capture(self, listening: bool) -> None:
+        """Silence the global hotkey while a new one is being recorded.
+
+        The chord a user reaches for first is the one already configured, and
+        the hook would swallow it and start a dictation instead of recording
+        the key.
+        """
+        if self._app is None:
+            return
+        if listening:
+            self._app.pause_hotkey()
+        else:
+            self._app.resume_hotkey()
 
     def _save_hotkey(self, value: str) -> bool:
         """Validate, store, and rebind the hook immediately.

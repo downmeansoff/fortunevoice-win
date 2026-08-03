@@ -650,3 +650,31 @@ audio decides. Verified — the same sentence passes at rms 0.15.
 
 A caught hallucination is still saved to History, untyped. A false positive
 must always be recoverable; a truly silent drop never happens.
+
+## Recording a shortcut fought the app's own hook
+
+Reported: the Shortcut setting could not be changed.
+
+The widget itself was fine — driven directly it captured keys, ignored bare
+modifiers and saved correctly. Three things on the real path were not.
+
+**The hook swallowed the chord.** The global `WH_KEYBOARD_LL` hook claims the
+configured hotkey and returns 1, so the key never reaches Tk. The chord a user
+reaches for first when changing a shortcut is *the one already set* — pressing
+it started a dictation instead of recording anything. `App.pause_hotkey()` now
+uninstalls the hook while the recorder is listening and `resume_hotkey()`
+puts it back, picking up whatever was just saved.
+
+**The target was 150 px.** For the setting people most want to change, a click
+a pixel outside the chip did nothing at all. The whole row is clickable now.
+
+**Keys followed focus.** The binding lived on the chip, so any click that
+moved focus elsewhere in the page left the chip *looking* like it was
+listening while the keypress went somewhere that ignored it. It is now bound
+on the toplevel.
+
+Deliberately not `bind_all`: that registers for the whole interpreter, and the
+matching `unbind_all("<KeyPress>")` wipes **every** other key handler in the
+app rather than just this one. The funcid returned by `bind` is kept so
+exactly one handler is removed. The test suite found this immediately — two
+recorders in one interpreter stopped seeing each other's keys.

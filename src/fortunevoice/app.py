@@ -233,6 +233,24 @@ class App:
         self._listener.start()
         return ok
 
+    def pause_hotkey(self) -> None:
+        """Stop listening for the global hotkey.
+
+        Used while the user is recording a NEW shortcut. Without this the hook
+        swallows the very chord they are trying to press — the current hotkey
+        is exactly the one a user reaches for first — and starts a dictation
+        instead of recording the key.
+        """
+        if self._listener is not None:
+            self._listener.stop()
+            self._listener = None
+            logger.info("hotkey paused while a new shortcut is recorded")
+
+    def resume_hotkey(self) -> None:
+        """Reinstall the hook, picking up any change made meanwhile."""
+        if self._listener is None:
+            self.rebind_hotkey()
+
     def cancel_dictation(self) -> bool:
         """Throw away a recording in progress.
 

@@ -370,30 +370,68 @@ class ShortcutRecorder:
         "Super_L", "Super_R", "Caps_Lock", "Num_Lock", "Scroll_Lock", "ISO_Level3_Shift",
     }
 
-    def __init__(self, parent, get: Callable[[], str], set_: Callable[[str], bool]) -> None:
+    def __init__(self, parent, get: Callable[[], str], set_: Callable[[str], bool],
+                 on_listening: Callable[[bool], None] | None = None) -> None:
         import tkinter as tk
 
         self._get, self._set = get, set_
+        self._on_listening = on_listening
         self._listening = False
+        self._binding = None
         self.canvas = tk.Canvas(parent, height=theme.px(30), width=theme.px(150),
                                 bg=parent["bg"], highlightthickness=0, bd=0,
                                 cursor="hand2", takefocus=1)
         self.canvas.bind("<Button-1>", self._begin)
-        self.canvas.bind("<KeyPress>", self._captured)
-        self.canvas.bind("<FocusOut>", lambda _e: self._end())
         self.paint()
+
+    def bind_clickable(self, *widgets) -> None:
+        """Let a click anywhere on the row start recording.
+
+        A 150 px chip is a small target for the one setting people most want
+        to change, and a click that lands a pixel outside it silently does
+        nothing.
+        """
+        for widget in widgets:
+            widget.bind("<Button-1>", self._begin, add="+")
+            try:
+                widget.configure(cursor="hand2")
+            except Exception:  # noqa: BLE001 - not every widget takes a cursor
+                pass
 
     def pack(self, **kwargs):
         self.canvas.pack(**kwargs)
         return self
 
-    def _begin(self, _event=None) -> None:
+    def _begin(self, _event=None) -> str:
+        if self._listening:
+            return "break"
         self._listening = True
         self.canvas.focus_set()
+        # Bound on the TOPLEVEL, not on the chip: Tk delivers keys to whatever
+        # holds focus, and a stray click elsewhere in the window would
+        # otherwise send the keypress somewhere that ignores it while this
+        # widget still looked like it was listening.
+        #
+        # Not bind_all either — that registers for the whole interpreter, and
+        # the matching unbind_all wipes every other <KeyPress> handler in the
+        # app, not just ours. Keeping the funcid lets us remove exactly one.
+        window = self.canvas.winfo_toplevel()
+        self._binding = window.bind("<KeyPress>", self._captured, add="+")
+        if self._on_listening:
+            self._on_listening(True)
         self.paint()
+        return "break"
 
     def _end(self) -> None:
         self._listening = False
+        if self._binding is not None:
+            try:
+                self.canvas.winfo_toplevel().unbind("<KeyPress>", self._binding)
+            except Exception:  # noqa: BLE001 - window already gone
+                pass
+            self._binding = None
+        if self._on_listening:
+            self._on_listening(False)
         self.paint()
 
     def _captured(self, event) -> str | None:
