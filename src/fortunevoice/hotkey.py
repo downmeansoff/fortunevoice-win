@@ -101,16 +101,45 @@ MODIFIER_KEYS: dict[str, tuple[int, ...]] = {
     "win": (VK_LWIN, VK_RWIN),
 }
 
+# Virtual keys that are modifiers. A hotkey may still be built on one — holding
+# Ctrl to talk is a fine push-to-talk — but the listener must never swallow it.
+_MODIFIER_VKS = {
+    VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
+    VK_LWIN, VK_RWIN, 0x10, 0x11, 0x12,  # the combined SHIFT/CONTROL/MENU
+    0x14, 0x90, 0x91,                    # caps lock, num lock, scroll lock
+}
+
 
 class HotkeySpec:
-    def __init__(self, modifiers: list[str], key: int, label: str) -> None:
+    def __init__(self, modifiers: list[str], key: int, label: str,
+                 keys: tuple[int, ...] | None = None,
+                 modifier_trigger: bool = False) -> None:
         self.modifiers = modifiers
         self.key = key
+        # A trigger can have more than one virtual key: a low-level hook
+        # reports Alt as VK_LMENU/VK_RMENU, never the combined VK_MENU, so
+        # "ctrl+alt" has to match either side.
+        self.keys = keys or (key,)
         self.label = label
+        # True when the trigger is itself a modifier ("ctrl+alt", "ctrl").
+        # Those are never swallowed — see HotkeyListener._handle.
+        self.modifier_trigger = modifier_trigger
 
-    def modifiers_held(self) -> bool:
+    def modifiers_held(self, arriving: int | None = None) -> bool:
+        """Are the chord's modifiers down, apart from the one just pressed?
+
+        `arriving` is the virtual key the hook is reporting right now. Its own
+        group has to be skipped: a low-level hook runs *before* Windows commits
+        the keystroke, so GetAsyncKeyState still reports that key as up. That
+        never mattered while triggers were ordinary keys — the trigger is known
+        to be down because the hook said so — but a modifier trigger is both at
+        once, and checking it here made Ctrl+Alt never fire.
+        """
         for name in self.modifiers:
-            if not any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in MODIFIER_KEYS[name]):
+            keys = MODIFIER_KEYS[name]
+            if arriving is not None and arriving in keys:
+                continue
+            if not any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in keys):
                 return False
         return True
 
@@ -129,10 +158,28 @@ def parse(spec: str) -> HotkeySpec:
     for name in modifier_names:
         if name not in MODIFIER_KEYS:
             raise ValueError(f"unknown modifier {name!r} in hotkey {spec!r}")
+
+    label = "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in parts)
+
+    # "ctrl+alt", or a lone "ctrl": the last part is itself a modifier, and
+    # holding it is the trigger. Common for push-to-talk, because a modifier
+    # is comfortable to hold down while speaking and types nothing on its own.
+    if key_name in MODIFIER_KEYS:
+        # Every key of the chord is a trigger, and every one of them is also
+        # required to be held. That way Ctrl+Alt fires whichever finger lands
+        # second, and lifting either one ends the dictation.
+        names = [*modifier_names, key_name]
+        keys = tuple(vk for name in names for vk in MODIFIER_KEYS[name])
+        return HotkeySpec(names, MODIFIER_KEYS[key_name][0], label, keys=keys,
+                          modifier_trigger=True)
+
     if key_name not in KEY_NAMES:
         raise ValueError(f"unknown key {key_name!r} in hotkey {spec!r}")
-    label = "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in parts)
-    return HotkeySpec(modifier_names, KEY_NAMES[key_name], label)
+    vk = KEY_NAMES[key_name]
+    # Same rule for a side-specific name: "rctrl" is still a Ctrl, and eating
+    # it would break Ctrl+C typed with the right hand.
+    return HotkeySpec(modifier_names, vk, label,
+                      modifier_trigger=vk in _MODIFIER_VKS)
 
 
 _HOOKPROC = ctypes.WINFUNCTYPE(
@@ -163,13 +210,6 @@ user32.GetMessageW.argtypes = (
     ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT
 )
 
-
-# Virtual keys that are modifiers, never a trigger on their own.
-_MODIFIER_VKS = {
-    VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
-    VK_LWIN, VK_RWIN, 0x10, 0x11, 0x12,  # the combined SHIFT/CONTROL/MENU
-    0x14, 0x90, 0x91,                    # caps lock, num lock, scroll lock
-}
 # vkCode -> the name `parse()` understands. Built by inverting KEY_NAMES, with
 # the left/right specific entries losing to the plain ones so a captured Ctrl
 # reads as "ctrl" rather than "lctrl".
@@ -255,6 +295,30 @@ class ChordCapture:
                 logger.exception("chord capture failed")
         return user32.CallNextHookEx(None, code, wparam, lparam)
 
+    # Canonical order, matching what `parse()` prints back, so the chip reads
+    # "ctrl+alt+space" whatever order the fingers landed in.
+    _MODIFIER_ORDER = (
+        ("ctrl", (VK_LCONTROL, VK_RCONTROL, 0x11)),
+        ("alt", (VK_LMENU, VK_RMENU, 0x12)),
+        ("shift", (VK_LSHIFT, VK_RSHIFT, 0x10)),
+        ("win", (VK_LWIN, VK_RWIN)),
+    )
+
+    def _modifiers_down(self, held: set[int] | None = None) -> list[str]:
+        held = self._held if held is None else held
+        return [name for name, keys in self._MODIFIER_ORDER
+                if any(k in held for k in keys)]
+
+    def _modifier_chord(self, held: set[int]) -> str:
+        """The chord for a modifiers-only press, e.g. "ctrl+alt".
+
+        Built from what was held at the moment of release. A single modifier
+        is a valid hotkey on its own; the listener will not swallow it, so
+        Ctrl keeps working as Ctrl.
+        """
+        names = self._modifiers_down(held)
+        return "+".join(names) if names else ""
+
     def _handle(self, wparam: int, lparam: int) -> bool:
         event = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
         # Injected events are NOT filtered here, unlike in the listener. The
@@ -264,7 +328,21 @@ class ChordCapture:
         # remapper or a remote desktop, where every key arrives injected.
         vk = event.vkCode
         if wparam not in (WM_KEYDOWN, WM_SYSKEYDOWN):
+            held_before = set(self._held)
             self._held.discard(vk)
+            # Modifiers released without any other key having been pressed:
+            # the user meant the modifiers themselves ("hold Ctrl+Alt to
+            # talk"). Decided on RELEASE, because until a key goes up there is
+            # no way to tell "Ctrl as the chord" from "Ctrl on the way to
+            # Ctrl+C".
+            if vk in held_before and not self._done and vk in _MODIFIER_VKS:
+                # Computed from the set BEFORE this key left it: releasing Alt
+                # first out of Ctrl+Alt must still record "ctrl+alt", not
+                # whatever happens to remain down.
+                chord = self._modifier_chord(held_before)
+                if chord:
+                    self._done = True
+                    self._on_chord(chord)
             # Swallow the matching key-ups of a chord we already took, so the
             # target app never sees half a keystroke.
             return True
@@ -282,15 +360,7 @@ class ChordCapture:
         if name is None:
             return True  # unmapped key: swallow, wait for one we can name
 
-        # Order matters: it is the order `parse()` prints back, so the chip
-        # shows "ctrl+alt+space" rather than whatever order they were pressed.
-        modifiers = []
-        for modifier, keys in (("ctrl", (VK_LCONTROL, VK_RCONTROL, 0x11)),
-                               ("alt", (VK_LMENU, VK_RMENU, 0x12)),
-                               ("shift", (VK_LSHIFT, VK_RSHIFT, 0x10)),
-                               ("win", (VK_LWIN, VK_RWIN))):
-            if any(k in self._held for k in keys):
-                modifiers.append(modifier)
+        modifiers = self._modifiers_down()
 
         self._done = True
         self._on_chord("+".join([*modifiers, name]))
@@ -325,6 +395,11 @@ class HotkeyListener:
         self._reinstall = False
         self._proc = _HOOKPROC(self._callback)  # keep a reference alive
         self._stop = threading.Event()
+        # A modifier trigger fires from a timer thread, not from the hook —
+        # see _begin_press.
+        self._press_lock = threading.Lock()
+        self._timer: threading.Timer | None = None
+        self._pressed = False
 
     @property
     def spec(self) -> HotkeySpec:
@@ -339,6 +414,8 @@ class HotkeyListener:
 
     def stop(self) -> None:
         self._stop.set()
+        with self._press_lock:
+            self._cancel_timer()
         if self._thread_id:
             user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
         if self._thread:
@@ -406,7 +483,7 @@ class HotkeyListener:
         event = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
         if event.flags & LLKHF_INJECTED:
             return False  # our own typed dictation, not a user keypress
-        if event.vkCode != self._spec.key:
+        if event.vkCode not in self._spec.keys:
             return False
 
         down = wparam in (WM_KEYDOWN, WM_SYSKEYDOWN)
@@ -414,20 +491,72 @@ class HotkeyListener:
         if not (down or up):
             return False
 
+        # A modifier trigger is never swallowed. Eating Ctrl would break
+        # Ctrl+C everywhere; the dictation starts *in addition to* the key
+        # doing its normal job, which is how hold-a-modifier push-to-talk is
+        # expected to behave.
+        eat = not self._spec.modifier_trigger
+
         if down:
             if self._held:
-                return True  # auto-repeat: swallow, but don't re-fire
+                return eat  # auto-repeat: swallow, but don't re-fire
             # Plain Space must still be plain Space: only claim the key when
             # the chord's modifiers are actually held. (A chord-less trigger
             # like "f9" has no modifiers, so this passes trivially.)
-            if not self._spec.modifiers_held():
+            if not self._spec.modifiers_held(event.vkCode):
                 return False
             self._held = True
-            self._on_press()
-            return True
+            self._begin_press()
+            return eat
 
         if not self._held:
             return False
         self._held = False
+        self._end_press()
+        return eat
+
+    # ── press timing ─────────────────────────────────────────────────────
+    #
+    # A normal trigger fires the moment it goes down. A modifier trigger has
+    # to wait: Ctrl is also the first half of Ctrl+C, and Ctrl+Alt is what a
+    # Russian layout's AltGr sends. Requiring the keys to stay down for
+    # HOLD_SECONDS separates "reaching for a shortcut" from "holding a key to
+    # talk" — a tap does nothing at all, and the press never starts.
+
+    HOLD_SECONDS = 0.3
+
+    def _begin_press(self) -> None:
+        if not self._spec.modifier_trigger:
+            self._on_press()
+            return
+        with self._press_lock:
+            self._cancel_timer()
+            self._pressed = False
+            self._timer = threading.Timer(self.HOLD_SECONDS, self._hold_elapsed)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _hold_elapsed(self) -> None:
+        with self._press_lock:
+            # The key-up may have won the race; it clears _held first, so this
+            # check is what keeps a tap from starting a dictation.
+            if not self._held or self._pressed:
+                return
+            self._pressed = True
+        self._on_press()
+
+    def _end_press(self) -> None:
+        if not self._spec.modifier_trigger:
+            self._on_release()
+            return
+        with self._press_lock:
+            self._cancel_timer()
+            if not self._pressed:
+                return  # a tap: nothing was ever started
+            self._pressed = False
         self._on_release()
-        return True
+
+    def _cancel_timer(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None

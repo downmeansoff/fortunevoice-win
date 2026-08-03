@@ -323,8 +323,13 @@ class SettingRow:
         text = tk.Frame(row, bg=theme.CARD)
         text.pack(side="left", fill="x", expand=True)
         theme.label(text, title, size=10).pack(anchor="w")
+        # Kept on the row so callers can swap it — the shortcut row says
+        # something different while it is listening for keys.
+        self.subtitle = None
         if subtitle:
-            theme.label(text, subtitle, size=8, colour=theme.TEXT_FAINT).pack(anchor="w")
+            self.subtitle = theme.label(text, subtitle, size=8,
+                                        colour=theme.TEXT_FAINT)
+            self.subtitle.pack(anchor="w")
 
         self.control = tk.Frame(row, bg=theme.CARD)
         self.control.pack(side="right")

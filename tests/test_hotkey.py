@@ -32,6 +32,42 @@ def test_modifier_as_trigger():
     spec = parse("rctrl")
     assert spec.modifiers == []
     assert spec.key == 0xA3
+    # Right Ctrl is still a Ctrl: swallowing it would break Ctrl+C.
+    assert spec.modifier_trigger is True
+
+
+def test_bare_modifier_as_trigger():
+    """"ctrl" on its own. A low-level hook reports the two sides separately, so
+    both have to be accepted or the hotkey works with one hand only."""
+    spec = parse("ctrl")
+    assert spec.modifier_trigger is True
+    assert spec.modifiers == ["ctrl"]
+    assert set(spec.keys) == {0xA2, 0xA3}
+
+
+def test_modifier_chord_accepts_either_order():
+    """"ctrl+alt" — every key is both a trigger and a requirement, so it fires
+    whichever finger lands second and ends when either one lifts."""
+    spec = parse("ctrl+alt")
+    assert spec.modifier_trigger is True
+    assert spec.modifiers == ["ctrl", "alt"]
+    assert set(spec.keys) == {0xA2, 0xA3, 0xA4, 0xA5}
+    assert spec.label == "Ctrl+Alt"
+
+
+def test_ordinary_key_is_not_a_modifier_trigger():
+    for text in ("f9", "ctrl+alt+space", "ctrl+d"):
+        assert parse(text).modifier_trigger is False, text
+
+
+def test_the_arriving_key_is_not_checked_against_the_async_state():
+    """A low-level hook runs before Windows commits the keystroke, so
+    GetAsyncKeyState still reports the key being pressed as up. Checking it
+    there made Ctrl+Alt never fire once — nothing is held in this process, and
+    the chord must still be considered satisfied by the key the hook reports."""
+    spec = parse("ctrl")
+    assert spec.modifiers_held(0xA2) is True   # "Ctrl just arrived"
+    assert spec.modifiers_held() is False      # nothing is actually down
 
 
 def test_unknown_key_is_rejected():
@@ -119,14 +155,27 @@ def test_modifier_keys_are_never_reported_as_a_trigger():
 def test_capture_orders_modifiers_the_way_the_parser_prints_them():
     """ctrl, alt, shift, win — so the chip shows "ctrl+alt+space" whatever
     order the user's fingers landed in."""
-    import inspect
-
     from fortunevoice.hotkey import ChordCapture
 
-    source = inspect.getsource(ChordCapture._handle)
-    order = [name for name in ("ctrl", "alt", "shift", "win")
-             if f'("{name}"' in source]
-    assert order == ["ctrl", "alt", "shift", "win"]
+    assert [name for name, _ in ChordCapture._MODIFIER_ORDER] == [
+        "ctrl", "alt", "shift", "win"]
+
+    capture = ChordCapture(lambda chord: None)
+    # Pressed shift-first, still reported ctrl-first.
+    held = {0xA0, 0xA2, 0xA4}  # LSHIFT, LCONTROL, LMENU
+    assert capture._modifier_chord(held) == "ctrl+alt+shift"
+    assert parse(capture._modifier_chord(held)).modifier_trigger is True
+
+
+def test_capture_reports_the_whole_chord_even_when_released_out_of_order():
+    """Lifting Alt first out of Ctrl+Alt must still record "ctrl+alt" — the
+    chord is read from what was down at the moment of release, not from what
+    happens to remain."""
+    from fortunevoice.hotkey import ChordCapture
+
+    capture = ChordCapture(lambda chord: None)
+    assert capture._modifier_chord({0xA2, 0xA4}) == "ctrl+alt"
+    assert capture._modifier_chord(set()) == ""
 
 
 @pytest.mark.live

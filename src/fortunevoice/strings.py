@@ -149,6 +149,12 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.shortcut": {"en": "Shortcut", "ru": "Сочетание клавиш"},
     "settings.shortcut_hint": {"en": "click, then press the keys you want",
                                "ru": "нажмите, затем — нужные клавиши"},
+    # Ctrl and Alt are allowed as the shortcut itself, but they keep doing
+    # their normal job, so a short tap has to be ignored — otherwise Ctrl+C
+    # would start a dictation. Say so, or holding looks like it is broken.
+    "settings.shortcut_modifier_hint": {
+        "en": "Ctrl / Alt work too — hold them briefly to start",
+        "ru": "Ctrl и Alt тоже подходят — их нужно чуть придержать"},
     "settings.shortcut_press": {"en": "Press keys…", "ru": "Нажмите клавиши…"},
     "settings.shortcut_bad_title": {"en": "That shortcut will not work",
                                     "ru": "Такое сочетание не сработает"},

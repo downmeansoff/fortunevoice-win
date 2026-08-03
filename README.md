@@ -117,6 +117,11 @@ near the bottom of the screen with a live waveform, so you can see it is
 listening without looking away from what you're writing. It never takes focus
 and never eats a click.
 
+Settings takes any chord, including a bare modifier — `Ctrl`, `Alt`, `Ctrl+Alt`.
+Those keep working as themselves: they are never swallowed, and a short tap is
+ignored, so Ctrl+C stays Ctrl+C. Hold one for about a third of a second and
+dictation starts.
+
 If the text can't be typed — you switched windows, there's no editable field —
 a panel appears with the transcript and a Copy button. Nothing reaches your
 clipboard until you press it.

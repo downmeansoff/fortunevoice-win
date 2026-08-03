@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
+import time
 
 import pytest
 
@@ -38,7 +39,7 @@ def make_listener(spec_text: str = "ctrl+alt+space", modifiers_held: bool = True
         on_press=lambda: events.append("press"),
         on_release=lambda: events.append("release"),
     )
-    listener.spec.modifiers_held = lambda: modifiers_held  # type: ignore[method-assign]
+    listener.spec.modifiers_held = lambda *a: modifiers_held  # type: ignore[method-assign]
     return listener, events
 
 
@@ -107,10 +108,71 @@ def test_syskey_variants_are_handled():
     assert events == ["press", "release"]
 
 
+# ── modifier triggers: "hold Ctrl+Alt to talk" ───────────────────────────
+#
+# Two rules make these safe. The key is never swallowed, because eating Ctrl
+# would break Ctrl+C everywhere. And the press only counts after HOLD_SECONDS,
+# because Ctrl is also the first half of Ctrl+C and Ctrl+Alt is what a Russian
+# layout's AltGr sends — a tap has to do nothing at all.
+
+VK_LCONTROL, VK_RCONTROL, VK_LMENU = 0xA2, 0xA3, 0xA4
+
+
+def hold(listener, vk: int) -> bool:
+    """Press, wait past the threshold, release. Returns what the hook returned."""
+    swallowed = listener._handle(WM_KEYDOWN, event(vk))
+    time.sleep(listener.HOLD_SECONDS + 0.15)
+    listener._handle(WM_KEYUP, event(vk))
+    time.sleep(0.05)
+    return swallowed
+
+
 def test_modifier_only_trigger():
     """FVHotkey = "rctrl" — the trigger is itself a modifier, so no additional
     modifiers are required."""
     listener, events = make_listener("rctrl")
-    assert listener._handle(WM_KEYDOWN, event(0xA3)) is True
-    assert listener._handle(WM_KEYUP, event(0xA3)) is True
+    assert hold(listener, VK_RCONTROL) is False, "a modifier must reach the app"
     assert events == ["press", "release"]
+
+
+def test_modifier_trigger_is_never_swallowed():
+    """The whole point: Ctrl still has to work as Ctrl while it doubles as the
+    push-to-talk key."""
+    listener, _ = make_listener("ctrl")
+    assert listener._handle(WM_KEYDOWN, event(VK_LCONTROL)) is False
+    assert listener._handle(WM_KEYDOWN, event(VK_LCONTROL)) is False  # auto-repeat
+    assert listener._handle(WM_KEYUP, event(VK_LCONTROL)) is False
+
+
+def test_a_tap_on_a_modifier_starts_nothing():
+    """Ctrl+C begins with a Ctrl press. Released before the threshold, it must
+    not produce a dictation — not even an empty one."""
+    listener, events = make_listener("ctrl")
+    listener._handle(WM_KEYDOWN, event(VK_LCONTROL))
+    listener._handle(WM_KEYUP, event(VK_LCONTROL))
+    time.sleep(listener.HOLD_SECONDS + 0.2)
+    assert events == []
+
+
+def test_either_side_of_a_modifier_works():
+    """A low-level hook reports VK_LCONTROL/VK_RCONTROL, never the combined
+    VK_CONTROL, so "ctrl" has to match both hands."""
+    for vk in (VK_LCONTROL, VK_RCONTROL):
+        listener, events = make_listener("ctrl")
+        hold(listener, vk)
+        assert events == ["press", "release"], hex(vk)
+
+
+def test_modifier_chord_needs_every_key_held():
+    """"ctrl+alt" with Ctrl not actually down is a plain Alt — not our chord."""
+    listener, events = make_listener("ctrl+alt", modifiers_held=False)
+    hold(listener, VK_LMENU)
+    assert events == []
+
+
+def test_ordinary_chord_still_fires_immediately():
+    """The threshold applies to modifier triggers only; Ctrl+Alt+Space must not
+    lose its first 300 ms of speech."""
+    listener, events = make_listener("ctrl+alt+space")
+    listener._handle(WM_KEYDOWN, event(VK_SPACE))
+    assert events == ["press"]
