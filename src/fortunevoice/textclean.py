@@ -90,3 +90,52 @@ def word_diff(a: str, b: str) -> int:
             cur[j] = prev[j - 1] if ca == cb else min(prev[j - 1], prev[j], cur[j - 1]) + 1
         prev = cur
     return prev[len(wb)] + overflow
+
+
+# Real speech peaks well above this in the loudest 0.5 s window; measured room
+# silence on a laptop mic sits at 0.0003-0.0015, so 0.006 leaves a 4x margin
+# over noise and a 3x margin under speech.
+SILENCE_RMS = 0.006
+# Whisper is trained on subtitle corpora and fills silence with their boilerplate.
+# These are the phrases it produces on Russian and English near-silence; none of
+# them is something a person dictates into a text field. Compared after
+# stripping case, spaces and punctuation.
+HALLUCINATION_PHRASES = (
+    "продолжениеследует",
+    "субтитрысделалdimatorzok",
+    "субтитрысоздавалdimatorzok",
+    "спасибозапросмотр",
+    "спасибозавнимание",
+    "редакторсубтитровамдоброхотоваkorrektorакулова",
+    "thanksforwatching",
+    "thankyouforwatching",
+    "subtitlesbytheamaraorgcommunity",
+    "youtubecom",
+    "продолжениеследуетслушайте",
+)
+
+
+def is_hallucinated_silence(text: str, rms: float) -> bool:
+    """Did Whisper invent this out of an empty room?
+
+    Two independent signals, either of which is enough:
+
+    1. **The audio was silent.** The loudest 0.5 s window in the whole
+       recording never reached speech level. This is the reliable one.
+    2. **The text is subtitle boilerplate** and the audio never got properly
+       loud. Kept as a second net because a noisy room can push RMS over the
+       floor while still containing no speech.
+
+    Deliberately NOT using Whisper's `no_speech_prob`: measured on real
+    silence from this machine's microphone it reported **0.000** — total
+    confidence that the room noise was speech — on four runs out of four,
+    while RMS correctly read 0.0003-0.0015. The old guard required both, so it
+    never fired and "Продолжение следует" was typed into the user's document.
+    """
+    if rms < SILENCE_RMS:
+        return True
+    if rms < SILENCE_RMS * 4:
+        squeezed = "".join(ch for ch in text.lower() if ch.isalnum())
+        return any(squeezed == phrase or squeezed.startswith(phrase)
+                   for phrase in HALLUCINATION_PHRASES)
+    return False
