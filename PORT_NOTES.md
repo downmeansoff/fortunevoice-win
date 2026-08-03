@@ -523,3 +523,54 @@ There is no Tk option for it. `DwmSetWindowAttribute` with
 changed between Windows 10 builds (19 before 1903, 20 after), so
 `winapi.use_dark_titlebar` tries both and stops at the first that returns
 success.
+
+## Russian, and the language split that matters
+
+The UI ships in English and Russian (`strings.py`, ~120 keys). One flat
+catalogue rather than gettext: two languages and no build step beats a .po
+toolchain in a project whose selling point is "clone it and run it".
+
+`FVUILanguage` (`ru` / `en` / `auto`, default `auto` following the Windows
+display language) is deliberately **separate** from `FVLanguage`. The language
+you dictate in has nothing to do with the language you want the buttons in,
+and a Russian speaker dictating English notes should not have their UI flip.
+
+Navigation keys stay English internally (`"History"`, `"Settings"`); only the
+drawn label is translated. A language change therefore cannot break which page
+a click opens.
+
+Changing it needs a restart, and says so. Half the strings are baked into
+module constants at import — the pill sizes itself from its longest label —
+so live re-translation would mean rebuilding every window.
+
+## The cleanup model, settled
+
+Three models measured on this 6 GB card, same clip, same Whisper instance:
+
+| Model | VRAM free with Whisper | Decode | Verdict |
+|---|---|---|---|
+| gemma3:4b | — | — | leaks stray `- `/`— ` into prose, rewrote a statement as a question |
+| qwen2.5:3b | **72 MiB** | 5766 ms (2.1x) | best edits, but **10x the decode cost** |
+| **qwen2.5:1.5b** | 420 MiB | **406 ms (29.5x)** | fits for free; edits are decent but it invented a sentence |
+
+1.5b costs *nothing*: 406 ms with it resident, 406 ms without. So the choice
+stopped being about speed and became about trust.
+
+### The guard that made it usable
+
+The shipped 35% word-drop net only catches **deletion**. On the filler sample
+1.5b returned *"Ну это самое, короче, нужно правильно это писать"* — same
+length, different sentence, straight past the guard, and the app would have
+typed it. Substitution is the worse failure and nothing caught it.
+
+`_no_invented_content` compares 4-character stems of the output against the
+input: more than 30% unfamiliar and the raw text wins. Stems, not whole words,
+so Russian inflection and the ё Whisper drops don't read as invention. Verified
+against every measured case — the bad rewrite is rejected, and collapsing a
+stumble, applying a self-correction, dropping a filler and re-casing all pass.
+
+It fires in production: the log line is `cleanup invented content, using raw
+text`.
+
+Cleanup is therefore **on**, with qwen2.5:1.5b. Worst case is now the raw
+transcript, which is what the app would have typed anyway.

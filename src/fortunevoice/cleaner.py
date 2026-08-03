@@ -290,6 +290,51 @@ def _kept_enough(before: str, after: str) -> bool:
     return not (raw_words >= 6 and clean_words < int(raw_words * 0.65))
 
 
+# How much of the cleaned text may be words the speaker never said. Some slack
+# is needed: the model legitimately re-inflects ("отчете" → "отчёте") and joins
+# clitics, and a stem comparison does not catch every such case.
+INVENTED_WORD_LIMIT = 0.3
+# Words are matched on their first N characters so Russian inflection does not
+# read as invention. 4 is long enough to separate "красн-" from "красив-".
+_STEM = 4
+
+
+def _stems(text: str) -> list[str]:
+    return [w[:_STEM] for w in _letter_words(text.lower()) if len(w) > 2]
+
+
+def _no_invented_content(before: str, after: str) -> bool:
+    """Did the model put words in the user's mouth?
+
+    The 35% guard above only catches *deletion*. Substitution slips straight
+    through it, and substitution is the worse failure: measured on this
+    machine, qwen2.5:1.5b turned "надо бы проверить, как работает диктовка"
+    into "нужно правильно это писать" — same word count, entirely different
+    sentence, and the app would have typed it.
+
+    Nothing else in the pipeline can catch this. Whisper's own output is the
+    only record of what was actually said, so the check has to happen here,
+    against it.
+    """
+    after_stems = _stems(after)
+    if not after_stems:
+        return True
+    before_stems = set(_stems(before))
+    invented = sum(1 for stem in after_stems if stem not in before_stems)
+    return invented <= len(after_stems) * INVENTED_WORD_LIMIT
+
+
+def _is_safe(before: str, after: str) -> bool:
+    """Both content guards, so no call site can remember one and forget the
+    other."""
+    if not _kept_enough(before, after):
+        return False
+    if not _no_invented_content(before, after):
+        logger.warning("cleanup invented content, using raw text")
+        return False
+    return True
+
+
 class OllamaCleaner:
     def __init__(self) -> None:
         # Stats of the most recent clean() call, for metrics.
@@ -434,7 +479,7 @@ class OllamaCleaner:
         cleaned = self._chat(system, raw)
         if not cleaned:
             return raw
-        if not _kept_enough(raw, cleaned):
+        if not _is_safe(raw, cleaned):
             logger.warning(
                 "cleanup dropped too much (%d→%d words), using raw",
                 word_count(raw), word_count(cleaned),
@@ -484,7 +529,7 @@ class OllamaCleaner:
                 tag in cleaned for tag in ("<FIX>", "</FIX>", "<CONTEXT>", "</CONTEXT>")
             ):
                 continue  # chunk stays raw — a format break never breaks text
-            if not _kept_enough(core_text, cleaned):
+            if not _is_safe(core_text, cleaned):
                 logger.warning(
                     "chunk cleanup dropped too much (%d→%d words), keeping raw chunk",
                     word_count(core_text), word_count(cleaned),
@@ -497,7 +542,7 @@ class OllamaCleaner:
 
         joined = squeeze(" ".join(p for p in result if p))
         # Global safety net on the assembled text as a last line of defense.
-        if not _kept_enough(raw, joined):
+        if not _is_safe(raw, joined):
             return raw
         return joined or raw
 

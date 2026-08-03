@@ -152,3 +152,41 @@ def test_geometry_drops_a_position_on_a_vanished_monitor(monkeypatch):
     monkeypatch.setattr(main_window.winapi, "work_area_of_window",
                         lambda _hwnd: (0, 0, 1920, 1040))
     assert main_window._remembered_geometry() == "900x600"
+
+
+# ── the invented-content guard ───────────────────────────────────────────
+
+
+def test_invented_content_is_rejected():
+    """The failure this exists for, measured on this machine: qwen2.5:1.5b
+    turned one sentence into a different one of the same length. The 35% guard
+    only catches deletion, so substitution went straight through it — and
+    substitution is worse, because the app types it."""
+    said = "Ну это самое, короче, надо бы проверить, как работает диктовка."
+    invented = "Ну это самое, короче, нужно правильно это писать."
+    assert cleaner._no_invented_content(said, invented) is False
+    assert cleaner._is_safe(said, invented) is False
+
+
+@pytest.mark.parametrize(("said", "cleaned", "why"), [
+    ("Нужно правильно это правильно писать в отчёте.",
+     "Нужно правильно это писать в отчёте.", "stumble collapsed"),
+    ("Сделай кнопку синим, нет, красным цветом.",
+     "сделай красным цветом", "self-correction applied"),
+    ("It is, um, important to review the pull request today.",
+     "It is important to review the pull request today.", "filler removed"),
+    ("Завтра встреча в десять утра.", "Завтра встреча в десять утра.", "untouched"),
+    ("нужно правильно это правильно писать в отчете",
+     "Нужно правильно это писать в отчёте.", "re-cased and re-inflected"),
+])
+def test_legitimate_edits_pass(said, cleaned, why):
+    """Every edit the cleanup is *supposed* to make, including Russian
+    inflection and the ё that Whisper drops — the guard compares stems so a
+    changed ending does not read as invention."""
+    assert cleaner._no_invented_content(said, cleaned) is True, why
+
+
+def test_guard_ignores_a_short_answer():
+    """An empty or near-empty rewrite is the other guard's problem; this one
+    must not double-report it."""
+    assert cleaner._no_invented_content("раз два три четыре", "") is True

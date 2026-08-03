@@ -24,6 +24,7 @@ import time
 
 from .. import winapi
 from ..log import get as get_logger
+from ..strings import t
 from . import theme, ui
 
 logger = get_logger("ui.pill")
@@ -67,11 +68,11 @@ _MODE_COLOUR = {
     "cancelled": theme.TEXT_MUTED,
 }
 _MODE_TEXT = {
-    "recording": "Listening",
-    "processing": "Transcribing",
-    "error": "Failed",
-    "no-signal": "No mic signal",
-    "cancelled": "Cancelled",
+    "recording": t("pill.listening"),
+    "processing": t("pill.transcribing"),
+    "error": t("pill.failed"),
+    "no-signal": t("pill.no_signal"),
+    "cancelled": t("pill.cancelled"),
 }
 
 _LABEL_W = _label_width()

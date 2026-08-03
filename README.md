@@ -15,7 +15,7 @@ had to be redone.
 
 ```
 Ctrl+Alt+Space (hold) → mic capture (16 kHz) → faster-whisper (local STT, CUDA)
-                      → [optional] Ollama gemma3:4b cleanup → typed into the focused app
+                      → [optional] Ollama qwen2.5:1.5b cleanup → typed into the focused app
 ```
 
 - **STT:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) —
@@ -57,7 +57,7 @@ For the optional cleanup pass, install [Ollama](https://ollama.com/download)
 and pull the model:
 
 ```powershell
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:1.5b
 ```
 
 ## Check the machine before trusting it
@@ -135,10 +135,11 @@ without a restart. Only values you change are stored.
 | `FVModel` | `large-v3-turbo` | Whisper weights |
 | `FVFallbackModel` | `small` | Used when the above won't load |
 | `FVDevice` | `auto` | `auto`, `cuda`, `cpu` |
-| `FVLanguage` | `ru` | `ru`, `en`, … or `auto` |
+| `FVLanguage` | `ru` | Language you **speak**: `ru`, `en`, … or `auto` |
+| `FVUILanguage` | `auto` | Language of the app's **windows**: `ru`, `en`, `auto` (follow Windows) |
 | `FVCleanupEnabled` | `true` | LLM cleanup pass |
 | `FVSmartFix` | `true` | Repair garbled transcripts even when cleanup is off |
-| `FVOllamaModel` | `gemma3:4b` | Cleanup model — set `qwen2.5:3b`, see below |
+| `FVOllamaModel` | `gemma3:4b` | Cleanup model — set `qwen2.5:1.5b`, see below |
 | `FVMiniPrompt` | `true` | Short prompt for short dictations; turn off on a fast model |
 | `FVStreaming` | `true` | Decode while you speak |
 | `FVMicrophone` | `""` | Input device name substring; empty = system default |
@@ -166,6 +167,23 @@ recovery\        audio from dictations the decoder failed on, for a manual retry
 logs\            rotating log file
 models\          downloaded Whisper weights
 ```
+
+## Licensing — read before sharing this
+
+**This repository has no licence yet, and cannot get one unilaterally.**
+
+It is a derivative work: the prompts, the tuning constants, the streaming
+algorithm and most of the test suite come from
+[thatluckyoldsun/FortuneVoice](https://github.com/thatluckyoldsun/FortuneVoice),
+which itself carries **no licence file**. Under copyright law that means all
+rights reserved — the default when nothing is stated — so nobody, including
+contributors, may redistribute it or grant terms on it.
+
+To make this shareable, the upstream author has to state a licence for their
+repository first. Once they do, the same one (or a compatible one) goes here
+and this section is replaced by a real `LICENSE`.
+
+Until then: fine to run on your own machine, not fine to publish or hand out.
 
 ## Tests
 

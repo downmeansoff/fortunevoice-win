@@ -28,6 +28,7 @@ from .. import (
     winapi,
 )
 from ..log import get as get_logger
+from ..strings import t
 from ..store import DictationStore
 from . import icons, theme, widgets
 
@@ -36,8 +37,12 @@ logger = get_logger("ui.main")
 WIDTH = theme.px(1000)
 HEIGHT = theme.px(680)
 SIDEBAR_W = theme.px(232)
+# (internal key, glyph). The visible label comes from the catalogue at paint
+# time, so the key can stay stable while the text is translated.
 PAGES = [("History", "clock"), ("Insights", "chart"),
          ("Dictionary", "book"), ("Settings", "gear")]
+_PAGE_LABEL = {"History": "nav.history", "Insights": "nav.insights",
+               "Dictionary": "nav.dictionary", "Settings": "nav.settings"}
 
 # Icon tint per settings row. Colour carries the grouping when the eye skims.
 TINT_BLUE = "#2F7DF6"
@@ -147,18 +152,19 @@ class MainWindow:
         tk.Label(identity, image=mark, bg=theme.SIDEBAR).pack(side="left", padx=(2, 12))
         text = tk.Frame(identity, bg=theme.SIDEBAR)
         text.pack(side="left")
-        theme.label(text, "FortuneVoice", size=11, weight="bold", bg=theme.SIDEBAR).pack(anchor="w")
-        theme.label(text, "Local dictation", size=8, colour=theme.TEXT_MUTED,
+        theme.label(text, t("app.name"), size=11, weight="bold", bg=theme.SIDEBAR).pack(anchor="w")
+        theme.label(text, t("app.tagline"), size=8, colour=theme.TEXT_MUTED,
                     bg=theme.SIDEBAR).pack(anchor="w")
 
         for name, glyph in PAGES:
-            item = widgets.NavItem(rail.body, name, glyph, self._select)
+            item = widgets.NavItem(rail.body, name, glyph, self._select,
+                                   label=t(_PAGE_LABEL[name]))
             item.pack(fill="x", pady=2)
             self._nav[name] = item
 
         spacer = tk.Frame(rail.body, bg=theme.SIDEBAR, height=1)
         spacer.pack(fill="both", expand=True, pady=10)
-        theme.label(rail.body, "Runs fully on your PC", size=8,
+        theme.label(rail.body, t("app.runs_locally"), size=8,
                     colour=theme.TEXT_FAINT, bg=theme.SIDEBAR).pack(anchor="w", pady=(0, 2))
 
     def _select(self, name: str) -> None:
@@ -225,11 +231,11 @@ class MainWindow:
     def _build_history(self, page) -> None:
         import tkinter as tk
 
-        bar = self._header(page, "History")
+        bar = self._header(page, t("nav.history"))
         widgets.IconButton(bar, "trash", self._clear_history,
-                           tooltip="Delete all history").pack(side="right")
+                           tooltip=t("history.delete_tip")).pack(side="right")
         widgets.IconButton(bar, "share", self._export_history,
-                           tooltip="Export to a text file").pack(side="right", padx=(0, 8))
+                           tooltip=t("history.export_tip")).pack(side="right", padx=(0, 8))
 
         field = widgets.Card(page, radius=11, padx=14, pady=9)
         field.pack(fill="x", pady=(0, 16))
@@ -240,7 +246,7 @@ class MainWindow:
         search = theme.entry(field.body, self._search_var)
         search.pack(side="left", fill="x", expand=True)
         self._search_var.trace_add("write", lambda *_: self._refresh_history())
-        self._search_is_placeholder = _placeholder(search, "Search dictations")
+        self._search_is_placeholder = _placeholder(search, t("history.search"))
 
         self._history_body = self._scroll_area(page)
 
@@ -258,7 +264,8 @@ class MainWindow:
                    if not query or query in r.transcript.lower()]
 
         if not records:
-            theme.label(body, "No matches." if query else "Nothing here yet.",
+            theme.label(body,
+                        t("history.no_matches") if query else t("history.empty"),
                         size=10, colour=theme.TEXT_MUTED).pack(anchor="w", pady=8)
             return
 
@@ -272,7 +279,7 @@ class MainWindow:
             self._history_card(body, record)
 
         if len(records) > 300:
-            theme.label(body, f"{len(records) - 300} older dictations not shown — search to find them.",
+            theme.label(body, t("history.older_hidden", count=len(records) - 300),
                         size=8, colour=theme.TEXT_FAINT).pack(anchor="w", pady=(14, 0))
 
     def _history_card(self, parent, record) -> None:
@@ -350,9 +357,8 @@ class MainWindow:
         # History is the vault every delivery path writes to first; wiping it
         # is the one destructive thing this window can do.
         if not messagebox.askyesno(
-            "Delete all history",
-            f"Permanently delete all {len(self._store.all())} dictations?\n\n"
-            "This cannot be undone.",
+            t("history.delete_title"),
+            t("history.delete_body", count=len(self._store.all())),
             icon="warning", parent=self._window,
         ):
             return
@@ -362,7 +368,7 @@ class MainWindow:
     # ── Insights ─────────────────────────────────────────────────────────
 
     def _build_insights(self, page) -> None:
-        self._header(page, "Insights")
+        self._header(page, t("nav.insights"))
         self._insights_body = self._scroll_area(page)
 
     def _refresh_insights(self) -> None:
@@ -380,9 +386,10 @@ class MainWindow:
         tiles = tk.Frame(body, bg=theme.INK)
         tiles.pack(fill="x")
         for index, (glyph, value, caption, primary) in enumerate([
-            ("chart", f"{stats.words_per_minute(records):.0f}", "WORDS PER MINUTE", True),
-            ("book", f"{stats.total_words(records):,}".replace(",", " "), "TOTAL WORDS", False),
-            ("bolt", f"{stats.streak_days(records)}", "DAYS STREAK", False),
+            ("chart", f"{stats.words_per_minute(records):.0f}", t("insights.wpm"), True),
+            ("book", f"{stats.total_words(records):,}".replace(",", " "),
+             t("insights.total_words"), False),
+            ("bolt", f"{stats.streak_days(records)}", t("insights.streak"), False),
         ]):
             tiles.grid_columnconfigure(index, weight=1, uniform="tile")
             self._metric_tile(tiles, glyph, value, caption, primary).grid(
@@ -414,7 +421,7 @@ class MainWindow:
 
         card = widgets.Card(parent, radius=14, padx=18, pady=16)
         card.pack(fill="x", pady=(14, 0))
-        theme.label(card.body, "Last 30 days", size=10, weight="bold",
+        theme.label(card.body, t("insights.last_30"), size=10, weight="bold",
                     bg=theme.CARD).pack(anchor="w", pady=(0, 12))
 
         today = dt.date.today()
@@ -457,10 +464,10 @@ class MainWindow:
         by_app = stats.words_by_app(records)[:6]
         card = widgets.Card(parent, radius=14, padx=18, pady=16)
         card.pack(fill="x", pady=(14, 0))
-        theme.label(card.body, "Where you dictate", size=10, weight="bold",
+        theme.label(card.body, t("insights.where"), size=10, weight="bold",
                     bg=theme.CARD).pack(anchor="w", pady=(0, 12))
         if not by_app:
-            theme.label(card.body, "No dictations yet.", size=9,
+            theme.label(card.body, t("insights.none_yet"), size=9,
                         colour=theme.TEXT_MUTED, bg=theme.CARD).pack(anchor="w")
             return
         biggest = by_app[0][1] or 1
@@ -496,12 +503,12 @@ class MainWindow:
         typed = [r for r in rows if str(r.get("outcome", "")).startswith("pasted")]
         card = widgets.Card(parent, radius=14, padx=18, pady=16)
         card.pack(fill="x", pady=(14, 0))
-        theme.label(card.body, "Speed", size=10, weight="bold", bg=theme.CARD).pack(
+        theme.label(card.body, t("insights.speed"), size=10, weight="bold", bg=theme.CARD).pack(
             anchor="w", pady=(0, 12))
         for caption, value in [
-            ("Median key-up to typed", f"{median([r['total_ms'] for r in rows]):.0f} ms"),
-            ("Median decode", f"{median([r['stt_ms'] for r in rows]):.0f} ms"),
-            ("Typed straight into the app", f"{len(typed) * 100 // len(rows)}%"),
+            (t("insights.median_total"), f"{median([r['total_ms'] for r in rows]):.0f} ms"),
+            (t("insights.median_decode"), f"{median([r['stt_ms'] for r in rows]):.0f} ms"),
+            (t("insights.typed_share"), f"{len(typed) * 100 // len(rows)}%"),
         ]:
             row = tk.Frame(card.body, bg=theme.CARD)
             row.pack(fill="x", pady=3)
@@ -514,13 +521,9 @@ class MainWindow:
     def _build_dictionary(self, page) -> None:
         import tkinter as tk
 
-        self._header(page, "Dictionary")
-        caption = theme.label(
-            page,
-            "Names and jargon Whisper keeps mishearing — one per line. Fed to the "
-            "decoder as a prompt, and to the cleanup model as preferred spellings.",
-            size=9, colour=theme.TEXT_MUTED,
-        )
+        self._header(page, t("nav.dictionary"))
+        caption = theme.label(page, t("dict.intro"), size=9,
+                              colour=theme.TEXT_MUTED)
         caption.pack(anchor="w", fill="x", pady=(0, 14))
         # Without a wraplength tied to the page a long caption runs off the
         # right edge instead of flowing onto a second line.
@@ -542,7 +545,7 @@ class MainWindow:
         footer.pack(fill="x", pady=(14, 0))
         self._dictionary_status = theme.label(footer, "", size=9, colour=theme.TEXT_FAINT)
         self._dictionary_status.pack(side="left", pady=6)
-        theme.button(footer, "Save", self._save_dictionary, primary=True).pack(side="right")
+        theme.button(footer, t("dict.save"), self._save_dictionary, primary=True).pack(side="right")
 
     def _refresh_dictionary(self) -> None:
         self._dictionary_text.delete("1.0", "end")
@@ -558,92 +561,103 @@ class MainWindow:
             # The prompt is capped, so say when the tail is being ignored
             # rather than letting the user wonder why term 200 never helps.
             self._dictionary_status.configure(
-                text=f"Saved {len(terms)} terms — only the first "
-                     f"{dictionary.MAX_PROMPT_CHARS} characters reach the model.")
+                text=t("dict.saved_capped", count=len(terms),
+                       chars=dictionary.MAX_PROMPT_CHARS))
         else:
-            self._dictionary_status.configure(text=f"Saved {len(terms)} terms.")
+            self._dictionary_status.configure(text=t("dict.saved", count=len(terms)))
 
     # ── Settings ─────────────────────────────────────────────────────────
 
     def _build_settings(self, page) -> None:
         import tkinter as tk
 
-        self._header(page, "Settings")
+        self._header(page, t("nav.settings"))
         body = self._scroll_area(page)
 
         # DICTATION
-        widgets.section_title(body, "Dictation").pack(anchor="w", pady=(0, 8))
+        widgets.section_title(body, t("settings.group_dictation")).pack(anchor="w", pady=(0, 8))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
-        row = widgets.SettingRow(card.body, "tap", TINT_BLUE, "Activation",
-                                 "hold = push to talk")
-        widgets.Dropdown(row.control, [("hold", "Hold to talk"), ("toggle", "Tap to toggle")],
+        row = widgets.SettingRow(card.body, "tap", TINT_BLUE, t("settings.activation"),
+                                 t("settings.activation_hint"))
+        widgets.Dropdown(row.control,
+                         [("hold", t("settings.hold")), ("toggle", t("settings.toggle"))],
                          lambda: config.get_str("FVActivationMode"),
                          lambda v: config.set("FVActivationMode", v)).pack()
-        row = widgets.SettingRow(card.body, "keyboard", TINT_INDIGO, "Shortcut",
-                                 "click, then press the keys you want")
+        row = widgets.SettingRow(card.body, "keyboard", TINT_INDIGO,
+                                 t("settings.shortcut"), t("settings.shortcut_hint"))
         widgets.ShortcutRecorder(
             row.control, lambda: config.get_str("FVHotkey"), self._save_hotkey).pack()
-        row = widgets.SettingRow(card.body, "globe", TINT_TEAL, "Language")
-        widgets.Dropdown(row.control, [("ru", "Русский"), ("en", "English"),
-                                       ("auto", "Auto-detect")],
+        row = widgets.SettingRow(card.body, "globe", TINT_TEAL, t("settings.language"))
+        widgets.Dropdown(row.control, [("ru", t("settings.lang_ru")),
+                                       ("en", t("settings.lang_en")),
+                                       ("auto", t("settings.lang_auto"))],
                          lambda: config.get_str("FVLanguage"),
                          self._set_language).pack()
-        row = widgets.SettingRow(card.body, "mic", TINT_PINK, "Microphone", last=True)
+        row = widgets.SettingRow(card.body, "mic", TINT_PINK, t("settings.microphone"),
+                                 last=True)
         widgets.Dropdown(row.control, _microphones(),
                          lambda: config.get_str("FVMicrophone"),
                          lambda v: config.set("FVMicrophone", v)).pack()
 
         # TEXT PROCESSING
-        widgets.section_title(body, "Text processing").pack(anchor="w", pady=(20, 8))
+        widgets.section_title(body, t("settings.group_text")).pack(anchor="w", pady=(20, 8))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
-        self._switch_row(card.body, "bolt", TINT_ORANGE, "Streaming transcription",
-                         "decodes while you speak", "FVStreaming")
-        self._switch_row(card.body, "sparkle", TINT_INDIGO, "AI cleanup (Ollama)",
-                         "removes filler words and fixes punctuation", "FVCleanupEnabled")
-        row = widgets.SettingRow(card.body, "chip", TINT_GREY, "Cleanup model",
-                                 "qwen2.5:3b follows these prompts best")
+        self._switch_row(card.body, "bolt", TINT_ORANGE, t("settings.streaming"),
+                         t("settings.streaming_hint"), "FVStreaming")
+        self._switch_row(card.body, "sparkle", TINT_INDIGO, t("settings.cleanup"),
+                         t("settings.cleanup_hint"), "FVCleanupEnabled")
+        row = widgets.SettingRow(card.body, "chip", TINT_GREY,
+                                 t("settings.cleanup_model"),
+                                 t("settings.cleanup_model_hint"))
         widgets.Dropdown(row.control, _ollama_models(),
                          lambda: config.get_str("FVOllamaModel"),
                          lambda v: config.set("FVOllamaModel", v)).pack()
-        self._switch_row(card.body, "wand", TINT_GREEN, "Auto-fix garbled words",
-                         "only on low-confidence transcripts", "FVSmartFix", last=True)
-        self._ollama_status = theme.label(body, "checking Ollama…", size=8,
+        self._switch_row(card.body, "wand", TINT_GREEN, t("settings.smartfix"),
+                         t("settings.smartfix_hint"), "FVSmartFix", last=True)
+        self._ollama_status = theme.label(body, t("ollama.checking"), size=8,
                                           colour=theme.TEXT_FAINT)
         self._ollama_status.pack(anchor="w", pady=(8, 0))
-        theme.label(
-            body,
-            "Cleanup rewrites your words with a local model. The raw transcript is "
-            "always kept in History next to the cleaned one.",
-            size=8, colour=theme.TEXT_FAINT,
-        ).pack(anchor="w", pady=(2, 0))
+        theme.label(body, t("settings.cleanup_note"), size=8,
+                    colour=theme.TEXT_FAINT).pack(anchor="w", pady=(2, 0))
 
         # GENERAL
-        widgets.section_title(body, "General").pack(anchor="w", pady=(20, 8))
+        widgets.section_title(body, t("settings.group_general")).pack(anchor="w", pady=(20, 8))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
-        row = widgets.SettingRow(card.body, "power", TINT_GREEN, "Launch at login")
+        row = widgets.SettingRow(card.body, "power", TINT_GREEN,
+                                 t("settings.launch_at_login"))
         self._login_switch = widgets.Switch(
             row.control, shortcut.launches_at_login,
             lambda v: shortcut.set_launch_at_login(v))
         self._login_switch.pack()
-        self._switch_row(card.body, "speaker", TINT_BLUE, "Sound feedback", "", "FVSounds")
-        self._switch_row(card.body, "mic", TINT_PINK, "Recording overlay",
-                         "the floating pill while you speak", "FVOverlay")
-        row = widgets.SettingRow(card.body, "chip", TINT_TEAL, "Whisper model",
-                                 "bigger is more accurate and slower")
+        self._switch_row(card.body, "speaker", TINT_BLUE, t("settings.sounds"), "",
+                         "FVSounds")
+        self._switch_row(card.body, "mic", TINT_PINK, t("settings.overlay"),
+                         t("settings.overlay_hint"), "FVOverlay")
+        row = widgets.SettingRow(card.body, "chip", TINT_TEAL,
+                                 t("settings.whisper_model"),
+                                 t("settings.whisper_model_hint"))
         widgets.Dropdown(row.control, _WHISPER_MODELS,
                          lambda: config.get_str("FVModel"), self._set_whisper_model).pack()
-        self._switch_row(card.body, "clipboard", TINT_GREY, "Paste via clipboard",
-                         "only for apps that ignore typed input",
-                         "FVPasteViaClipboard", last=True)
+        self._switch_row(card.body, "clipboard", TINT_GREY, t("settings.clipboard"),
+                         t("settings.clipboard_hint"), "FVPasteViaClipboard")
+        row = widgets.SettingRow(card.body, "globe", TINT_INDIGO,
+                                 t("settings.ui_language"),
+                                 t("settings.ui_language_hint"), last=True)
+        widgets.Dropdown(row.control,
+                         [("auto", t("settings.ui_auto")), ("ru", "Русский"),
+                          ("en", "English")],
+                         lambda: config.get_str("FVUILanguage"),
+                         self._set_ui_language).pack()
 
         footer = tk.Frame(body, bg=theme.INK)
         footer.pack(fill="x", pady=(20, 0))
-        theme.label(footer, f"Data and logs live in {paths.home()}", size=8,
+        theme.label(footer, t("settings.data_location", path=paths.home()), size=8,
                     colour=theme.TEXT_FAINT).pack(side="left", pady=6)
-        theme.button(footer, "Open folder", self._open_folder).pack(side="right")
+        theme.button(footer, t("settings.open_folder"),
+                     self._open_folder).pack(side="right")
 
     def _switch_row(self, parent, glyph: str, tint: str, title: str, subtitle: str,
                     key: str, last: bool = False) -> None:
@@ -678,13 +692,28 @@ class MainWindow:
         try:
             parse(value)
         except ValueError as exc:
-            messagebox.showwarning("That shortcut will not work", str(exc),
+            messagebox.showwarning(t("settings.shortcut_bad_title"), str(exc),
                                    parent=self._window)
             return False
         config.set("FVHotkey", value)
         if self._app is not None:
             self._app.rebind_hotkey()
         return True
+
+    def _set_ui_language(self, value: str) -> None:
+        """Store it and say a restart is needed.
+
+        Re-translating live would mean rebuilding every window, and half the
+        strings are baked into module constants at import (the pill sizes
+        itself from its longest label). A restart is honest and instant.
+        """
+        from tkinter import messagebox
+
+        if value == config.get_str("FVUILanguage"):
+            return
+        config.set("FVUILanguage", value)
+        messagebox.showinfo(t("settings.restart_needed"),
+                            t("settings.ui_language_hint"), parent=self._window)
 
     def _set_whisper_model(self, value: str) -> None:
         """Switching model reloads it in the background. The alternative is a
@@ -721,7 +750,7 @@ class MainWindow:
         if not hasattr(self, "_ollama_status"):
             return
         if not config.get_bool("FVCleanupEnabled") and not config.get_bool("FVSmartFix"):
-            self._ollama_status.configure(text="Cleanup is off.", fg=theme.TEXT_FAINT)
+            self._ollama_status.configure(text=t("ollama.off"), fg=theme.TEXT_FAINT)
             return
 
         wanted = config.get_str("FVOllamaModel")
@@ -731,13 +760,13 @@ class MainWindow:
 
             models = cleaner.installed_models()
             if not models:
-                text = "Ollama is not running — dictations are saved and typed raw."
+                text = t("ollama.not_running")
                 colour = theme.PROCESSING
             elif wanted not in models:
-                text = f"Ollama is running, but {wanted} is not pulled."
+                text = t("ollama.model_missing", model=wanted)
                 colour = theme.PROCESSING
             else:
-                text = f"Ollama ready: {wanted}."
+                text = t("ollama.ready", model=wanted)
                 colour = theme.OK
             ui.call(lambda: self._set_ollama_status(text, colour))
 
@@ -836,11 +865,11 @@ def _day_label(iso: str, today: dt.date) -> str:
     try:
         day = dt.datetime.fromisoformat(iso).date()
     except ValueError:
-        return "Earlier"
+        return t("history.earlier")
     if day == today:
-        return "Today"
+        return t("history.today")
     if day == today - dt.timedelta(days=1):
-        return "Yesterday"
+        return t("history.yesterday")
     if (today - day).days < 7:
         return day.strftime("%A")
     return day.strftime("%d %B %Y")

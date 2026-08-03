@@ -196,10 +196,14 @@ class Chip:
 class NavItem:
     """One row in the sidebar. Active rows get the filled accent plate."""
 
-    def __init__(self, parent, name: str, glyph: str, on_click: Callable[[str], None]) -> None:
+    def __init__(self, parent, name: str, glyph: str, on_click: Callable[[str], None],
+                 label: str | None = None) -> None:
         import tkinter as tk
 
         self.name = name
+        # The key the app switches on stays English; only the text shown is
+        # translated, so a language change cannot break navigation.
+        self._label = label or name
         self._glyph = glyph
         self._active = False
         self._images: list = []
@@ -235,7 +239,7 @@ class NavItem:
         glyph = icons.photo(icons.image(self._glyph, theme.px(18), colour, stroke=0.085))
         self.canvas._images = [glyph]
         self.canvas.create_image(theme.px(20), theme.px(20), image=glyph)
-        self.canvas.create_text(theme.px(44), theme.px(20), text=self.name,
+        self.canvas.create_text(theme.px(44), theme.px(20), text=self._label,
                                 anchor="w", fill=colour,
                                 font=theme.font(11, "bold" if self._active else "normal"))
 
