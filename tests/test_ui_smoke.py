@@ -115,3 +115,96 @@ def test_every_glyph_renders():
     for name in icons.GLYPHS:
         assert icons.image(name, 16, "#FFFFFF").size == (16, 16)
         assert icons.tile(name, 28, "#FFFFFF", "#2F7DF6").size == (28, 28)
+
+
+# ── the shortcut recorder ────────────────────────────────────────────────
+
+
+class _Key:
+    """The two fields `_captured` reads off a Tk key event.
+
+    Driven directly rather than through `event_generate`, which refuses letter
+    keysyms without a keycode and only dispatches to mapped windows — neither
+    of which is what this logic is about.
+    """
+
+    def __init__(self, keysym: str) -> None:
+        self.keysym = keysym
+        self.state = 0
+
+
+def _recorder(root, get="ctrl+alt+space", on_listening=None):
+    import tkinter as tk
+
+    from fortunevoice.ui import widgets
+
+    saved: list[str] = []
+    frame = tk.Toplevel(root)
+    frame.geometry("300x120+80+80")
+    widget = widgets.ShortcutRecorder(
+        frame, lambda: get, lambda v: (saved.append(v), True)[1],
+        on_listening=on_listening)
+    widget.pack()
+    root.update()
+    return widget, saved, frame
+
+
+def test_recorder_captures_a_chord(root):
+    widget, saved, frame = _recorder(root)
+    widget._begin()
+    widget._captured(_Key("F9"))
+    assert saved == ["f9"]
+    assert not widget._listening, "capturing one chord ends the session"
+    widget._end()
+    frame.destroy()
+
+
+def test_recorder_pauses_the_global_hotkey_while_listening(root):
+    """The chord a user reaches for first is the one already configured. Left
+    live, the hook would swallow it and start a dictation instead of recording
+    the key."""
+    events: list[bool] = []
+    widget, _saved, frame = _recorder(root, on_listening=events.append)
+
+    widget._begin()
+    assert events == [True], "paused before any key can arrive"
+    widget._captured(_Key("F9"))
+    assert events == [True, False], "and resumed as soon as capture ends"
+    widget._end()
+    frame.destroy()
+
+
+def test_recorder_ignores_a_modifier_on_its_own(root):
+    widget, saved, frame = _recorder(root)
+    widget._begin()
+    for modifier in ("Control_L", "Alt_R", "Shift_L", "Super_L"):
+        widget._captured(_Key(modifier))
+    assert saved == [], "Ctrl alone is not a shortcut"
+    assert widget._listening, "and it keeps waiting for a real key"
+    widget._end()
+    frame.destroy()
+
+
+def test_escape_cancels_without_saving(root):
+    widget, saved, frame = _recorder(root)
+    widget._begin()
+    widget._captured(_Key("Escape"))
+    assert saved == []
+    assert not widget._listening
+    widget._end()
+    frame.destroy()
+
+
+def test_the_key_binding_is_scoped_and_removed(root):
+    """Bound on the toplevel and removed by funcid — never `bind_all`, whose
+    matching `unbind_all` would wipe every other <KeyPress> handler in the
+    app, not just this one."""
+    widget, _saved, frame = _recorder(root)
+    assert widget._binding is None
+
+    widget._begin()
+    assert widget._binding, "listening must install a binding"
+
+    widget._end()
+    assert widget._binding is None, "and ending must remove it"
+    frame.destroy()
