@@ -378,11 +378,21 @@ class ShortcutRecorder:
     }
 
     def __init__(self, parent, get: Callable[[], str], set_: Callable[[str], bool],
-                 on_listening: Callable[[bool], None] | None = None) -> None:
+                 on_listening: Callable[[bool], None] | None = None,
+                 capture: Callable | None = None) -> None:
         import tkinter as tk
 
         self._get, self._set = get, set_
         self._on_listening = on_listening
+        # `capture(on_chord, on_cancel)` grabs the next chord with a global
+        # keyboard hook and returns something with .stop(). Preferred over the
+        # Tk bindings below, because the thing being recorded IS a global
+        # hotkey: reading it through window focus made it depend on Windows
+        # granting foreground to a background thread, which it does not owe us.
+        # The Tk path stays as the fallback for tests and for a UI running
+        # without an App.
+        self._capture_factory = capture
+        self._capture = None
         self._listening = False
         self._binding = None
         self.canvas = tk.Canvas(parent, height=theme.px(30), width=theme.px(150),
@@ -414,16 +424,24 @@ class ShortcutRecorder:
             return "break"
         self._listening = True
         self.canvas.focus_set()
-        # Bound on the TOPLEVEL, not on the chip: Tk delivers keys to whatever
-        # holds focus, and a stray click elsewhere in the window would
-        # otherwise send the keypress somewhere that ignores it while this
-        # widget still looked like it was listening.
-        #
-        # Not bind_all either — that registers for the whole interpreter, and
-        # the matching unbind_all wipes every other <KeyPress> handler in the
-        # app, not just ours. Keeping the funcid lets us remove exactly one.
-        window = self.canvas.winfo_toplevel()
-        self._binding = window.bind("<KeyPress>", self._captured, add="+")
+        if self._capture_factory is not None:
+            # The callbacks arrive on the hook thread; hop to the UI thread
+            # before touching a single widget.
+            from . import ui
+
+            self._capture = self._capture_factory(
+                lambda chord: ui.call(lambda: self._chord(chord)),
+                lambda: ui.call(self._end),
+            )
+        else:
+            # Fallback: bound on the TOPLEVEL, not on the chip, so a stray
+            # click elsewhere in the window cannot send the keypress somewhere
+            # that ignores it while this widget still looks like it is
+            # listening. Not bind_all — the matching unbind_all wipes every
+            # other <KeyPress> handler in the app, not just ours; keeping the
+            # funcid removes exactly one.
+            window = self.canvas.winfo_toplevel()
+            self._binding = window.bind("<KeyPress>", self._captured, add="+")
         if self._on_listening:
             self._on_listening(True)
         self.paint()
@@ -431,6 +449,9 @@ class ShortcutRecorder:
 
     def _end(self) -> None:
         self._listening = False
+        if self._capture is not None:
+            self._capture.stop()
+            self._capture = None
         if self._binding is not None:
             try:
                 self.canvas.winfo_toplevel().unbind("<KeyPress>", self._binding)
@@ -469,9 +490,13 @@ class ShortcutRecorder:
         except Exception:  # noqa: BLE001 - fall back to no modifiers
             pass
 
-        self._set("+".join([*modifiers, key]))
-        self._end()
+        self._chord("+".join([*modifiers, key]))
         return "break"
+
+    def _chord(self, chord: str) -> None:
+        """One captured chord, from whichever route delivered it."""
+        self._set(chord)
+        self._end()
 
     def paint(self) -> None:
         width = int(self.canvas["width"])

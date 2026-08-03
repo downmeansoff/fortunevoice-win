@@ -233,6 +233,20 @@ class App:
         self._listener.start()
         return ok
 
+    def capture_chord(self, on_chord, on_cancel=None):
+        """Record the next chord the user presses, anywhere on the system.
+
+        The global hook is paused first: the chord a user reaches for when
+        changing a shortcut is usually the one already set, and leaving the
+        hook live would swallow it and start a dictation instead.
+        """
+        from .hotkey import ChordCapture
+
+        self.pause_hotkey()
+        capture = ChordCapture(on_chord, on_cancel)
+        capture.start()
+        return capture
+
     def pause_hotkey(self) -> None:
         """Stop listening for the global hotkey.
 
