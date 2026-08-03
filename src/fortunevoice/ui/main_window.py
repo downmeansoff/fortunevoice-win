@@ -596,6 +596,7 @@ class MainWindow:
         # nothing at all.
         recorder.bind_clickable(row.frame, *row.frame.winfo_children())
         self._recorder = recorder
+        self._hotkey_row = row
         row = widgets.SettingRow(card.body, "globe", TINT_TEAL, t("settings.language"))
         widgets.Dropdown(row.control, [("ru", t("settings.lang_ru")),
                                        ("en", t("settings.lang_en")),
@@ -691,6 +692,12 @@ class MainWindow:
         the hook would swallow it and start a dictation instead of recording
         the key.
         """
+        # Ctrl and Alt are accepted, but only when held — say so at the moment
+        # the user is actually choosing, or a held Ctrl reads as "not working".
+        row = getattr(self, "_hotkey_row", None)
+        if row is not None and row.subtitle is not None:
+            row.subtitle.configure(text=t("settings.shortcut_modifier_hint")
+                                   if listening else t("settings.shortcut_hint"))
         if self._app is None:
             return
         if not listening:

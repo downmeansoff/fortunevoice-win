@@ -715,3 +715,46 @@ Four details that took a measurement each:
 
 Verified with real keystrokes and no window at all: `f9`, `ctrl+shift+f1`,
 `win+d`, `alt+space` all captured exactly, Escape cancels.
+
+### Holding Ctrl or Alt as the shortcut
+
+Reported from use: *«Работает только на обычных кнопках. Я хотел поставить на
+Ctrl и Alt, но на них не работает.»* Recording `Ctrl+Alt` produced nothing —
+the capture waited for a non-modifier key that never came, and the parser had
+no way to express a chord that is only modifiers.
+
+Three things had to change, and each one is a different failure.
+
+**Capture decides on release.** While a key is down there is no way to tell
+`Ctrl` *as the shortcut* from `Ctrl` *on the way to Ctrl+C*. `ChordCapture`
+now emits a modifiers-only chord when one of them goes up, computed from the
+set held **before** that key left it — otherwise lifting Alt first out of
+Ctrl+Alt records the leftover `ctrl`.
+
+**The listener must not swallow it.** Every other trigger returns 1 from the
+hook so the key never reaches the app underneath. Doing that to Ctrl would
+break Ctrl+C, Ctrl+V and every other shortcut on the system. A modifier
+trigger always falls through; the dictation happens *in addition to* the key
+doing its normal job.
+
+**`GetAsyncKeyState` cannot see the key that is arriving.** This one cost the
+most. `Ctrl+Alt` parsed, the hook fired, and nothing happened — because
+`modifiers_held()` asked Windows whether Ctrl was down, and a low-level hook
+runs *before* the keystroke is committed, so the answer is no. It never
+mattered while triggers were ordinary keys: the trigger is known to be down
+because the hook just said so, and only the *other* modifiers were queried. A
+modifier trigger is both at once. `modifiers_held(arriving)` now skips the
+group the incoming key belongs to. As a side effect the chord no longer cares
+about press order — Ctrl-then-Alt and Alt-then-Ctrl both fire.
+
+On top of that, a modifier press only counts after `HOLD_SECONDS = 0.3`. Not
+polish — without it, `Ctrl` as a shortcut means every Ctrl+C starts a
+dictation, and `Ctrl+Alt` fires on every AltGr, which is how a Russian layout
+sends the right Alt. A tap starts nothing at all, so no recording, no overlay,
+no empty transcript. Settings says so while the chip is listening; a threshold
+nobody mentions reads as a broken hotkey.
+
+Verified by driving real keys through a real hook (`keybd_event`, the
+injected-event filter lifted for the duration): hold Ctrl+Alt fires, either
+press order fires, a tap does not, Ctrl+C does not, and Ctrl reaches the system
+while the hotkey is live.
