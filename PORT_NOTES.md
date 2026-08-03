@@ -574,3 +574,38 @@ text`.
 
 Cleanup is therefore **on**, with qwen2.5:1.5b. Worst case is now the raw
 transcript, which is what the app would have typed anyway.
+
+## The cold start that made cleanup miss its budget
+
+Measured on a real dictation: one cleanup took **2016 ms against a 1500 ms
+budget**. Not a slow model — a cold one.
+
+`warmup()` runs on hotkey-down, while the user is still speaking, so the real
+call pays only for the user's text. It was throttled to once per 10 minutes
+after a success, on the reasoning that `keep_alive = "24h"` keeps the model
+loaded anyway.
+
+That assumption breaks in the two situations that matter most here:
+
+* Ollama restarts (it has no autostart on Windows, so this is routine), and
+* Ollama **evicts** the model under VRAM pressure — exactly what happens on a
+  6 GB card when Whisper loads beside it.
+
+In both, `warmup()` returned early on a model that was no longer there, and
+the next dictation paid the cold load inside its own budget.
+
+The fix is to stop trusting elapsed time and check the fact: `/api/ps` lists
+what Ollama actually has in memory. Warm-up now skips only when a recent prime
+succeeded **and** the model is still resident. The probe has a 1 s timeout and
+"don't know" means "prime anyway" — it sits on hotkey-down and its answer is
+only ever used to skip work.
+
+Proven on the exact failure:
+
+| | |
+|---|---|
+| after priming | resident |
+| after eviction | not resident |
+| **old code would skip warm-up** | **yes** |
+| new code re-primes | 3.6 s, while the user is still talking |
+| first cleanup after eviction | **359 ms** (was 2016 ms) |

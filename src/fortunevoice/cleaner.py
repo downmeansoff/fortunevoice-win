@@ -426,18 +426,47 @@ class OllamaCleaner:
         cleaned = self._clean_whole(raw, base_system(vocabulary))
         return None if cleaned == raw else cleaned
 
+    def _model_is_resident(self) -> bool:
+        """Is the cleanup model loaded in Ollama right now?
+
+        `/api/ps` lists what is actually in memory. Deliberately a short
+        timeout: this runs on hotkey-down and the answer is only used to skip
+        work, so "don't know" must mean "prime anyway" rather than "wait".
+        """
+        host = config.get_str("FVOllamaHost").rstrip("/")
+        try:
+            with urllib.request.urlopen(f"{host}/api/ps", timeout=1.0) as response:
+                if response.status != 200:
+                    return False
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001 - Ollama down is the normal case
+            return False
+        wanted = self.model
+        return any(entry.get("name") == wanted or entry.get("model") == wanted
+                   for entry in payload.get("models", []))
+
     def warmup(self) -> None:
         """Fire-and-forget: load the model AND prime the prompt-prefix cache.
 
         Metrics showed prompt-eval of the ~600-token prompt costs ~2 s per
         cleanup at Ollama's ~270 tok/s — priming it here, while the user is
         still talking, makes the real call pay only for the user text and the
-        generated output. Throttled to once per 10 min AFTER a success
-        (keep_alive is 24h); failures retry on the next hotkey press.
+        generated output.
+
+        Skipped only when a recent prime succeeded AND the model is still
+        resident. The time check alone was not enough: it assumed `keep_alive`
+        of 24h meant the model stays loaded, and that assumption breaks in the
+        two situations that matter most — Ollama being restarted, and Ollama
+        evicting the model under VRAM pressure, which is exactly what happens
+        on a small card when Whisper loads beside it. A measured dictation paid
+        2016 ms against a 1500 ms budget because warmup had silently
+        short-circuited on a model that was no longer there.
         """
         with self._warmup_lock:
-            if self._last_warmup and time.monotonic() - self._last_warmup < 600:
-                return
+            recently = bool(self._last_warmup
+                            and time.monotonic() - self._last_warmup < 600)
+        if recently and self._model_is_resident():
+            return
         from .dictionary import prompt_string  # local: avoids an import cycle
 
         vocabulary = prompt_string()

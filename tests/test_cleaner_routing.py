@@ -79,3 +79,44 @@ def test_over_budget_declines_before_calling(recorded):
     result = C.OllamaCleaner().clean(SHORT, budget=0.2)
     assert result == SHORT
     assert recorded == []
+
+
+# ── warm-up skipping ─────────────────────────────────────────────────────
+
+
+def test_warmup_skips_only_when_the_model_is_really_loaded(monkeypatch):
+    """The bug this fixes: warmup() skipped for 10 minutes after a success,
+    assuming keep_alive=24h meant the model stayed. Ollama restarting, or
+    evicting it under VRAM pressure — which is what happens on a small card
+    when Whisper loads beside it — broke that assumption silently, and the next
+    dictation paid a 2 s cold load inside a 1.5 s budget."""
+    import time
+
+    primed: list[str] = []
+    monkeypatch.setattr(C.OllamaCleaner, "_prime",
+                        lambda self, system: primed.append(system) or True)
+
+    cleaner = C.OllamaCleaner()
+    cleaner._last_warmup = time.monotonic()  # "primed a moment ago"
+
+    monkeypatch.setattr(C.OllamaCleaner, "_model_is_resident", lambda self: True)
+    cleaner.warmup()
+    assert primed == [], "a loaded model needs no re-priming"
+
+    monkeypatch.setattr(C.OllamaCleaner, "_model_is_resident", lambda self: False)
+    cleaner.warmup()
+    for _ in range(200):
+        if primed:
+            break
+        time.sleep(0.01)
+    assert primed, "an evicted model must be primed again despite the throttle"
+
+
+def test_residency_check_treats_a_dead_ollama_as_not_loaded(monkeypatch):
+    """`/api/ps` unreachable must mean "prime anyway", never "wait" — the call
+    sits on hotkey-down and its answer is only used to skip work."""
+    def boom(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(C.urllib.request, "urlopen", boom)
+    assert C.OllamaCleaner()._model_is_resident() is False
