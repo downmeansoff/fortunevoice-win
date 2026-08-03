@@ -17,6 +17,7 @@ import threading
 
 from .. import audio, config, winapi
 from ..log import get as get_logger
+from ..strings import t
 from . import theme, ui
 
 logger = get_logger("ui.onboarding")
@@ -65,7 +66,7 @@ class Onboarding:
         from .. import assets
 
         window = tk.Toplevel(ui.root)
-        window.title("FortuneVoice — setup")
+        window.title(t("setup.title"))
         window.geometry(f"{WIDTH}x{HEIGHT}")
         window.resizable(False, False)
         window.configure(bg=theme.INK)
@@ -85,16 +86,16 @@ class Onboarding:
         # the footer last pushed it off the window entirely.
         footer = tk.Frame(body, bg=theme.INK)
         footer.pack(fill="x", side="bottom", pady=(theme.px(18), 0))
-        theme.button(footer, "Start dictating", self._done, primary=True).pack(side="right")
+        theme.button(footer, t("setup.start"), self._done, primary=True).pack(side="right")
         theme.label(
-            footer, "The tray icon has settings, history and this screen again.",
+            footer, t("setup.tray_hint"),
             size=8, colour=theme.TEXT_FAINT,
         ).pack(side="left", pady=8)
 
-        theme.label(body, "Ready to dictate", size=16, weight="bold").pack(anchor="w")
+        theme.label(body, t("setup.heading"), size=16, weight="bold").pack(anchor="w")
         theme.label(
             body,
-            "Everything runs on this machine. Audio never leaves it.",
+            t("setup.privacy"),
             size=9, colour=theme.TEXT_MUTED,
         ).pack(anchor="w", pady=(theme.px(4), theme.px(18)))
 
@@ -104,17 +105,18 @@ class Onboarding:
         inner = tk.Frame(chord, bg=theme.CARD)
         inner.pack(fill="x", padx=theme.px(18), pady=theme.px(16))
         hotkey = self._app.hotkey_label if self._app else config.get_str("FVHotkey")
-        theme.label(inner, "Hold to talk", size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
+        theme.label(inner, t("setup.hold_to_talk"), size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
         theme.label(inner, hotkey, size=18, weight="bold", colour=theme.ACCENT).pack(anchor="w")
         theme.label(
-            inner, "Hold it, speak, let go. The text is typed where your cursor is.",
+            inner, t("setup.how"),
             size=9, colour=theme.TEXT_MUTED,
         ).pack(anchor="w", pady=(theme.px(6), 0))
 
         # ── microphone, proven rather than asserted ──
-        theme.label(body, "Microphone", size=11, weight="bold").pack(
+        theme.label(body, t("setup.microphone"), size=11, weight="bold").pack(
             anchor="w", pady=(theme.px(20), theme.px(5)))
-        self._mic_note = theme.label(body, "Say something…", size=9, colour=theme.TEXT_MUTED)
+        self._mic_note = theme.label(body, t("setup.say_something"), size=9,
+                                     colour=theme.TEXT_MUTED)
         self._mic_note.pack(anchor="w")
         # Drawn on a canvas so the track and the fill can both be rounded; a
         # flat Frame reads as a progress bar someone forgot to style.
@@ -125,9 +127,10 @@ class Onboarding:
         self._meter_level = 0.0
 
         # ── model ──
-        theme.label(body, "Model", size=11, weight="bold").pack(
+        theme.label(body, t("setup.model"), size=11, weight="bold").pack(
             anchor="w", pady=(theme.px(20), theme.px(5)))
-        self._model_note = theme.label(body, "checking…", size=9, colour=theme.TEXT_MUTED)
+        self._model_note = theme.label(body, t("ollama.checking"), size=9,
+                                       colour=theme.TEXT_MUTED)
         self._model_note.pack(anchor="w")
 
         self._window = window
@@ -154,7 +157,7 @@ class Onboarding:
             except audio.AudioError as exc:
                 logger.warning("onboarding meter could not start: %s", exc)
                 ui.call(lambda: self._mic_note.configure(
-                    text=f"No microphone: {exc}", fg=theme.ERROR))
+                    text=t("setup.no_microphone", error=exc), fg=theme.ERROR))
                 self._listening = False
                 return
             self._recorder = recorder
@@ -177,7 +180,7 @@ class Onboarding:
         self._meter_level = min(1.0, (self._level / 0.22) ** 0.7)
         self._paint_meter()
         if self._meter_level > 0.25:
-            self._mic_note.configure(text="Hearing you clearly.", fg=theme.OK)
+            self._mic_note.configure(text=t("setup.hearing_you"), fg=theme.OK)
         self._window.after(50, self._tick)
 
     def _paint_meter(self) -> None:
@@ -212,13 +215,13 @@ class Onboarding:
         transcriber = self._app.transcriber
         if transcriber.loaded_model:
             self._model_note.configure(
-                text=f"{transcriber.loaded_model} on "
-                     f"{transcriber.device}/{transcriber.compute_type} — ready",
+                text=t("setup.model_ready", model=transcriber.loaded_model,
+                       device=f"{transcriber.device}/{transcriber.compute_type}"),
                 fg=theme.OK,
             )
             return
         self._model_note.configure(
-            text="downloading and loading… the first dictation will wait for it",
+            text=t("setup.model_loading"),
             fg=theme.TEXT_MUTED,
         )
         self._window.after(1500, self._refresh_model)

@@ -39,6 +39,11 @@ DEFAULTS: dict[str, Any] = {
     "FVDevice": "auto",
     # "ru", "en", … or "auto" to detect per dictation.
     "FVLanguage": "ru",
+    # Language of the app's own windows and menus: "ru", "en", or "auto"
+    # (follow Windows). Deliberately separate from FVLanguage — the language
+    # you dictate in has nothing to do with the language you want the buttons
+    # in, and dictating English notes should not flip the UI.
+    "FVUILanguage": "auto",
     # LLM cleanup through a local Ollama.
     "FVCleanupEnabled": True,
     # Repair garbled (low-confidence) transcripts even when cleanup is off.

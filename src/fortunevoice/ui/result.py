@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from .. import injector
 from ..log import get as get_logger
+from ..strings import t
 from . import theme, ui
 
 logger = get_logger("ui.result")
@@ -82,9 +83,9 @@ class ResultPanel:
 
         footer = tk.Frame(body, bg=theme.INK)
         footer.pack(fill="x", padx=18, pady=12)
-        self._copy_button = theme.button(footer, "Copy", self._copy, primary=True)
+        self._copy_button = theme.button(footer, t("result.copy"), self._copy, primary=True)
         self._copy_button.pack(side="right")
-        theme.label(footer, "Saved to History", size=8, colour=theme.TEXT_FAINT).pack(
+        theme.label(footer, t("result.saved"), size=8, colour=theme.TEXT_FAINT).pack(
             side="left", pady=6
         )
 
@@ -114,7 +115,7 @@ class ResultPanel:
         self._text.insert("1.0", text)
         # Read-only, but still selectable so the user can grab part of it.
         self._text.configure(state="disabled")
-        self._copy_button.configure(text="Copy", bg=theme.ACCENT)
+        self._copy_button.configure(text=t("result.copy"), bg=theme.ACCENT)
 
         self._place()
         self._window.deiconify()
@@ -134,9 +135,9 @@ class ResultPanel:
 
     def _copy(self) -> None:
         if injector.set_clipboard_text(self._content):
-            self._copy_button.configure(text="Copied", bg=theme.OK)
+            self._copy_button.configure(text=t("result.copied"), bg=theme.OK)
         else:
-            self._copy_button.configure(text="Failed", bg=theme.ERROR)
+            self._copy_button.configure(text=t("result.failed"), bg=theme.ERROR)
             logger.warning("could not put the transcript on the clipboard")
 
 

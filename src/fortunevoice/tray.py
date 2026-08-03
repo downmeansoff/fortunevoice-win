@@ -15,6 +15,7 @@ import threading
 from . import assets, audio, config, dictionary
 from .app import App, State
 from .log import get as get_logger
+from .strings import t
 
 logger = get_logger("tray")
 
@@ -26,15 +27,21 @@ _COLOURS = {
     State.ERROR: assets.ERROR,
 }
 
-_LABELS = {
-    State.LOADING: "Loading the model…",
-    State.IDLE: "Idle",
-    State.RECORDING: "Recording…",
-    State.PROCESSING: "Transcribing…",
-    State.ERROR: "Model failed to load",
+# Looked up per call, not baked into a dict at import: the tooltip is rebuilt
+# on every state change anyway, and a module-level dict would freeze whatever
+# language was active when the module first loaded.
+_LABEL_KEYS = {
+    State.LOADING: "state.loading",
+    State.IDLE: "state.idle",
+    State.RECORDING: "state.recording",
+    State.PROCESSING: "state.processing",
+    State.ERROR: "state.model_failed",
 }
 
-LANGUAGES = [("ru", "Русский"), ("en", "English"), ("auto", "Auto-detect")]
+
+def LANGUAGES():  # noqa: N802 - kept as a name the menu builder already uses
+    return [("ru", t("settings.lang_ru")), ("en", t("settings.lang_en")),
+            ("auto", t("settings.lang_auto"))]
 
 
 def _icon_image(state: State, level: float = 0.0):
@@ -65,43 +72,44 @@ class Tray:
                 checked=lambda _i, code=code: config.get_str("FVLanguage") == code,
                 radio=True,
             )
-            for code, title in LANGUAGES
+            for code, title in LANGUAGES()
         ]
 
         return pystray.Menu(
             item(lambda _i: self._status_text(), None, enabled=False),
-            item(lambda _i: f"Hold {self.app.hotkey_label} to dictate", None, enabled=False),
+            item(lambda _i: t("tray.hold_to_dictate", hotkey=self.app.hotkey_label),
+                 None, enabled=False),
             separator,
             # Default: a double-click on the tray icon opens the window, which
             # is what people try first.
-            item("Open FortuneVoice", self._open_window, default=True),
-            item("Setup…", self._open_setup),
+            item(t("tray.open"), self._open_window, default=True),
+            item(t("tray.setup"), self._open_setup),
             separator,
-            item("Language", pystray.Menu(*language_items)),
-            item("Microphone", pystray.Menu(self._microphone_items)),
+            item(t("tray.language"), pystray.Menu(*language_items)),
+            item(t("tray.microphone"), pystray.Menu(self._microphone_items)),
             item(
-                "AI cleanup (Ollama)",
+                t("settings.cleanup"),
                 self._toggle("FVCleanupEnabled"),
                 checked=lambda _i: config.get_bool("FVCleanupEnabled"),
             ),
             item(
-                "Auto-fix garbled words",
+                t("settings.smartfix"),
                 self._toggle("FVSmartFix"),
                 checked=lambda _i: config.get_bool("FVSmartFix"),
             ),
             separator,
-            item("Copy last dictation", self._copy_last,
+            item(t("tray.copy_last"), self._copy_last,
                  enabled=lambda _i: bool(self.app.last_transcript)),
             item(
                 lambda _i: self._recover_text(),
                 self._recover,
                 visible=lambda _i: bool(self.app.recovery.pending()),
             ),
-            item("Retry model load", self._reload,
+            item(t("tray.retry_model"), self._reload,
                  visible=lambda _i: self.app.state is State.ERROR),
-            item("Open data folder", self._open_folder),
+            item(t("settings.open_folder"), self._open_folder),
             separator,
-            item("Quit FortuneVoice", self._quit),
+            item(t("tray.quit"), self._quit),
         )
 
     def _microphone_items(self):
@@ -109,7 +117,7 @@ class Tray:
 
         item = pystray.MenuItem
         yield item(
-            "System default",
+            t("settings.mic_default"),
             self._select_microphone(""),
             checked=lambda _i: not config.get_str("FVMicrophone"),
             radio=True,
@@ -124,7 +132,7 @@ class Tray:
 
     def _status_text(self) -> str:
         state = self.app.state
-        label = _LABELS.get(state, state.value)
+        label = t(_LABEL_KEYS.get(state, "state.idle"))
         if self.app.status_note:
             label = f"{label} — {self.app.status_note}"
         if state is State.IDLE and self.app.transcriber.loaded_model:
@@ -132,7 +140,7 @@ class Tray:
                 f"{label} · {self.app.transcriber.loaded_model}"
                 f" ({self.app.transcriber.device})"
             )
-        return f"FortuneVoice — {label}"
+        return t("tray.title", label=label)
 
     # ── actions ──────────────────────────────────────────────────────────
 
@@ -168,7 +176,7 @@ class Tray:
 
     def _recover_text(self) -> str:
         count = len(self.app.recovery.pending())
-        return "Recover failed dictation" + (f" ({count})" if count > 1 else "")
+        return t("tray.recover") + (f" ({count})" if count > 1 else "")
 
     def _recover(self, _icon=None, _item=None) -> None:
         self.app.recover_failed()
