@@ -34,7 +34,7 @@ from .log import get as get_logger
 from .store import DictationRecord, DictationStore, RecoveryStore
 from .strings import t
 from .streaming import StreamingSession
-from .textclean import collapse_repeats, word_count
+from .textclean import collapse_repeats, is_hallucinated_silence, word_count
 from .timeout import run as run_with_timeout
 from .transcriber import Result, Transcriber, TranscriberError
 
@@ -594,15 +594,17 @@ class App:
                 )
                 return
 
-            # Silence-hallucination guard: Whisper invents "Спасибо" / "Thank
-            # you" on near-silent audio. Only drop when the model flags no
-            # speech AND the audio is genuinely silent by RMS. Even then, still
-            # save it to History (untyped) so a false positive is recoverable —
-            # never a truly silent drop.
-            if result.no_speech_prob > 0.6 and audio_level < 0.006:
+            # Silence-hallucination guard: Whisper fills an empty room with
+            # subtitle boilerplate ("Продолжение следует", "Thanks for
+            # watching"). Judged on the audio, not on the model's own
+            # no_speech_prob — that reported 0.000 on four out of four
+            # recordings of real silence here. Still saved to History
+            # (untyped), so a false positive is recoverable; never a truly
+            # silent drop.
+            if is_hallucinated_silence(raw_text, audio_level):
                 logger.warning(
-                    "silence hallucination (no_speech %.2f, rms %.3f) — saved, not typed",
-                    result.no_speech_prob, audio_level,
+                    "silence hallucination (rms %.5f, no_speech %.2f) — saved, not typed",
+                    audio_level, result.no_speech_prob,
                 )
                 self.store.add(
                     DictationRecord(

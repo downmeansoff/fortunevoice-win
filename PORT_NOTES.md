@@ -609,3 +609,44 @@ Proven on the exact failure:
 | **old code would skip warm-up** | **yes** |
 | new code re-primes | 3.6 s, while the user is still talking |
 | first cleanup after eviction | **359 ms** (was 2016 ms) |
+
+## "Продолжение следует" — the guard that never fired
+
+Reported from real use: hold the hotkey, say nothing, and the app types
+**«Продолжение следует.»** into the document. Whisper is trained on subtitle
+corpora and fills an empty room with their boilerplate.
+
+There was already a guard for exactly this — and it had never once fired.
+Recording real silence from this machine's microphone, four runs out of four:
+
+| rms | no_speech_prob | heard |
+|---|---|---|
+| 0.00076 | **0.000** | Продолжение следует. |
+| 0.00146 | **0.000** | Продолжение следует. |
+| 0.00029 | **0.000** | Продолжение следует. |
+| 0.00080 | **0.000** | Продолжение следует. |
+
+The guard required `no_speech_prob > 0.6 **AND** rms < 0.006`. The audio half
+was right — RMS correctly read a silent room, four times under the threshold.
+The model half was not merely wrong but maximally wrong: **0.000**, total
+confidence that the room noise was speech. With an `AND`, one broken signal
+disabled the whole guard.
+
+`no_speech_prob` is now not consulted at all. `textclean.is_hallucinated_silence`
+decides on two independent signals, either sufficient:
+
+1. **RMS below the silence floor** — the loudest 0.5 s window in the whole
+   recording never reached speech level. Measured room noise is 0.0003–0.0015
+   and speech is 0.02+, so 0.006 sits with a 4x margin over one and a 3x
+   margin under the other.
+2. **Subtitle boilerplate in the band just above it** — a fan or street noise
+   can lift RMS over the floor while the room still holds no speech. The
+   phrase list covers the strings Whisper actually emits in Russian and
+   English.
+
+The phrase net stops at 4x the floor, so a person who genuinely says
+"продолжение следует" out loud is never censored: at speech volume only the
+audio decides. Verified — the same sentence passes at rms 0.15.
+
+A caught hallucination is still saved to History, untyped. A false positive
+must always be recoverable; a truly silent drop never happens.
