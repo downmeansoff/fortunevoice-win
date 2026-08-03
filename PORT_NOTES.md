@@ -678,3 +678,40 @@ matching `unbind_all("<KeyPress>")` wipes **every** other key handler in the
 app rather than just this one. The funcid returned by `bind` is kept so
 exactly one handler is removed. The test suite found this immediately — two
 recorders in one interpreter stopped seeing each other's keys.
+
+## Recording a global shortcut through window focus was the wrong idea
+
+The recorder captured keys with a Tk binding. It passed every test — driven
+directly, through `event_generate`, and even with real mouse clicks and real
+keystrokes when Tk ran on the main thread. In the app it did nothing.
+
+The difference is the app's shape: Tk lives on a background thread, and
+`focus_force()` from a process that is not the foreground one is a request
+Windows does not owe us. The window appears, the chip lights up, and the
+keystrokes go somewhere else.
+
+The deeper mistake was reading a **global** hotkey through **window focus**.
+`hotkey.ChordCapture` installs its own `WH_KEYBOARD_LL` hook for the duration
+of the recording, so the chord is read exactly the way the listener will read
+it later — no focus, no foreground, no Tk.
+
+Four details that took a measurement each:
+
+* **Modifier state is tracked from the hook's own events**, not read back with
+  `GetAsyncKeyState`. Capture *swallows* what it sees, so the modifiers never
+  reach the OS and `GetAsyncKeyState` reports them up — `ctrl+shift+f1` came
+  out as `f1`. Swallowing has to stay: the chord being recorded must not leak
+  into the window underneath.
+* **Injected events are not filtered**, unlike in the listener. The listener
+  must ignore them so the app never triggers itself with its own typed
+  dictation; capture runs at a moment the app types nothing, and refusing
+  injected keys would lock out anyone on a remote desktop or with a keyboard
+  remapper, where every key arrives injected.
+* **The hook is paused first.** The chord a user reaches for when changing a
+  shortcut is usually the one already set.
+* A loop variable named `name` shadowed the captured key's name, so every
+  chord came back ending in `win`. Caught by driving real keys — no unit test
+  of the map would have found it.
+
+Verified with real keystrokes and no window at all: `f9`, `ctrl+shift+f1`,
+`win+d`, `alt+space` all captured exactly, Escape cancels.

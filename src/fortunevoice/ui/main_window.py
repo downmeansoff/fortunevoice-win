@@ -588,7 +588,8 @@ class MainWindow:
                                  t("settings.shortcut"), t("settings.shortcut_hint"))
         recorder = widgets.ShortcutRecorder(
             row.control, lambda: config.get_str("FVHotkey"), self._save_hotkey,
-            on_listening=self._hotkey_capture)
+            on_listening=self._hotkey_capture,
+            capture=self._app.capture_chord if self._app is not None else None)
         recorder.pack()
         # The whole row, not just the chip: this is the setting people most
         # want to change, and a click a pixel outside a 150 px target did
@@ -692,9 +693,9 @@ class MainWindow:
         """
         if self._app is None:
             return
-        if listening:
-            self._app.pause_hotkey()
-        else:
+        if not listening:
+            # capture_chord() paused it on the way in; put it back, picking up
+            # whatever was just saved.
             self._app.resume_hotkey()
 
     def _save_hotkey(self, value: str) -> bool:

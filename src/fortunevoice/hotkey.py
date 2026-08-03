@@ -164,6 +164,139 @@ user32.GetMessageW.argtypes = (
 )
 
 
+# Virtual keys that are modifiers, never a trigger on their own.
+_MODIFIER_VKS = {
+    VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
+    VK_LWIN, VK_RWIN, 0x10, 0x11, 0x12,  # the combined SHIFT/CONTROL/MENU
+    0x14, 0x90, 0x91,                    # caps lock, num lock, scroll lock
+}
+# vkCode -> the name `parse()` understands. Built by inverting KEY_NAMES, with
+# the left/right specific entries losing to the plain ones so a captured Ctrl
+# reads as "ctrl" rather than "lctrl".
+_VK_TO_NAME: dict[int, str] = {}
+for _name, _vk in KEY_NAMES.items():
+    if _vk not in _VK_TO_NAME or len(_name) < len(_VK_TO_NAME[_vk]):
+        _VK_TO_NAME[_vk] = _name
+
+
+class ChordCapture:
+    """Grab the next chord the user presses, anywhere.
+
+    A shortcut recorder built on window focus cannot be trusted: the thing
+    being recorded is a GLOBAL hotkey, and the keys have to be read the same
+    way the hook will read them later — regardless of which window happens to
+    hold focus, and regardless of Windows refusing foreground to a background
+    thread.
+
+    Swallows what it captures, so the chord being recorded never leaks into
+    whatever is underneath.
+    """
+
+    def __init__(self, on_chord: Callable[[str], None],
+                 on_cancel: Callable[[], None] | None = None) -> None:
+        self._on_chord = on_chord
+        self._on_cancel = on_cancel
+        self._thread: threading.Thread | None = None
+        self._thread_id = 0
+        self._hook = None
+        self._done = False
+        # Modifier state is tracked from the hook's own events rather than
+        # read back with GetAsyncKeyState: capture SWALLOWS what it sees, so
+        # the modifiers never reach the OS and GetAsyncKeyState would report
+        # them as up. Swallowing matters — the chord being recorded must not
+        # leak into whatever window is underneath.
+        self._held: set[int] = set()
+        self._proc = _HOOKPROC(self._callback)
+        self._stop = threading.Event()
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._done = False
+        self._held.clear()
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="chord-capture",
+                                        daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread_id:
+            user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
+        if self._thread:
+            self._thread.join(timeout=2)
+        self._thread = None
+
+    # ── hook thread ──────────────────────────────────────────────────────
+
+    def _run(self) -> None:
+        self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
+        # Module handle None, like the main listener: a low-level hook is
+        # global and does not need one.
+        self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
+        if not self._hook:
+            logger.error("could not install the capture hook")
+            return
+        message = wintypes.MSG()
+        while not self._stop.is_set():
+            got = user32.GetMessageW(ctypes.byref(message), None, 0, 0)
+            if got in (0, -1):
+                break
+        user32.UnhookWindowsHookEx(self._hook)
+        self._hook = None
+        self._thread_id = 0
+
+    def _callback(self, code, wparam, lparam):
+        if code == HC_ACTION and not self._done:
+            try:
+                if self._handle(wparam, lparam):
+                    return 1
+            except Exception:  # noqa: BLE001 - never break the input queue
+                logger.exception("chord capture failed")
+        return user32.CallNextHookEx(None, code, wparam, lparam)
+
+    def _handle(self, wparam: int, lparam: int) -> bool:
+        event = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+        # Injected events are NOT filtered here, unlike in the listener. The
+        # listener must ignore them so the app never triggers itself with its
+        # own typed dictation; capture runs at a moment the app types nothing,
+        # and refusing injected keys would lock out anyone using a keyboard
+        # remapper or a remote desktop, where every key arrives injected.
+        vk = event.vkCode
+        if wparam not in (WM_KEYDOWN, WM_SYSKEYDOWN):
+            self._held.discard(vk)
+            # Swallow the matching key-ups of a chord we already took, so the
+            # target app never sees half a keystroke.
+            return True
+
+        if vk == 0x1B:  # Escape cancels, and is never a shortcut by itself
+            self._done = True
+            if self._on_cancel:
+                self._on_cancel()
+            return True
+        if vk in _MODIFIER_VKS:
+            self._held.add(vk)
+            return True  # held, not the trigger — swallow and keep waiting
+
+        name = _VK_TO_NAME.get(vk)
+        if name is None:
+            return True  # unmapped key: swallow, wait for one we can name
+
+        # Order matters: it is the order `parse()` prints back, so the chip
+        # shows "ctrl+alt+space" rather than whatever order they were pressed.
+        modifiers = []
+        for modifier, keys in (("ctrl", (VK_LCONTROL, VK_RCONTROL, 0x11)),
+                               ("alt", (VK_LMENU, VK_RMENU, 0x12)),
+                               ("shift", (VK_LSHIFT, VK_RSHIFT, 0x10)),
+                               ("win", (VK_LWIN, VK_RWIN))):
+            if any(k in self._held for k in keys):
+                modifiers.append(modifier)
+
+        self._done = True
+        self._on_chord("+".join([*modifiers, name]))
+        return True
+
+
 class HotkeyListener:
     """Runs the hook on its own thread with its own message pump.
 

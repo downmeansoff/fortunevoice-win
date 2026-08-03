@@ -90,3 +90,67 @@ def test_the_recorder_ignores_every_modifier_the_parser_knows():
 def test_chords_the_recorder_can_emit_all_parse(chord):
     spec = parse(chord)
     assert spec.label
+
+
+# ── global chord capture ─────────────────────────────────────────────────
+
+
+def test_every_captured_vk_maps_to_a_parseable_name():
+    """Capture reports a chord by name; the parser has to accept every one it
+    can produce, or a recorded shortcut is rejected the moment it is saved."""
+    from fortunevoice.hotkey import _VK_TO_NAME
+
+    assert len(_VK_TO_NAME) > 80, "the map should cover the whole key table"
+    for name in _VK_TO_NAME.values():
+        parse(name)
+
+
+def test_modifier_keys_are_never_reported_as_a_trigger():
+    """A bare Ctrl is not a shortcut. Every modifier virtual-key must be in the
+    ignore set, or capture would return "ctrl" as the trigger and the parser
+    would refuse the chord."""
+    from fortunevoice.hotkey import _MODIFIER_VKS, MODIFIER_KEYS
+
+    for keys in MODIFIER_KEYS.values():
+        for vk in keys:
+            assert vk in _MODIFIER_VKS, hex(vk)
+
+
+def test_capture_orders_modifiers_the_way_the_parser_prints_them():
+    """ctrl, alt, shift, win — so the chip shows "ctrl+alt+space" whatever
+    order the user's fingers landed in."""
+    import inspect
+
+    from fortunevoice.hotkey import ChordCapture
+
+    source = inspect.getsource(ChordCapture._handle)
+    order = [name for name in ("ctrl", "alt", "shift", "win")
+             if f'("{name}"' in source]
+    assert order == ["ctrl", "alt", "shift", "win"]
+
+
+@pytest.mark.live
+def test_capture_reads_a_real_chord():
+    """Needs a desktop session: presses real keys and expects the hook to see
+    them. Runs under `pytest -m live`."""
+    import ctypes
+    import time
+
+    from fortunevoice.hotkey import ChordCapture
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    captured: list[str] = []
+    capture = ChordCapture(captured.append)
+    capture.start()
+    time.sleep(0.4)
+    for vk in (0x11, 0x70):            # Ctrl down, F1 down
+        user32.keybd_event(vk, 0, 0, 0)
+        time.sleep(0.03)
+    for vk in (0x70, 0x11):            # and up
+        user32.keybd_event(vk, 0, 2, 0)
+        time.sleep(0.03)
+    time.sleep(0.5)
+    capture.stop()
+
+    assert captured == ["ctrl+f1"]
+    parse(captured[0])
