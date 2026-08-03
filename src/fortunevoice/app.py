@@ -43,6 +43,34 @@ logger = get_logger("app")
 SAMPLE_RATE = 16_000
 
 
+def decide_delivery(*, stale: bool, focus_held: bool, editable: bool | None) -> str:
+    """Where does this transcript go — into the app, or into the panel?
+
+    Returns `"type"`, or the reason it cannot be typed: `"stale"`, `"focus"`,
+    `"noedit"`. Kept pure and separate because it is the single most
+    consequential decision in the app (it decides whether the user's words
+    reach their cursor) and because the ordering carries meaning:
+
+    * **stale first.** Twenty seconds after key-up the user has moved on;
+      typing then lands in whatever they are doing NOW, which is worse than
+      not typing at all.
+    * **focus before editability.** If focus moved, the editability answer
+      describes the wrong window.
+    * **`editable is False`, not `not editable`.** `None` means "Windows would
+      not say" — common in terminals and Electron apps, where the user really
+      is typing into a real field. Treating unknown as "no" would refuse to
+      type in exactly the apps people dictate into most, so unknown types
+      anyway and the outcome is recorded as `pasted-blind`.
+    """
+    if stale:
+        return "stale"
+    if not focus_held:
+        return "focus"
+    if editable is False:
+        return "noedit"
+    return "type"
+
+
 class State(enum.Enum):
     LOADING = "loading"
     IDLE = "idle"
@@ -772,26 +800,24 @@ class App:
         stale = time.monotonic() - started >= self.STALE_PASTE_LIMIT
         editable = injector.focused_element_is_editable()
 
-        # Sub-reason in the outcome so metrics can tell WHY the text wasn't
-        # typed — a plain "panel" hid four very different failure modes.
-        if stale:
-            outcome = "panel-stale"
-            self._hold(t("hold.stale"), text)
-        elif not focus_held:
-            outcome = "panel-focus"
-            sound.play("success")
-            self._hold(t("hold.focus"), text)
-        elif editable is False:
-            outcome = "panel-noedit"
-            sound.play("success")
-            self._hold(t("hold.noedit"), text)
-        elif injector.inject(text):
-            outcome = "pasted" if editable is True else "pasted-blind"
-            logger.info("outcome = typed (editable = %s)", "yes" if editable else "unknown")
-            sound.play("success")
+        route = decide_delivery(stale=stale, focus_held=focus_held, editable=editable)
+        if route == "type":
+            if injector.inject(text):
+                outcome = "pasted" if editable is True else "pasted-blind"
+                logger.info("outcome = typed (editable = %s)",
+                            "yes" if editable else "unknown")
+                sound.play("success")
+            else:
+                outcome = "panel-failed"
+                self._hold(t("hold.failed"), text)
         else:
-            outcome = "panel-failed"
-            self._hold(t("hold.failed"), text)
+            outcome = f"panel-{route}"
+            # A stale transcript gets no success tone: the user has moved on,
+            # and a chime for something that did NOT reach their cursor reads
+            # as "done" when it is not.
+            if route != "stale":
+                sound.play("success")
+            self._hold(t(f"hold.{route}"), text)
 
         metrics.record(
             metrics.DictationMetric(
