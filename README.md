@@ -39,6 +39,18 @@ optional but makes it about 10x faster.
 ```powershell
 git clone https://github.com/downmeansoff/fortunevoice-win
 cd fortunevoice-win
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
+That one script does the lot: creates the venv, installs the dependencies,
+adds the CUDA wheels **only if** there is an NVIDIA GPU to use them, pulls the
+cleanup model when Ollama is installed, puts a shortcut on the Desktop, and
+finishes by running `doctor` — so a machine that cannot run this says so
+during setup instead of at the first dictation.
+
+Prefer to do it by hand:
+
+```powershell
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
