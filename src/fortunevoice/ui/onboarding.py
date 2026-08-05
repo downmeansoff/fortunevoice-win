@@ -92,7 +92,7 @@ class Onboarding:
             size=8, colour=theme.TEXT_FAINT,
         ).pack(side="left", pady=8)
 
-        theme.label(body, t("setup.heading"), size=16, weight="bold").pack(anchor="w")
+        theme.label(body, t("setup.heading"), size=18, display=True).pack(anchor="w")
         theme.label(
             body,
             t("setup.privacy"),

@@ -21,16 +21,18 @@ from __future__ import annotations
 from pathlib import Path
 
 # Tray state colours. Idle is deliberately low-contrast: the tray is a place
-# the user should be able to ignore until something is happening.
-IDLE = (150, 158, 178)
-LOADING = (120, 126, 145)
-RECORDING = (255, 69, 58)
-PROCESSING = (255, 159, 10)
-ERROR = (255, 214, 79)
+# the user should be able to ignore until something is happening. Warm greys,
+# so the icon belongs to the same palette as the windows.
+IDLE = (169, 164, 154)
+LOADING = (124, 118, 108)
+RECORDING = (217, 83, 79)
+PROCESSING = (212, 162, 127)
+ERROR = (235, 219, 188)
 
-# The logo gradient, top to bottom. Same blue as theme.ACCENT at the midpoint.
-_TILE_TOP = (94, 156, 255)
-_TILE_BOTTOM = (37, 99, 235)
+# The logo gradient, top to bottom. Clay, passing through theme.ACCENT at the
+# midpoint.
+_TILE_TOP = (232, 148, 116)
+_TILE_BOTTOM = (193, 95, 60)
 
 
 def _microphone(draw, px: int, fill: tuple, stroke: float = 0.062) -> None:

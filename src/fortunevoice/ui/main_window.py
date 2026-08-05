@@ -44,14 +44,17 @@ PAGES = [("History", "clock"), ("Insights", "chart"),
 _PAGE_LABEL = {"History": "nav.history", "Insights": "nav.insights",
                "Dictionary": "nav.dictionary", "Settings": "nav.settings"}
 
-# Icon tint per settings row. Colour carries the grouping when the eye skims.
-TINT_BLUE = "#2F7DF6"
-TINT_INDIGO = "#5E5CE6"
-TINT_TEAL = "#30B0C7"
-TINT_GREEN = "#34C759"
-TINT_ORANGE = "#FF9F0A"
-TINT_PINK = "#FF375F"
-TINT_GREY = "#5D6880"
+# Icon tint per settings row. Colour still carries the grouping when the eye
+# skims, but from one muted earth family rather than the saturated system
+# palette — a row of Apple-bright tiles was the single loudest thing on the
+# page and read as macOS Settings, not as this app.
+TINT_BLUE = "#CC785C"    # book cloth — the brand's own clay
+TINT_INDIGO = "#B0705C"
+TINT_TEAL = "#7D9A8E"    # sage
+TINT_GREEN = "#7D9A72"
+TINT_ORANGE = "#D4A27F"  # kraft
+TINT_PINK = "#A8757F"
+TINT_GREY = "#6E6A62"
 
 
 class MainWindow:
@@ -152,7 +155,10 @@ class MainWindow:
         tk.Label(identity, image=mark, bg=theme.SIDEBAR).pack(side="left", padx=(2, 12))
         text = tk.Frame(identity, bg=theme.SIDEBAR)
         text.pack(side="left")
-        theme.label(text, t("app.name"), size=11, weight="bold", bg=theme.SIDEBAR).pack(anchor="w")
+        # The product name is set in the display face, like the page titles —
+        # it is the wordmark, not a label.
+        theme.label(text, t("app.name"), size=13, display=True,
+                    bg=theme.SIDEBAR).pack(anchor="w")
         theme.label(text, t("app.tagline"), size=8, colour=theme.TEXT_MUTED,
                     bg=theme.SIDEBAR).pack(anchor="w")
 
@@ -187,7 +193,9 @@ class MainWindow:
 
         bar = tk.Frame(parent, bg=theme.INK)
         bar.pack(fill="x", pady=(0, 18))
-        theme.label(bar, title, size=20, weight="bold").pack(side="left")
+        # Serif, and not bold: the display face carries the weight on its own,
+        # and Georgia Bold at 22 px is a heavier thing than this page needs.
+        theme.label(bar, title, size=22, display=True).pack(side="left")
         return bar
 
     def _scroll_area(self, parent):
@@ -403,17 +411,21 @@ class MainWindow:
     def _metric_tile(self, parent, glyph: str, value: str, caption: str, primary: bool):
         import tkinter as tk
 
-        bg = theme.ACCENT if primary else theme.CARD
+        # Every tile is the same surface. The headline metric is marked by
+        # colouring its number and its glyph, not by flooding a whole card in
+        # accent — a filled block that size stops being emphasis and becomes
+        # the only thing on the page.
+        bg = theme.CARD
         card = widgets.Card(parent, bg=bg, radius=14, padx=18, pady=16)
-        icon = icons.photo(icons.image(glyph, 16,
-                                       "#FFFFFF" if primary else theme.TEXT_MUTED))
+        icon = icons.photo(icons.image(
+            glyph, 16, theme.ACCENT if primary else theme.TEXT_MUTED))
         self._images.append(icon)
         tk.Label(card.body, image=icon, bg=bg).pack(anchor="w", pady=(0, 10))
-        theme.label(card.body, value, size=22, weight="bold",
-                    colour="#FFFFFF" if primary else theme.TEXT, bg=bg).pack(anchor="w")
-        theme.label(card.body, caption, size=7, weight="bold",
-                    colour="#D6E6FF" if primary else theme.TEXT_FAINT,
-                    bg=bg).pack(anchor="w", pady=(2, 0))
+        theme.label(card.body, value, size=24, display=True,
+                    colour=theme.ACCENT if primary else theme.TEXT,
+                    bg=bg).pack(anchor="w")
+        theme.label(card.body, caption, size=8,
+                    colour=theme.TEXT_FAINT, bg=bg).pack(anchor="w", pady=(2, 0))
         return card.frame
 
     def _activity_card(self, parent, records) -> None:
@@ -900,8 +912,8 @@ def _day_label(iso: str, today: dt.date) -> str:
     if day == today - dt.timedelta(days=1):
         return t("history.yesterday")
     if (today - day).days < 7:
-        return day.strftime("%A")
-    return day.strftime("%d %B %Y")
+        return t(f"date.weekday_{day.weekday()}")
+    return f"{day.day} {t(f'date.month_{day.month}')} {day.year}"
 
 
 def _placeholder(entry, text: str):

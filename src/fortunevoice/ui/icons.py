@@ -208,7 +208,7 @@ def _render(name: str, size: int, colour: str, stroke: float):
     return image.resize((size, size), Image.LANCZOS)
 
 
-def image(name: str, size: int = 16, colour: str = "#EAF0FA", stroke: float = 0.075):
+def image(name: str, size: int = 16, colour: str = "#F5F4EE", stroke: float = 0.075):
     """PIL image of a glyph. Cached — the same icon is asked for on every
     repaint of a scrolling list."""
     return _render(name, size, colour, stroke)
