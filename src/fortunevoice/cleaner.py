@@ -105,6 +105,18 @@ def keep_alive() -> str:
     return config.get_str("FVOllamaKeepAlive") or "5m"
 
 
+def keep_alive_seconds() -> float:
+    """`keep_alive()` as a number. Ollama's own spelling: a bare number is
+    seconds, a negative one means forever, and "10m"/"2h" are durations."""
+    text = keep_alive().strip().lower()
+    units = {"s": 1, "m": 60, "h": 3600}
+    try:
+        value = float(text[:-1]) * units[text[-1]] if text[-1] in units else float(text)
+    except (ValueError, IndexError):
+        return 300.0  # unparseable: treat it as the default 5m
+    return float("inf") if value < 0 else value
+
+
 # Filler words that only ever add noise in dictation.
 _FILLERS = [
     "ну", "вот", "короче", "как бы", "типа", "значит", "э-э", "ээ", "эм", "мм",
