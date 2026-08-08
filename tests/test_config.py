@@ -35,6 +35,40 @@ def test_corrupt_config_falls_back_to_defaults():
     assert config.get_str("FVHotkey") == "ctrl+alt+space"
 
 
+def test_an_unreadable_file_does_not_erase_the_other_settings():
+    """Reported as "my shortcut keeps going back to ctrl+alt+space".
+
+    `set()` rewrites the whole file from what it believes the settings are.
+    After a failed read that belief used to be DEFAULTS alone — so one corrupt
+    or briefly locked file, plus any later change, silently reset every setting
+    the user had made. ctrl+alt+space is simply the default hotkey, which is
+    why that is the value they saw come back.
+    """
+    config.set("FVHotkey", "ctrl+alt")
+    config.set("FVLanguage", "en")
+
+    paths.config_file().write_text("{ truncated", encoding="utf-8")
+    config._cache_mtime = None  # noqa: SLF001 - force a reload
+    config.set("FVMiniPrompt", False)  # any unrelated change at all
+
+    assert config.get_str("FVHotkey") == "ctrl+alt"
+    assert config.get_str("FVLanguage") == "en"
+    assert config.get_bool("FVMiniPrompt") is False
+
+
+def test_the_unreadable_file_is_kept_rather_than_overwritten():
+    """It may hold keys written by a newer build; overwriting it in place
+    would leave no copy at all."""
+    config.set("FVHotkey", "ctrl+alt")
+    paths.config_file().write_text("{ truncated", encoding="utf-8")
+    config._cache_mtime = None  # noqa: SLF001
+    config.set("FVLanguage", "en")
+
+    kept = paths.config_file().with_suffix(".json.corrupt")
+    assert kept.exists()
+    assert kept.read_text(encoding="utf-8") == "{ truncated"
+
+
 def test_toggle():
     before = config.get_bool("FVCleanupEnabled")
     assert config.toggle("FVCleanupEnabled") is (not before)
