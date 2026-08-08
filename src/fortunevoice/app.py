@@ -201,7 +201,25 @@ class App:
 
         threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
         if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
-            self.cleaner.warmup()
+            self.cleaner.warmup()  # starts Ollama too, if it is not up
+            threading.Thread(target=self._check_cleanup_reachable,
+                             name="ollama-check", daemon=True).start()
+
+    def _check_cleanup_reachable(self) -> None:
+        """Say so, once, if cleanup is switched on but cannot happen.
+
+        Without this the failure is invisible: dictation keeps working and
+        types raw Whisper text, which looks exactly like the cleanup setting
+        being off. Said once at startup and never again — a notification per
+        dictation would be worse than the silence it replaces.
+        """
+        from . import ollama
+
+        if ollama.ensure_running():
+            return
+        detail = (t("notify.ollama_missing") if ollama.executable() is None
+                  else t("notify.ollama_down"))
+        self._notify(t("notify.no_cleanup"), detail)
 
     def rebind_hotkey(self) -> bool:
         """(Re)install the keyboard hook for whatever FVHotkey now says.

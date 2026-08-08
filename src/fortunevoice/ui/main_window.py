@@ -639,6 +639,16 @@ class MainWindow:
                          lambda: config.get_str("FVOllamaModel"),
                          lambda v: config.set("FVOllamaModel", v),
                          refresh=_ollama_models).pack()
+        row = widgets.SettingRow(card.body, "clock", TINT_ORANGE,
+                                 t("settings.keep_alive"),
+                                 t("settings.keep_alive_hint"))
+        widgets.Dropdown(row.control,
+                         [("0", t("settings.keep_alive_never")),
+                          ("5m", t("settings.keep_alive_5m")),
+                          ("1h", t("settings.keep_alive_1h")),
+                          ("24h", t("settings.keep_alive_always"))],
+                         lambda: config.get_str("FVOllamaKeepAlive"),
+                         lambda v: config.set("FVOllamaKeepAlive", v)).pack()
         self._switch_row(card.body, "wand", TINT_GREEN, t("settings.smartfix"),
                          t("settings.smartfix_hint"), "FVSmartFix", last=True)
         self._ollama_status = theme.label(body, t("ollama.checking"), size=8,

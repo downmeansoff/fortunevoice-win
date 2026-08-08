@@ -60,6 +60,18 @@ DEFAULTS: dict[str, Any] = {
     # check and the user silently got no cleanup at all. Small is not free.
     "FVOllamaModel": "qwen2.5:3b",
     "FVOllamaHost": "http://localhost:11434",
+    # Start Ollama when cleanup needs it and nothing is listening. Its Windows
+    # app does not stay up, and when it is down cleanup silently stops
+    # happening — the dictation still types, just as raw Whisper text, which
+    # is indistinguishable from the feature being switched off.
+    "FVAutoStartOllama": True,
+    # How long Ollama holds the cleanup model after the last dictation. Was
+    # pinned at 24h in code, which on a 6 GB card left ~900 MB free with
+    # Whisper resident and made the whole desktop stutter. Letting it go costs
+    # 3.5 s once after an idle spell, and warmup hides most of that. Accepts
+    # anything Ollama does: "0" unloads immediately, "24h" is the old
+    # behaviour. See cleaner.keep_alive().
+    "FVOllamaKeepAlive": "5m",
     # Use the stripped-down prompt for short dictations. Upstream's default,
     # and correct when prompt-eval dominates the round-trip. Set false to send
     # the full taxonomy every time: on a model that follows it and answers in

@@ -86,3 +86,24 @@ def test_still_accepts_the_lengths_that_landed_in_time():
     # "never clean".
     assert predicted_ms(64) <= BUDGET_MS
     assert predicted_ms(82) <= BUDGET_MS
+
+
+def test_keep_alive_comes_from_config_not_code():
+    """It was pinned at 24h, which held 2.2 GB of video memory permanently and
+    made the whole desktop stutter on a 6 GB card."""
+    from fortunevoice import cleaner, config
+
+    assert cleaner.keep_alive() == "5m", "a short hold is the default now"
+    config.set("FVOllamaKeepAlive", "24h")
+    assert cleaner.keep_alive() == "24h"
+    config.set("FVOllamaKeepAlive", "0")
+    assert cleaner.keep_alive() == "0", "unloading at once must be expressible"
+
+
+def test_keep_alive_never_returns_empty():
+    """An empty value would make Ollama fall back to its own default rather
+    than to ours, so the setting would appear to do nothing."""
+    from fortunevoice import cleaner, config
+
+    config.set("FVOllamaKeepAlive", "")
+    assert cleaner.keep_alive() == "5m"
