@@ -18,10 +18,13 @@ without a restart.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from typing import Any
 
 from . import paths
+
+logger = logging.getLogger(__name__)
 
 DEFAULTS: dict[str, Any] = {
     # Hold this to dictate. Modifiers: ctrl, alt, shift, win. See hotkey.py for
@@ -90,10 +93,15 @@ DEFAULTS: dict[str, Any] = {
 _lock = threading.Lock()
 _cache: dict[str, Any] = {}
 _cache_mtime: float | None = None
+# The last contents successfully parsed out of the file, as written — not
+# merged with DEFAULTS. `set()` rebuilds the file from this, so one unreadable
+# read cannot turn into a file with every setting erased. See _load().
+_stored: dict[str, Any] = {}
+_read_failed = False
 
 
 def _load() -> dict[str, Any]:
-    global _cache, _cache_mtime
+    global _cache, _cache_mtime, _stored, _read_failed
     path = paths.config_file()
     try:
         mtime = path.stat().st_mtime
@@ -103,15 +111,27 @@ def _load() -> dict[str, Any]:
         if mtime == _cache_mtime and _cache:
             return _cache
         data: dict[str, Any] = {}
+        failed = False
         if mtime is not None:
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
+                parsed = json.loads(path.read_text(encoding="utf-8"))
+                data = parsed if isinstance(parsed, dict) else {}
             except (OSError, ValueError):
-                # A corrupt config must never stop the app from dictating.
-                data = {}
+                # A corrupt or briefly locked config must never stop the app
+                # from dictating — but it must not erase the user's settings
+                # either. Falling back to `{}` used to do exactly that: the
+                # next `set()` rebuilt the file from DEFAULTS alone, so one
+                # unreadable read silently reset the hotkey to ctrl+alt+space
+                # and everything else with it.
+                failed = True
+                data = dict(_stored)
+                logger.warning("could not read %s, keeping the last known "
+                               "settings in memory", path)
+        if not failed:
+            _stored = dict(data)
+        _read_failed = failed
         merged = dict(DEFAULTS)
-        if isinstance(data, dict):
-            merged.update(data)
+        merged.update(data)
         _cache = merged
         _cache_mtime = mtime
         return merged
@@ -138,17 +158,32 @@ def get_str(key: str) -> str:
 
 
 def set(key: str, value: Any) -> None:  # noqa: A001 - mirrors UserDefaults.set
-    global _cache_mtime
+    global _cache_mtime, _stored
     path = paths.config_file()
     current = dict(_load())
     current[key] = value
+    if _read_failed:
+        # The file on disk could not be parsed, so it is about to be replaced.
+        # Keep a copy: it is the only record of settings written by a version
+        # of the app that knew keys this one does not.
+        try:
+            path.replace(path.with_suffix(".json.corrupt"))
+            logger.warning("kept the unreadable config as %s",
+                           path.with_suffix(".json.corrupt").name)
+        except OSError:
+            pass
     # Only persist what differs from the defaults, so a future default change
-    # reaches users who never touched that setting.
+    # reaches users who never touched that setting. `current` is built on the
+    # last good read, so keys this build does not know about survive too.
     stored = {k: v for k, v in current.items() if DEFAULTS.get(k) != v}
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(stored, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     with _lock:
+        # What we just wrote is now the last known good state. Without this the
+        # snapshot lagged a write behind, and a read failing right after a
+        # change still lost that change.
+        _stored = dict(stored)
         _cache_mtime = None  # force a reload on the next read
 
 
