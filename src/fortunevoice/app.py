@@ -28,7 +28,7 @@ import numpy as np
 
 from . import config, dictionary, injector, metrics, paths, sound, winapi
 from .audio import AudioError, AudioRecorder, max_window_rms
-from .cleaner import OllamaCleaner
+from .cleaner import OllamaCleaner, keep_alive_seconds
 from .hotkey import HotkeyListener, parse as parse_hotkey
 from .log import get as get_logger
 from .store import DictationRecord, DictationStore, RecoveryStore
@@ -201,7 +201,13 @@ class App:
 
         threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
         if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
-            self.cleaner.warmup()  # starts Ollama too, if it is not up
+            # Only pre-load the cleanup model when it will still be there by
+            # the time it is wanted. With a short hold, warming at startup
+            # means 2.2 GB of video memory occupied for five minutes after
+            # every launch, released again without a single dictation having
+            # happened. The hotkey-down warmup covers that case anyway.
+            if keep_alive_seconds() >= 600:
+                self.cleaner.warmup()
             threading.Thread(target=self._check_cleanup_reachable,
                              name="ollama-check", daemon=True).start()
 

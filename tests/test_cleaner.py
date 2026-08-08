@@ -107,3 +107,20 @@ def test_keep_alive_never_returns_empty():
 
     config.set("FVOllamaKeepAlive", "")
     assert cleaner.keep_alive() == "5m"
+
+
+def test_keep_alive_seconds_parses_ollama_durations():
+    """Used to decide whether pre-loading the model at startup is worth 2.2 GB
+    of video memory."""
+    from fortunevoice import cleaner, config
+
+    for text, expected in (("0", 0), ("30s", 30), ("5m", 300), ("1h", 3600),
+                           ("24h", 86400), ("120", 120)):
+        config.set("FVOllamaKeepAlive", text)
+        assert cleaner.keep_alive_seconds() == expected, text
+
+    config.set("FVOllamaKeepAlive", "-1")   # Ollama's spelling for "forever"
+    assert cleaner.keep_alive_seconds() == float("inf")
+
+    config.set("FVOllamaKeepAlive", "nonsense")
+    assert cleaner.keep_alive_seconds() == 300.0, "fall back to the default"
