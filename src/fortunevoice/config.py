@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from typing import Any
 
@@ -177,7 +178,16 @@ def set(key: str, value: Any) -> None:  # noqa: A001 - mirrors UserDefaults.set
     # last good read, so keys this build does not know about survive too.
     stored = {k: v for k, v in current.items() if DEFAULTS.get(k) != v}
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(stored, indent=2, ensure_ascii=False), encoding="utf-8")
+    # Flushed to the platter before the rename, not just to the OS cache. The
+    # rename is atomic, but without the fsync the *contents* may still be in
+    # flight when the machine loses power — and what survives is then a
+    # config.json of the right name and zero length. Which is exactly the
+    # unreadable file the fallback above exists to survive; better not to
+    # create it in the first place.
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(stored, handle, indent=2, ensure_ascii=False)
+        handle.flush()
+        os.fsync(handle.fileno())
     tmp.replace(path)
     with _lock:
         # What we just wrote is now the last known good state. Without this the

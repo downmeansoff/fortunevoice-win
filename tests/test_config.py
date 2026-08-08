@@ -73,3 +73,26 @@ def test_toggle():
     before = config.get_bool("FVCleanupEnabled")
     assert config.toggle("FVCleanupEnabled") is (not before)
     assert config.get_bool("FVCleanupEnabled") is (not before)
+
+
+def test_a_zero_length_config_does_not_erase_the_settings():
+    """What an abrupt power-off leaves behind: the rename went through, the
+    contents never reached the platter. `set()` now fsyncs before renaming so
+    this should not happen — but if it does, the settings must still survive.
+    """
+    config.set("FVHotkey", "ctrl+alt")
+    paths.config_file().write_text("", encoding="utf-8")
+    config._cache_mtime = None  # noqa: SLF001
+    config.set("FVLanguage", "en")
+
+    assert config.get_str("FVHotkey") == "ctrl+alt"
+
+
+def test_the_write_is_flushed_before_the_rename():
+    """Without the fsync the window for the empty-file case above stays open
+    on every single write."""
+    import inspect
+
+    source = inspect.getsource(config.set)
+    assert "os.fsync" in source
+    assert source.index("os.fsync") < source.index("tmp.replace")
