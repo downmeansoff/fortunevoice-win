@@ -632,9 +632,13 @@ class MainWindow:
         row = widgets.SettingRow(card.body, "chip", TINT_GREY,
                                  t("settings.cleanup_model"),
                                  t("settings.cleanup_model_hint"))
+        # Re-asked every time the menu opens: Ollama shuts itself down when
+        # idle, and a list built once at window-open time showed only the
+        # model already configured.
         widgets.Dropdown(row.control, _ollama_models(),
                          lambda: config.get_str("FVOllamaModel"),
-                         lambda v: config.set("FVOllamaModel", v)).pack()
+                         lambda v: config.set("FVOllamaModel", v),
+                         refresh=_ollama_models).pack()
         self._switch_row(card.body, "wand", TINT_GREEN, t("settings.smartfix"),
                          t("settings.smartfix_hint"), "FVSmartFix", last=True)
         self._ollama_status = theme.label(body, t("ollama.checking"), size=8,

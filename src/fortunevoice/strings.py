@@ -196,8 +196,9 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.cleanup_hint": {"en": "removes filler words and fixes punctuation",
                               "ru": "убирает слова-паразиты и правит пунктуацию"},
     "settings.cleanup_model": {"en": "Cleanup model", "ru": "Модель вычитки"},
-    "settings.cleanup_model_hint": {"en": "qwen2.5:3b follows these prompts best",
-                                    "ru": "лучше всех слушается qwen2.5:3b"},
+    "settings.cleanup_model_hint": {
+        "en": "qwen2.5:3b — the smallest one that does not translate your text",
+        "ru": "qwen2.5:3b — меньшие переводят текст вместо вычитки"},
     "settings.smartfix": {"en": "Auto-fix garbled words",
                           "ru": "Чинить искажённые слова"},
     "settings.smartfix_hint": {"en": "only on low-confidence transcripts",

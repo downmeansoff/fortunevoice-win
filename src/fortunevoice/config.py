@@ -48,7 +48,13 @@ DEFAULTS: dict[str, Any] = {
     "FVCleanupEnabled": True,
     # Repair garbled (low-confidence) transcripts even when cleanup is off.
     "FVSmartFix": True,
-    "FVOllamaModel": "gemma3:4b",
+    # Measured on a 6 GB card with large-v3-turbo already resident, four Russian
+    # samples each: qwen2.5:3b cleaned all four in 546-657 ms. gemma3:4b was
+    # cleaner still but 1141 ms and prefixed its answer with a bullet.
+    # qwen2.5:1.5b answered in ~330 ms and TRANSLATED all four — into English
+    # three times and Chinese once — so every one was thrown away by the safety
+    # check and the user silently got no cleanup at all. Small is not free.
+    "FVOllamaModel": "qwen2.5:3b",
     "FVOllamaHost": "http://localhost:11434",
     # Use the stripped-down prompt for short dictations. Upstream's default,
     # and correct when prompt-eval dominates the round-trip. Set false to send

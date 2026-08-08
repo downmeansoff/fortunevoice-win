@@ -111,11 +111,17 @@ class Dropdown:
     """
 
     def __init__(self, parent, options: list[tuple[str, str]],
-                 get: Callable[[], str], set_: Callable[[str], None]) -> None:
+                 get: Callable[[], str], set_: Callable[[str], None],
+                 refresh: Callable[[], list[tuple[str, str]]] | None = None) -> None:
         import tkinter as tk
 
         self._options = options
         self._get, self._set = get, set_
+        # Options that can change while the window is open. The Ollama model
+        # list is built by asking Ollama, and Ollama on Windows shuts itself
+        # down when idle — so a list built once at window-open time silently
+        # collapsed to the single model already configured.
+        self._refresh = refresh
 
         self.frame = tk.Frame(parent, bg=parent["bg"], cursor="hand2")
         self.canvas = tk.Canvas(self.frame, height=theme.px(30), bg=parent["bg"],
@@ -126,11 +132,16 @@ class Dropdown:
             activebackground=theme.ACCENT, activeforeground="#FFFFFF",
             bd=0, relief="flat", font=theme.font(9),
         )
-        for value, title in options:
-            self._menu.add_command(label=title, command=lambda v=value: self._choose(v))
+        self._fill(options)
         for widget in (self.frame, self.canvas):
             widget.bind("<Button-1>", self._post)
         self.paint()
+
+    def _fill(self, options: list[tuple[str, str]]) -> None:
+        self._options = options
+        self._menu.delete(0, "end")
+        for value, title in options:
+            self._menu.add_command(label=title, command=lambda v=value: self._choose(v))
 
     def pack(self, **kwargs):
         self.frame.pack(**kwargs)
@@ -141,6 +152,13 @@ class Dropdown:
         self.paint()
 
     def _post(self, event) -> None:
+        if self._refresh is not None:
+            try:
+                options = self._refresh()
+            except Exception:  # noqa: BLE001 - a stale list beats no menu
+                options = []
+            if options:
+                self._fill(options)
         self._menu.tk_popup(event.x_root, event.y_root)
 
     def _title(self) -> str:
