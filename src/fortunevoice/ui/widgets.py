@@ -111,11 +111,17 @@ class Dropdown:
     """
 
     def __init__(self, parent, options: list[tuple[str, str]],
-                 get: Callable[[], str], set_: Callable[[str], None]) -> None:
+                 get: Callable[[], str], set_: Callable[[str], None],
+                 refresh: Callable[[], list[tuple[str, str]]] | None = None) -> None:
         import tkinter as tk
 
         self._options = options
         self._get, self._set = get, set_
+        # Options that can change while the window is open. The Ollama model
+        # list is built by asking Ollama, and Ollama on Windows shuts itself
+        # down when idle — so a list built once at window-open time silently
+        # collapsed to the single model already configured.
+        self._refresh = refresh
 
         self.frame = tk.Frame(parent, bg=parent["bg"], cursor="hand2")
         self.canvas = tk.Canvas(self.frame, height=theme.px(30), bg=parent["bg"],
@@ -126,11 +132,16 @@ class Dropdown:
             activebackground=theme.ACCENT, activeforeground="#FFFFFF",
             bd=0, relief="flat", font=theme.font(9),
         )
-        for value, title in options:
-            self._menu.add_command(label=title, command=lambda v=value: self._choose(v))
+        self._fill(options)
         for widget in (self.frame, self.canvas):
             widget.bind("<Button-1>", self._post)
         self.paint()
+
+    def _fill(self, options: list[tuple[str, str]]) -> None:
+        self._options = options
+        self._menu.delete(0, "end")
+        for value, title in options:
+            self._menu.add_command(label=title, command=lambda v=value: self._choose(v))
 
     def pack(self, **kwargs):
         self.frame.pack(**kwargs)
@@ -141,6 +152,13 @@ class Dropdown:
         self.paint()
 
     def _post(self, event) -> None:
+        if self._refresh is not None:
+            try:
+                options = self._refresh()
+            except Exception:  # noqa: BLE001 - a stale list beats no menu
+                options = []
+            if options:
+                self._fill(options)
         self._menu.tk_popup(event.x_root, event.y_root)
 
     def _title(self) -> str:
@@ -228,16 +246,23 @@ class NavItem:
         width = self.canvas.winfo_width() or 220
         self.canvas.delete("all")
         if self._active:
+            # A soft raised plate, not a saturated fill. The accent is spent on
+            # the one thing per screen worth looking at first, and "which tab
+            # am I on" is not that thing — the plate alone says it.
             theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, theme.px(38),
-                               theme.px(10), fill=theme.ACCENT)
-            colour = "#FFFFFF"
+                               theme.px(10), fill=theme.CARD_HI)
+            colour = theme.TEXT
         elif hover:
             theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, theme.px(38),
                                theme.px(10), fill=theme.CARD)
             colour = theme.TEXT
         else:
             colour = theme.TEXT_MUTED
-        glyph = icons.photo(icons.image(self._glyph, theme.px(18), colour, stroke=0.085))
+        # The glyph takes the accent on the active row — one small clay mark
+        # where the eye already is, instead of a whole coloured plate.
+        glyph_colour = theme.ACCENT if self._active else colour
+        glyph = icons.photo(icons.image(self._glyph, theme.px(18), glyph_colour,
+                                        stroke=0.085))
         self.canvas._images = [glyph]
         self.canvas.create_image(theme.px(20), theme.px(20), image=glyph)
         self.canvas.create_text(theme.px(44), theme.px(20), text=self._label,
@@ -315,7 +340,10 @@ class SettingRow:
         row = tk.Frame(self.frame, bg=theme.CARD)
         row.pack(fill="x", pady=theme.px(9))
 
-        tile = icons.photo(icons.tile(glyph, theme.px(28), "#FFFFFF", tint))
+        # Colour lives in the glyph, not the plate. Filled tiles put a dozen
+        # bright blocks down the left edge and became the loudest thing on the
+        # page — the tint still groups the rows, quietly.
+        tile = icons.photo(icons.tile(glyph, theme.px(28), tint, theme.CARD_HI))
         self.frame._images.append(tile)
         tk.Label(row, image=tile, bg=theme.CARD).pack(side="left",
                                                       padx=(0, theme.px(12)))
@@ -342,8 +370,12 @@ class SettingRow:
 
 
 def section_title(parent, text: str):
-    """Small-caps group heading above a settings card."""
-    return theme.label(parent, text.upper(), size=8, colour=theme.TEXT_FAINT,
+    """Group heading above a settings card.
+
+    Sentence case, not the shouty small-caps this started as: at 8 px, all-caps
+    Cyrillic is a grey smear that has to be decoded rather than read.
+    """
+    return theme.label(parent, text, size=9, colour=theme.TEXT_MUTED,
                        weight="bold")
 
 

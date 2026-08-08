@@ -324,6 +324,24 @@ def _no_invented_content(before: str, after: str) -> bool:
     return invented <= len(after_stems) * INVENTED_WORD_LIMIT
 
 
+def _unbullet(text: str) -> str:
+    """Drop a leading list marker the model added on its own.
+
+    gemma3:4b answers a one-sentence cleanup with "- Мы вроде как…". The
+    content is right; the dash is the model formatting an answer rather than
+    returning the sentence, and it would be typed into the user's document
+    verbatim. Only a single leading marker goes — a dictation that genuinely
+    starts with a dash keeps it, because that one is followed by more lines.
+    """
+    stripped = text.lstrip()
+    if "\n" in stripped:
+        return text  # a real list: leave it alone
+    for marker in ("- ", "– ", "— ", "* ", "• "):
+        if stripped.startswith(marker):
+            return stripped[len(marker):].lstrip()
+    return text
+
+
 def _is_safe(before: str, after: str) -> bool:
     """Both content guards, so no call site can remember one and forget the
     other."""
@@ -599,7 +617,7 @@ class OllamaCleaner:
         if payload is None:
             return None
         try:
-            return payload["message"]["content"].strip()
+            return _unbullet(payload["message"]["content"].strip())
         except (KeyError, TypeError, AttributeError):
             logger.warning("Ollama returned an unexpected shape, using raw text")
             return None

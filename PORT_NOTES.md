@@ -167,7 +167,7 @@ tall" bug looks like.
 **Glyphs are drawn in code** (`ui/icons.py`). SF Symbols have no Windows
 equivalent worth depending on: Segoe Fluent Icons is Windows 11 only and
 addresses glyphs through private-use codepoints, and colour emoji clash with a
-flat blue accent.
+flat accent.
 
 Four bugs from this pass, all found by looking at screenshots rather than by
 reading the code:
@@ -758,3 +758,40 @@ Verified by driving real keys through a real hook (`keybd_event`, the
 injected-event filter lifted for the duration): hold Ctrl+Alt fires, either
 press order fires, a tap does not, Ctrl+C does not, and Ctrl reaches the system
 while the hotkey is live.
+
+### Dressing it like Claude Desktop
+
+Asked for: *«сделай дизайн в стиле дизайна claude desktop»*. The palette was
+already centralised in `ui/theme.py`, so most of it was constants — but the
+constants are not where the resemblance lives. Four changes did the work.
+
+**Warm greys.** Claude's dark surfaces sit around hue 40°; this was navy at
+220°. Swapping the ramp (`#1F1E1D` page, `#191817` rail, `#262624` cards) is
+the single largest part of the effect, and a neutral `#202020` would not have
+got there — the warmth is the point.
+
+**One clay accent, rationed.** `#D97757`, and nothing else saturated. The
+loudest thing on Settings was a column of Apple-bright icon tiles; the plate is
+now neutral and only the glyph carries the tint. The headline stat tile no
+longer floods a whole card in accent — its number is clay, the surface is the
+same as its neighbours. The active sidebar row lost its filled blue plate for a
+raised grey one with a clay glyph.
+
+**A serif for display type.** Georgia — on every Windows install, and the
+nearest stand-in for the face Claude sets its headings in. Page titles, the
+wordmark, and the big figures. Everything else stays in Segoe UI; a serif body
+would read as a document, not an app.
+
+**The scrollbar had to be rewritten to obey any of it.** `tk.Scrollbar` on
+Windows renders through the native theme and ignores `bg`/`troughcolor`
+outright — it drew a `#F0F0F0` slab down the edge of a dark window, and had
+been doing so all along. `ttk` is no better; the one theme that takes colours
+(`clam`) can only be selected for the whole interpreter. `theme.scrollbar` is
+now a canvas widget speaking the two halves of Tk's scrollbar protocol that a
+scrolling canvas needs.
+
+Two things surfaced while looking at the screenshots, unrelated to colour:
+all-caps 8 px Cyrillic (`СЛОВ В МИНУТУ`) is a grey smear rather than a word, so
+the captions are sentence case; and `strftime("%A")` answers in the C locale,
+which had History reading «Сегодня», «Вчера», then "Saturday" — day and month
+names are now in the catalogue, with Russian months in the genitive.
