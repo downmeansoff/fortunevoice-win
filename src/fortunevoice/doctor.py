@@ -121,17 +121,32 @@ def _check_ollama() -> bool:
     import urllib.error
     import urllib.request
 
+    from . import ollama as ollama_app
+
     host = config.get_str("FVOllamaHost").rstrip("/")
     wanted = config.get_str("FVOllamaModel")
+    # Start it, exactly as a dictation would. Reporting "unreachable" for a
+    # server the app brings up by itself would describe a state the user never
+    # actually dictates in.
+    ollama_app.ensure_running()
     try:
         with urllib.request.urlopen(f"{host}/api/tags", timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError) as exc:
+        binary = ollama_app.executable()
+        if binary is None:
+            fix = f"install Ollama from https://ollama.com, then `ollama pull {wanted}`"
+        elif not config.get_bool("FVAutoStartOllama"):
+            fix = (f"Ollama is installed at {binary}, but FVAutoStartOllama is off — "
+                   "start it yourself, or set that setting back to true")
+        else:
+            fix = (f"Ollama is installed at {binary} but did not come up. "
+                   "Start it by hand and see what it reports")
         _line(
             WARN,
             f"ollama at {host} unreachable ({exc})",
-            "dictation still works — you get raw Whisper text without the cleanup pass. "
-            "To enable it: install Ollama, then `ollama pull " + wanted + "`",
+            f"dictation still works — you get raw Whisper text without the "
+            f"cleanup pass. To enable it: {fix}",
         )
         return True
 

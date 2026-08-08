@@ -87,9 +87,23 @@ Output ONLY the cleaned text — no commentary. If already clean, return unchang
 # phrases must go selective so only flagged sentences are regenerated.
 SELECTIVE_THRESHOLD_WORDS = 25
 
-# Keep the model resident. At 30m it unloaded between sessions and the next
-# dictation paid a ~9 s cold load; warm it is ~1 s.
-KEEP_ALIVE = "24h"
+
+def keep_alive() -> str:
+    """How long Ollama holds the cleanup model after the last dictation.
+
+    This was pinned at "24h", to spare the next dictation a cold load. On a
+    small card that is the wrong trade, and it is felt everywhere rather than
+    here: measured on a 6 GB GPU, the resident model holds 2.2 GB, leaving
+    ~900 MB with Whisper alongside it. Windows then pages other applications'
+    GPU memory over the bus and the whole desktop stutters — reported as
+    "everything lags while Ollama is running".
+
+    Measured cost of letting it go: a cold call is 4125 ms against 656 ms warm,
+    so 3.5 s once after an idle spell. Most of that is invisible, because
+    `warmup()` runs on hotkey-down while the user is still speaking.
+    """
+    return config.get_str("FVOllamaKeepAlive") or "5m"
+
 
 # Filler words that only ever add noise in dictation.
 _FILLERS = [
@@ -494,6 +508,14 @@ class OllamaCleaner:
         prime_mini = config.get_bool("FVMiniPrompt")
 
         def run() -> None:
+            # Start Ollama if it is not up. This is the right moment for it:
+            # warmup runs on hotkey-down, so the several seconds the server
+            # needs are spent while the user is still speaking, instead of
+            # being paid — or silently skipped — after they let go.
+            from . import ollama
+
+            if not ollama.ensure_running():
+                return
             # Prime BOTH prefixes when both are in use. Ollama caches per
             # request shape, and short dictations — the common case — go
             # through the mini prompt, which shares no prefix with the full
@@ -603,7 +625,7 @@ class OllamaCleaner:
                 {"role": "user", "content": user},
             ],
             "stream": False,
-            "keep_alive": KEEP_ALIVE,
+            "keep_alive": keep_alive(),
             # num_predict -1 = generate until the model naturally stops. A fixed
             # cap here silently TRUNCATED the cleanup of long dictations — the
             # exact "the end is missing" bug. Never cap real output.
@@ -628,7 +650,7 @@ class OllamaCleaner:
             "model": self.model,
             "messages": [{"role": "system", "content": system}],
             "stream": False,
-            "keep_alive": KEEP_ALIVE,
+            "keep_alive": keep_alive(),
             # num_predict 0: evaluate (and cache) the prompt, generate nothing.
             "options": {"temperature": 0, "num_predict": 0},
         }

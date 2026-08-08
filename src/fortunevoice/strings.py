@@ -199,6 +199,18 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.cleanup_model_hint": {
         "en": "qwen2.5:3b — the smallest one that does not translate your text",
         "ru": "qwen2.5:3b — меньшие переводят текст вместо вычитки"},
+    # The memory-versus-latency trade. Worth surfacing rather than deciding
+    # for the user: on a small card holding the model makes the whole desktop
+    # stutter, on a large one letting it go is 3.5 s wasted.
+    "settings.keep_alive": {"en": "Keep the model in memory",
+                            "ru": "Держать модель в памяти"},
+    "settings.keep_alive_hint": {
+        "en": "frees ~2 GB of video memory; costs ~3 s on the next dictation",
+        "ru": "освобождает ~2 ГБ видеопамяти, стоит ~3 с на первой диктовке"},
+    "settings.keep_alive_never": {"en": "Unload at once", "ru": "Выгружать сразу"},
+    "settings.keep_alive_5m": {"en": "5 minutes", "ru": "5 минут"},
+    "settings.keep_alive_1h": {"en": "1 hour", "ru": "1 час"},
+    "settings.keep_alive_always": {"en": "Always", "ru": "Всегда"},
     "settings.smartfix": {"en": "Auto-fix garbled words",
                           "ru": "Чинить искажённые слова"},
     "settings.smartfix_hint": {"en": "only on low-confidence transcripts",
@@ -253,6 +265,14 @@ CATALOGUE: dict[str, dict[str, str]] = {
 
     # ── notifications ───────────────────────────────────────────────────
     "notify.bad_hotkey": {"en": "Bad hotkey", "ru": "Неверное сочетание клавиш"},
+    "notify.no_cleanup": {"en": "Dictation works, cleanup does not",
+                          "ru": "Диктовка работает, вычитка — нет"},
+    "notify.ollama_missing": {
+        "en": "Ollama is not installed. Text will be typed exactly as heard.",
+        "ru": "Ollama не установлена. Текст будет напечатан как расслышан."},
+    "notify.ollama_down": {
+        "en": "Ollama would not start. Text will be typed exactly as heard.",
+        "ru": "Ollama не запустилась. Текст будет напечатан как расслышан."},
     "notify.model_failed": {"en": "FortuneVoice couldn't load the model",
                             "ru": "FortuneVoice не смог загрузить модель"},
     "notify.no_audio": {"en": "FortuneVoice can't hear you",
