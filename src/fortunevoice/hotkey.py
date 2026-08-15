@@ -384,10 +384,19 @@ class HotkeyListener:
         spec: HotkeySpec,
         on_press: Callable[[], None],
         on_release: Callable[[], None],
+        on_arm: Callable[[], None] | None = None,
+        on_disarm: Callable[[], None] | None = None,
     ) -> None:
         self._spec = spec
         self._on_press = on_press
         self._on_release = on_release
+        # Fired the moment the chord goes down, before the hold threshold has
+        # elapsed, so the microphone can be opened early — the wait then costs
+        # the user nothing instead of eating the start of their sentence. The
+        # disarm says the hold never completed and whatever was captured
+        # should be thrown away.
+        self._on_arm = on_arm
+        self._on_disarm = on_disarm
         self._thread: threading.Thread | None = None
         self._thread_id = 0
         self._hook = None
@@ -525,6 +534,17 @@ class HotkeyListener:
 
     HOLD_SECONDS = 0.3
 
+    def prerolls(self) -> bool:
+        """Should the microphone be opened while the hold is still being
+        measured?
+
+        Only for a chord of two or more modifiers. A lone "ctrl" would arm on
+        every Ctrl+C, Ctrl+V and Ctrl+S the user types — the recording would
+        be discarded each time, but the Windows "microphone in use" indicator
+        would blink all day, which is its own kind of alarming.
+        """
+        return self._spec.modifier_trigger and len(self._spec.modifiers) >= 2
+
     def _begin_press(self) -> None:
         if not self._spec.modifier_trigger:
             self._on_press()
@@ -535,6 +555,11 @@ class HotkeyListener:
             self._timer = threading.Timer(self.HOLD_SECONDS, self._hold_elapsed)
             self._timer.daemon = True
             self._timer.start()
+        # After the timer is armed, not before: opening a microphone is slow
+        # enough that doing it first would push the hold measurement out by
+        # however long the device takes.
+        if self._on_arm and self.prerolls():
+            self._on_arm()
 
     def _hold_elapsed(self) -> None:
         with self._press_lock:
@@ -551,9 +576,16 @@ class HotkeyListener:
             return
         with self._press_lock:
             self._cancel_timer()
-            if not self._pressed:
-                return  # a tap: nothing was ever started
+            tap = not self._pressed
             self._pressed = False
+        if tap:
+            # Nothing was ever started, but the microphone may have been
+            # opened for the pre-roll — it has to be closed and its audio
+            # dropped, or a Ctrl+Alt reached for by mistake leaves a recording
+            # running until the next one.
+            if self._on_disarm and self.prerolls():
+                self._on_disarm()
+            return
         self._on_release()
 
     def _cancel_timer(self) -> None:

@@ -176,3 +176,72 @@ def test_ordinary_chord_still_fires_immediately():
     listener, events = make_listener("ctrl+alt+space")
     listener._handle(WM_KEYDOWN, event(VK_SPACE))
     assert events == ["press"]
+
+
+# ── the pre-roll ─────────────────────────────────────────────────────────
+#
+# The hold threshold exists so a mistaken Ctrl+Alt starts nothing. Waiting it
+# out before opening the microphone would cost the user the first third of a
+# second of speech, so the microphone opens immediately and the wait becomes a
+# pre-roll instead of a hole.
+
+
+def make_arming_listener(spec_text="ctrl+alt"):
+    events = []
+    listener = HotkeyListener(
+        parse(spec_text),
+        on_press=lambda: events.append("press"),
+        on_release=lambda: events.append("release"),
+        on_arm=lambda: events.append("arm"),
+        on_disarm=lambda: events.append("disarm"),
+    )
+    listener.spec.modifiers_held = lambda *a: True  # type: ignore[method-assign]
+    return listener, events
+
+
+def test_the_microphone_is_armed_before_the_hold_completes():
+    listener, events = make_arming_listener()
+    listener._handle(WM_KEYDOWN, event(VK_LMENU))
+    assert events == ["arm"], "armed immediately, not after the threshold"
+    time.sleep(listener.HOLD_SECONDS + 0.15)
+    assert events == ["arm", "press"]
+
+
+def test_a_tap_disarms_and_never_presses():
+    """The audio captured for the pre-roll has to be dropped, or a Ctrl+Alt
+    reached for by mistake leaves a recording running until the next one."""
+    listener, events = make_arming_listener()
+    listener._handle(WM_KEYDOWN, event(VK_LMENU))
+    listener._handle(WM_KEYUP, event(VK_LMENU))
+    time.sleep(listener.HOLD_SECONDS + 0.15)
+    assert events == ["arm", "disarm"]
+
+
+def test_a_completed_hold_does_not_disarm():
+    """Disarming after a real press would stop the recording the user is in
+    the middle of making."""
+    listener, events = make_arming_listener()
+    hold(listener, VK_LMENU)
+    assert events == ["arm", "press", "release"]
+    assert "disarm" not in events
+
+
+def test_a_lone_modifier_never_arms():
+    """"ctrl" alone would open the microphone on every Ctrl+C the user types.
+    The recording would be discarded each time, but the Windows microphone
+    indicator would blink all day."""
+    listener, events = make_arming_listener("ctrl")
+    assert listener.prerolls() is False
+    listener._handle(WM_KEYDOWN, event(VK_LCONTROL))
+    listener._handle(WM_KEYUP, event(VK_LCONTROL))
+    time.sleep(0.05)
+    assert "arm" not in events
+
+
+def test_an_ordinary_chord_never_arms():
+    """Ctrl+Alt+Space fires the moment Space goes down — there is no wait to
+    fill, so there is nothing to pre-roll."""
+    listener, events = make_arming_listener("ctrl+alt+space")
+    assert listener.prerolls() is False
+    listener._handle(WM_KEYDOWN, event(VK_SPACE))
+    assert events == ["press"]
