@@ -149,6 +149,8 @@ class App:
         self.status_note = ""
         # Distinct UI failures already reported. See _on_ui_error.
         self._reported_ui_errors: set[str] = set()
+        # When the microphone was opened for the pre-roll, 0.0 if it was not.
+        self._armed = 0.0
         # UI hooks (the tray sets these).
         self.on_state_change: Callable[[State], None] | None = None
         self.on_notify: Callable[[str, str], None] | None = None
@@ -271,6 +273,8 @@ class App:
             spec,
             on_press=lambda: self._events.put(("press", time.monotonic())),
             on_release=lambda: self._events.put(("release", time.monotonic())),
+            on_arm=lambda: self._events.put(("arm", time.monotonic())),
+            on_disarm=lambda: self._events.put(("disarm", time.monotonic())),
         )
         self._listener.start()
         return ok
@@ -411,6 +415,10 @@ class App:
                     self._on_press()
                 elif kind == "release":
                     self._on_release()
+                elif kind == "arm":
+                    self._on_arm()
+                elif kind == "disarm":
+                    self._on_disarm()
                 elif kind == "interrupted":
                     self._on_interrupted()
                 elif kind == "cancel":
@@ -432,6 +440,36 @@ class App:
         if config.get_str("FVActivationMode") == "toggle":
             return
         self._stop_dictation()
+
+    # ── the pre-roll ─────────────────────────────────────────────────────
+    #
+    # A modifier chord only counts as a press after HOLD_SECONDS, so that a
+    # Ctrl+Alt reached for by mistake starts nothing. Waiting that long before
+    # opening the microphone would cost the user the first third of a second
+    # of speech — so the microphone opens at once, and the wait becomes a
+    # pre-roll rather than a hole. If the hold never completes, the audio is
+    # dropped and nothing else ever knew about it.
+
+    def _on_arm(self) -> None:
+        if self.state != State.IDLE or self._armed:
+            return
+        try:
+            self.recorder.start(config.get_str("FVMicrophone"))
+        except AudioError as exc:
+            # Stay quiet here. The user has not committed to a dictation yet,
+            # and if they do, _start_dictation reports it properly.
+            logger.debug("could not open the microphone early: %s", exc)
+            return
+        self._armed = time.monotonic()
+
+    def _on_disarm(self) -> None:
+        if not self._armed:
+            return
+        self._armed = 0.0
+        # Only when the dictation never started: in toggle mode the key-up
+        # arrives while a recording is legitimately running.
+        if self.state == State.IDLE:
+            self.recorder.stop()
 
     def _on_interrupted(self) -> None:
         """Input device died mid-recording. Don't throw away what was already
@@ -472,15 +510,20 @@ class App:
         logger.info("hotkey DOWN (state = %s)", state.value)
         if state != State.IDLE:
             return
-        try:
-            self.recorder.start(config.get_str("FVMicrophone"))
-        except AudioError as exc:
-            logger.error("recording failed: %s", exc)
-            self._notify(t("notify.no_audio"), str(exc))
-            sound.play("error")
-            return
+        # Already open from the pre-roll, and holding the audio from before
+        # the hold threshold elapsed — keep it, and date the recording from
+        # when the microphone actually opened.
+        armed_at, self._armed = self._armed, 0.0
+        if not armed_at:
+            try:
+                self.recorder.start(config.get_str("FVMicrophone"))
+            except AudioError as exc:
+                logger.error("recording failed: %s", exc)
+                self._notify(t("notify.no_audio"), str(exc))
+                sound.play("error")
+                return
 
-        self._recording_started = time.monotonic()
+        self._recording_started = armed_at or time.monotonic()
         self._last_loud = self._recording_started
         self._peak_level = 0.0
         self._no_signal_shown = False

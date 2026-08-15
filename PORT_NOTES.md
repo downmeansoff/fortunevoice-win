@@ -795,3 +795,45 @@ all-caps 8 px Cyrillic (`СЛОВ В МИНУТУ`) is a grey smear rather than 
 the captions are sentence case; and `strftime("%A")` answers in the C locale,
 which had History reading «Сегодня», «Вчера», then "Saturday" — day and month
 names are now in the catalogue, with Russian months in the genitive.
+
+### The hold threshold, turned into a pre-roll
+
+Modifier hotkeys need a hold threshold: `Ctrl` is the first half of Ctrl+C, and
+`Ctrl+Alt` is what a Russian layout's AltGr sends, so a tap has to start
+nothing. But the threshold was 300 ms of the user's speech going nowhere —
+they press, they talk, and the first third of a second was never recorded.
+
+Measured first, because the obvious fix was the wrong one. A ring buffer over
+an always-open microphone would have lit the Windows "microphone in use"
+indicator permanently, and the numbers said it would buy almost nothing beyond
+what the threshold itself accounts for:
+
+| | time to the first sample |
+|---|---|
+| first `start()` in a process | 375 ms |
+| every one after | 78-94 ms |
+
+So two separate changes. `audio.prewarm()` pays PortAudio's initialisation on
+a startup thread — 375 ms becomes 78 ms. And the microphone now opens when the
+chord goes **down**, not when the hold completes: the wait becomes a pre-roll
+instead of a hole, with no always-on microphone anywhere.
+
+`HotkeyListener` grew `on_arm`/`on_disarm`. Arm fires after the hold timer is
+started, never before — opening a microphone is slow enough that doing it
+first would push the measurement out by however long the device takes. Disarm
+fires when the hold did not complete, and the app throws the audio away.
+
+Only for a chord of two or more modifiers. A lone `ctrl` would arm on every
+Ctrl+C, Ctrl+V and Ctrl+S the user types; the recording would be discarded
+each time, but the microphone indicator would blink all day, which is its own
+kind of alarming.
+
+`_start_dictation` had to learn not to restart the recorder — restarting is
+what discards the buffer, which is precisely the audio this exists to keep —
+and to date the recording from the moment the microphone opened rather than
+from the press.
+
+Verified on the real hook with real keys: armed at 47 ms, press at 344 ms,
+release at 844 ms. And through the real microphone: 448 ms captured before the
+press, 768 ms in the finished take. A tap arms at 47 ms and is discarded at
+125 ms, leaving the recorder stopped and its buffer empty.
