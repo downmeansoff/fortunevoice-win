@@ -100,6 +100,12 @@ class Tray:
             separator,
             item(t("tray.copy_last"), self._copy_last,
                  enabled=lambda _i: bool(self.app.last_transcript)),
+            # The rescue when a dictation landed in the wrong window. In the
+            # tray rather than on a shortcut of its own: with ctrl+alt as the
+            # dictation chord, every ctrl+alt+X a second hotkey could use also
+            # starts a dictation.
+            item(t("tray.retype_last"), self._retype_last,
+                 enabled=lambda _i: bool(self.app.last_transcript)),
             item(
                 lambda _i: self._recover_text(),
                 self._recover,
@@ -173,6 +179,10 @@ class Tray:
     def _copy_last(self, _icon=None, _item=None) -> None:
         if not self.app.copy_last():
             logger.warning("could not copy the last dictation")
+
+    def _retype_last(self, _icon=None, _item=None) -> None:
+        if not self.app.retype_last():
+            logger.warning("nothing to retype")
 
     def _recover_text(self) -> str:
         count = len(self.app.recovery.pending())

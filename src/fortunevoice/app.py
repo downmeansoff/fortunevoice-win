@@ -27,7 +27,7 @@ from typing import Callable
 import numpy as np
 
 from . import config, dictionary, injector, metrics, paths, sound, winapi
-from .audio import AudioError, AudioRecorder, max_window_rms
+from .audio import AudioError, AudioRecorder, max_window_rms, prewarm as audio_prewarm
 from .cleaner import OllamaCleaner, keep_alive_seconds
 from .hotkey import HotkeyListener, parse as parse_hotkey
 from .log import get as get_logger
@@ -147,6 +147,8 @@ class App:
 
         self.last_transcript = ""
         self.status_note = ""
+        # Distinct UI failures already reported. See _on_ui_error.
+        self._reported_ui_errors: set[str] = set()
         # UI hooks (the tray sets these).
         self.on_state_change: Callable[[State], None] | None = None
         self.on_notify: Callable[[str, str], None] | None = None
@@ -177,6 +179,14 @@ class App:
             except Exception:  # noqa: BLE001 - a broken tray must not stop dictation
                 logger.exception("state-change handler failed")
 
+    def _on_ui_error(self, detail: str) -> None:
+        """A UI callback raised. Told once per distinct failure, so a repaint
+        that throws on every frame cannot turn into a stream of balloons."""
+        if detail in self._reported_ui_errors:
+            return
+        self._reported_ui_errors.add(detail)
+        self._notify(t("notify.ui_failed"), detail)
+
     def _notify(self, title: str, body: str) -> None:
         logger.info("%s — %s", title, body)
         if self.on_notify:
@@ -199,7 +209,15 @@ class App:
 
         self.rebind_hotkey()
 
+        # A window that fails to build must not fail in silence.
+        from .ui import ui as ui_thread
+
+        ui_thread.on_error = self._on_ui_error
+
         threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
+        # Pay PortAudio's first-open cost now rather than out of the first
+        # dictation's opening word. See audio.prewarm().
+        threading.Thread(target=audio_prewarm, name="audio-warm", daemon=True).start()
         if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
             # Only pre-load the cleanup model when it will still be there by
             # the time it is wanted. With a short hold, warming at startup
@@ -977,6 +995,34 @@ class App:
         if not self.last_transcript:
             return False
         return injector.set_clipboard_text(self.last_transcript)
+
+    # Long enough for the tray menu to close and Windows to hand the
+    # foreground back to whatever was underneath it. Typing before that puts
+    # the text into a menu that is still closing, which is to say nowhere.
+    RETYPE_DELAY = 0.35
+
+    def retype_last(self) -> bool:
+        """Type the last dictation into whatever has focus now.
+
+        The rescue for a dictation that landed in the wrong window: 17 of this
+        user's first 20 deliveries were typed "blind", because Windows would
+        not confirm there was an editable field, so a miss is entirely
+        possible and until now the only recovery was to copy and paste by
+        hand.
+        """
+        if not self.last_transcript:
+            return False
+        text = self.last_transcript
+
+        def job() -> None:
+            time.sleep(self.RETYPE_DELAY)
+            injector.release_held_modifiers()
+            if not injector.inject(text):
+                logger.warning("retype failed, leaving it on the clipboard")
+                injector.set_clipboard_text(text)
+
+        threading.Thread(target=job, name="retype", daemon=True).start()
+        return True
 
     def open_data_folder(self) -> None:
         import os

@@ -105,9 +105,26 @@ class UiThread:
                 return
             try:
                 job()
-            except Exception:  # noqa: BLE001 - one bad callback must not kill the UI
+            except Exception as exc:  # noqa: BLE001 - one bad callback must not kill the UI
                 logger.exception("UI callback failed")
+                self._report(exc)
         self._root.after(_PUMP_MS, self._pump)
+
+    # Set by the app once the tray exists. A window that fails to build is
+    # otherwise completely silent: the user clicks "Settings", nothing appears,
+    # and the only record is a line in a log file they have no reason to open.
+    # That happened twice during this port — a renamed colour constant and a
+    # missing helper — and both times it was found by reading the log, not by
+    # the app saying anything.
+    on_error: Callable[[str], None] | None = None
+
+    def _report(self, exc: Exception) -> None:
+        if self.on_error is None:
+            return
+        try:
+            self.on_error(f"{type(exc).__name__}: {exc}")
+        except Exception:  # noqa: BLE001 - reporting must never recurse
+            logger.exception("could not report a UI failure")
 
     def stop(self) -> None:
         if self._thread and self._thread.is_alive():
