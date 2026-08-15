@@ -46,6 +46,8 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "tray.setup": {"en": "Setup…", "ru": "Первый запуск…"},
     "tray.copy_last": {"en": "Copy last dictation",
                        "ru": "Копировать последнюю диктовку"},
+    "tray.retype_last": {"en": "Type last dictation here",
+                         "ru": "Напечатать последнюю сюда"},
     "tray.recover": {"en": "Recover failed dictation",
                      "ru": "Восстановить неудавшуюся диктовку"},
     "tray.retry_model": {"en": "Retry model load", "ru": "Загрузить модель заново"},
@@ -265,6 +267,8 @@ CATALOGUE: dict[str, dict[str, str]] = {
 
     # ── notifications ───────────────────────────────────────────────────
     "notify.bad_hotkey": {"en": "Bad hotkey", "ru": "Неверное сочетание клавиш"},
+    "notify.ui_failed": {"en": "A window failed to open",
+                         "ru": "Окно не открылось"},
     "notify.no_cleanup": {"en": "Dictation works, cleanup does not",
                           "ru": "Диктовка работает, вычитка — нет"},
     "notify.ollama_missing": {

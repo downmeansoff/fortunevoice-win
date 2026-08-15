@@ -95,6 +95,31 @@ def window_rms_range(samples: np.ndarray, window: int = 1_600) -> tuple[float, f
     return float(rms.min()), float(rms.max())
 
 
+def prewarm() -> None:
+    """Open and immediately close an input stream, so PortAudio's
+    initialisation is paid before the first dictation instead of during it.
+
+    Measured here: the first `start()` in a process takes 375 ms before a
+    single sample arrives, against 78-94 ms on every one after it. Those extra
+    300 ms are the beginning of whatever the user said — a whole word, lost on
+    the first dictation after launch, which is the one that decides whether
+    they think this works.
+
+    Best-effort and silent: a machine with no microphone must not fail its
+    startup over a warm-up.
+    """
+    try:
+        sd = _sounddevice()
+        stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                                dtype="float32", blocksize=BLOCK_SIZE)
+        stream.start()
+        stream.stop()
+        stream.close()
+        logger.debug("audio backend warmed")
+    except Exception as exc:  # noqa: BLE001 - warming is never worth failing over
+        logger.debug("audio warm-up skipped: %s", exc)
+
+
 class AudioRecorder:
     def __init__(self) -> None:
         self._lock = threading.Lock()

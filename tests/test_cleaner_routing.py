@@ -92,6 +92,12 @@ def test_warmup_skips_only_when_the_model_is_really_loaded(monkeypatch):
     dictation paid a 2 s cold load inside a 1.5 s budget."""
     import time
 
+    from fortunevoice import ollama
+
+    # About the priming throttle, not about starting Ollama — which warmup now
+    # also does, and which conftest makes fail fast.
+    monkeypatch.setattr(ollama, "ensure_running", lambda wait=0: True)
+
     primed: list[str] = []
     monkeypatch.setattr(C.OllamaCleaner, "_prime",
                         lambda self, system: primed.append(system) or True)
