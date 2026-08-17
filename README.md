@@ -101,7 +101,16 @@ take both away. Or run it directly:
 
 Press **Esc** to throw a recording away — no decode, no transcript, nothing
 typed. A misfired hotkey otherwise costs a full decode and whatever the model
-invents out of room noise.
+invents out of room noise. You get the cancel tone and a "Cancelled" pill, so
+you know it took.
+
+Say **"new line"** — or "новая строка" — as a sentence of its own and you get
+a line break; "new paragraph" gives two. That exists because Enter *sends* the
+message in most chat applications, so a dictation that wanted two lines could
+not be fixed up afterwards without fighting the app. The phrase only counts
+when it stands alone: "I started on a new line, because it reads better"
+survives untouched, or there would be no way to say the words at all. Turn it
+off in Settings if you'd rather have the words.
 
 Only one copy runs at a time. A second launch says so and exits, because two
 instances would each install a keyboard hook and type every dictation twice.
@@ -125,6 +134,14 @@ dictation starts.
 If the text can't be typed — you switched windows, there's no editable field —
 a panel appears with the transcript and a Copy button. Nothing reaches your
 clipboard until you press it.
+
+When it *was* typed but landed in the wrong window, the tray has **Type last
+dictation here**: click into the right window, pick it from the menu, and the
+last transcript is typed there. Worth knowing about, because most deliveries
+go out "blind" — Windows often will not confirm there is an editable field,
+and the app types anyway rather than refusing. It is in the menu rather than
+on a shortcut of its own: with `Ctrl+Alt` as the dictation chord, every
+`Ctrl+Alt+X` a second shortcut could use would also start a dictation.
 
 The tray menu opens the main window: **History** (searchable; click a card to
 copy it, ✕ to delete it), **Insights** (words per minute, day streak, where
@@ -161,8 +178,11 @@ without a restart. Only values you change are stored.
 | `FVAutoStartOllama` | `true` | Start Ollama when cleanup needs it and nothing is listening |
 | `FVAppProfiles` | `{}` | Per-application overrides — see below |
 | `FVOllamaModel` | `qwen2.5:3b` | Cleanup model. Smaller ones translate the text instead of cleaning it |
+| `FVOllamaHost` | `http://localhost:11434` | Where Ollama is. Point it at another machine to keep the video memory here free |
 | `FVMiniPrompt` | `true` | Short prompt for short dictations; turn off on a fast model |
 | `FVStreaming` | `true` | Decode while you speak |
+| `FVStreamingV2` | `true` | Type the stitched streaming result rather than re-decoding the whole recording |
+| `FVStreamingShadow` | `false` | Compute both and log the difference. A second full decode per dictation — for checking a change, not for daily use |
 | `FVMicrophone` | `""` | Input device name substring; empty = system default |
 | `FVPasteViaClipboard` | `false` | Clipboard + Ctrl+V instead of typing (for apps that ignore synthesized input) |
 | `FVDebugTimings` | `false` | Log the full latency breakdown |

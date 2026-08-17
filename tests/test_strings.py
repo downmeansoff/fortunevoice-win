@@ -100,3 +100,40 @@ def test_no_key_is_left_empty():
     blank = [key for key, langs in CATALOGUE.items()
              if any(not str(value).strip() for value in langs.values())]
     assert blank == []
+
+
+# ── the README is the only way a friend learns what this does ────────────
+
+
+def test_every_setting_is_documented():
+    """A setting nobody can discover is a setting that does not exist. This is
+    handed to friends; the README is the whole of their documentation."""
+    from fortunevoice.config import DEFAULTS
+
+    readme = (SOURCE.parent / "README.md").read_text(encoding="utf-8")
+    missing = sorted(key for key in DEFAULTS if key not in readme)
+    assert missing == []
+
+
+def test_the_documented_defaults_match_the_code():
+    """A README that says ctrl+alt+space while the code says something else
+    sends the reader to a shortcut that does nothing."""
+    from fortunevoice.config import DEFAULTS
+
+    readme = (SOURCE.parent / "README.md").read_text(encoding="utf-8")
+    for key in ("FVHotkey", "FVOllamaModel", "FVOllamaKeepAlive", "FVLanguage"):
+        value = str(DEFAULTS[key])
+        assert f"`{value}`" in readme, f"{key} default {value!r} is not in the README"
+
+
+def test_the_features_that_cannot_be_guessed_are_written_down():
+    """Nobody works out on their own that saying "new line" makes one, or that
+    a mis-delivered dictation can be retyped from the tray."""
+    import re
+
+    # Whitespace-normalised: the README wraps at 79 columns, so a phrase can
+    # sit across two lines and a literal search would miss it.
+    readme = re.sub(r"\s+", " ",
+                    (SOURCE.parent / "README.md").read_text(encoding="utf-8").lower())
+    for phrase in ("new line", "type last dictation here", "press **esc**"):
+        assert phrase in readme, phrase
