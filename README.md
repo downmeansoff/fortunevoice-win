@@ -15,7 +15,7 @@ had to be redone.
 
 ```
 Ctrl+Alt+Space (hold) → mic capture (16 kHz) → faster-whisper (local STT, CUDA)
-                      → [optional] Ollama qwen2.5:1.5b cleanup → typed into the focused app
+                      → [optional] Ollama qwen2.5:3b cleanup → typed into the focused app
 ```
 
 - **STT:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) —
@@ -69,7 +69,7 @@ For the optional cleanup pass, install [Ollama](https://ollama.com/download)
 and pull the model:
 
 ```powershell
-ollama pull qwen2.5:1.5b
+ollama pull qwen2.5:3b
 ```
 
 ## Check the machine before trusting it
@@ -147,7 +147,7 @@ without a restart. Only values you change are stored.
 
 | Key | Default | What it does |
 |---|---|---|
-| `FVHotkey` | `ctrl+alt+space` | Hold-to-talk chord. `f9`, `rctrl`, `ctrl+space`… |
+| `FVHotkey` | `ctrl+alt+space` | Hold-to-talk chord. `f9`, `rctrl`, `ctrl+space`, `ctrl+alt`… |
 | `FVActivationMode` | `hold` | `hold` (push-to-talk) or `toggle` (tap on, tap off) |
 | `FVModel` | `large-v3-turbo` | Whisper weights |
 | `FVFallbackModel` | `small` | Used when the above won't load |
@@ -156,7 +156,11 @@ without a restart. Only values you change are stored.
 | `FVUILanguage` | `auto` | Language of the app's **windows**: `ru`, `en`, `auto` (follow Windows) |
 | `FVCleanupEnabled` | `true` | LLM cleanup pass |
 | `FVSmartFix` | `true` | Repair garbled transcripts even when cleanup is off |
-| `FVOllamaModel` | `gemma3:4b` | Cleanup model — set `qwen2.5:1.5b`, see below |
+| `FVVoiceCommands` | `true` | «новая строка» / «новый абзац» become line breaks |
+| `FVOllamaKeepAlive` | `5m` | How long Ollama holds the model. `24h` keeps ~2 GB of video memory busy |
+| `FVAutoStartOllama` | `true` | Start Ollama when cleanup needs it and nothing is listening |
+| `FVAppProfiles` | `{}` | Per-application overrides — see below |
+| `FVOllamaModel` | `qwen2.5:3b` | Cleanup model. Smaller ones translate the text instead of cleaning it |
 | `FVMiniPrompt` | `true` | Short prompt for short dictations; turn off on a fast model |
 | `FVStreaming` | `true` | Decode while you speak |
 | `FVMicrophone` | `""` | Input device name substring; empty = system default |
@@ -253,12 +257,19 @@ would only delay the final decode).
 
 ## About the AI cleanup
 
-**Use `qwen2.5:3b`, not the default `gemma3:4b`.** Measured on Russian
-(three runs per case, [PORT_NOTES.md](PORT_NOTES.md) has the table):
-gemma3:4b on the full prompt damaged the text in 9 of 15 runs — a stray
-leading `- `/`— ` on ordinary prose, and an already-clean statement rewritten
-as a question. qwen2.5:3b made the intended edit in 12 of 15, harmed 2, and
-ran 2.4x faster at 1.9 GB instead of 3.3 GB.
+`qwen2.5:3b` is the default, and the smallest model that does the job.
+Measured on Russian (four samples each, with `large-v3-turbo` already resident
+on a 6 GB card):
+
+| model | time | result |
+|---|---|---|
+| `qwen2.5:1.5b` | ~330 ms | **translated all four** — three into English, one into Chinese |
+| `qwen2.5:3b` | 546-657 ms | cleaned all four, kept the language |
+| `gemma3:4b` | 1141 ms | cleanest text, but prefixed a bullet |
+
+Every 1.5b answer was rejected by the invented-content check, so cleanup
+silently did nothing and the raw transcript was typed instead. Small is not
+free.
 
 ```powershell
 ollama pull qwen2.5:3b
