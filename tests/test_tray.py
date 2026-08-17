@@ -153,3 +153,59 @@ def test_the_pump_itself_reports_a_raising_job():
     thread._pump()
 
     assert seen == ["RuntimeError: the window did not build"]
+
+
+# ── what the app costs while doing nothing ───────────────────────────────
+
+
+class RecordingRoot:
+    """A Tk root that only remembers the delay it was asked to wait."""
+
+    def __init__(self):
+        self.delays: list[int] = []
+
+    def after(self, ms, _fn):
+        self.delays.append(ms)
+
+    def quit(self):
+        pass
+
+
+def test_the_pump_slows_down_once_nothing_is_happening():
+    """Measured: draining an empty queue forty times a second costs 1.4% of a
+    core, all day, for a tray app doing nothing — the largest thing this
+    process burns while idle. Backing off took it to 0.6%."""
+    from fortunevoice.ui import _IDLE_AFTER_EMPTY, _IDLE_PUMP_MS, _PUMP_MS, UiThread
+
+    thread = UiThread()
+    thread._root = RecordingRoot()
+    for _ in range(_IDLE_AFTER_EMPTY + 5):
+        thread._pump()
+
+    assert thread._root.delays[0] == _PUMP_MS, "fast while it might still be busy"
+    assert thread._root.delays[-1] == _IDLE_PUMP_MS, "slow once plainly idle"
+
+
+def test_one_job_puts_it_straight_back_to_the_fast_rate():
+    """A dictation's overlay and waveform must never be the slow ones — the
+    pill appearing late reads as the app not having heard the key."""
+    from fortunevoice.ui import _IDLE_AFTER_EMPTY, _PUMP_MS, UiThread
+
+    thread = UiThread()
+    thread._root = RecordingRoot()
+    for _ in range(_IDLE_AFTER_EMPTY + 5):
+        thread._pump()
+
+    thread._queue.put(lambda: None)
+    thread._pump()
+    assert thread._root.delays[-1] == _PUMP_MS
+
+
+def test_the_idle_rate_stays_under_what_the_hotkey_already_spends():
+    """The pill can be at most one pump late. That has to disappear next to
+    the 300 ms the hotkey already spends deciding a modifier chord was held,
+    or the back-off would be visible as lag."""
+    from fortunevoice.hotkey import HotkeyListener
+    from fortunevoice.ui import _IDLE_PUMP_MS
+
+    assert _IDLE_PUMP_MS < HotkeyListener.HOLD_SECONDS * 1000 / 2
