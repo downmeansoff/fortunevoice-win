@@ -34,7 +34,12 @@ from .log import get as get_logger
 from .store import DictationRecord, DictationStore, RecoveryStore
 from .strings import t
 from .streaming import StreamingSession
-from .textclean import collapse_repeats, is_hallucinated_silence, word_count
+from .textclean import (
+    apply_voice_commands,
+    collapse_repeats,
+    is_hallucinated_silence,
+    word_count,
+)
 from .timeout import run as run_with_timeout
 from .transcriber import Result, Transcriber, TranscriberError
 
@@ -893,6 +898,12 @@ class App:
         """
         if not text:
             return
+        # Before anything else sees the text, so History, the result panel and
+        # the typed output all agree on what was said.
+        if config.get_bool("FVVoiceCommands"):
+            text = apply_voice_commands(text)
+            if not text:
+                return
         audio_seconds = samples.size / SAMPLE_RATE
         self.last_transcript = text
 

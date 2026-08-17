@@ -139,3 +139,58 @@ def is_hallucinated_silence(text: str, rms: float) -> bool:
         return any(squeezed == phrase or squeezed.startswith(phrase)
                    for phrase in HALLUCINATION_PHRASES)
     return False
+
+
+# ── spoken commands ──────────────────────────────────────────────────────
+
+# Phrase → what it becomes. Deliberately short: every entry here is a phrase
+# the user can no longer dictate literally, so the list earns its keep only
+# while every item is something nobody says by accident in the middle of a
+# thought.
+VOICE_COMMANDS: dict[str, str] = {
+    "новая строка": "\n",
+    "с новой строки": "\n",
+    "новый абзац": "\n\n",
+    "new line": "\n",
+    "newline": "\n",
+    "new paragraph": "\n\n",
+}
+
+
+def apply_voice_commands(text: str) -> str:
+    """Turn a spoken "новая строка" into an actual line break.
+
+    Needed because Enter sends the message in most chat applications, so a
+    dictated multi-line note cannot be typed by hand afterwards without
+    fighting the app.
+
+    The matching rule is deliberately strict: the phrase counts only when it
+    is a whole sentence of its own. "Я начал с новой строки" is a sentence
+    ABOUT a line break and must survive intact — a substring match would eat
+    it, and the user would have no way to say the words at all.
+    """
+    from .segmenter import sentences
+
+    parts: list[str] = []
+    after_command = False
+    for fragment in sentences(text):
+        key = fragment.strip().strip(".!?,;:…").strip().lower()
+        replacement = VOICE_COMMANDS.get(key)
+        if replacement is None:
+            # The space that separated this sentence from the previous one now
+            # sits after a line break, where it reads as an indent nobody
+            # asked for.
+            parts.append(fragment.lstrip() if after_command else fragment)
+            after_command = False
+            continue
+        # And the space the previous sentence trailed would sit before it.
+        while parts and parts[-1].endswith(" "):
+            parts[-1] = parts[-1][:-1]
+        parts.append(replacement)
+        after_command = True
+
+    joined = "".join(parts)
+    # A break at either end is an accident of where the command fell — unless
+    # the break is all there is, which is a user who asked for exactly that.
+    trimmed = joined.strip("\n")
+    return trimmed if trimmed else joined

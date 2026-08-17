@@ -52,6 +52,11 @@ DEFAULTS: dict[str, Any] = {
     "FVCleanupEnabled": True,
     # Repair garbled (low-confidence) transcripts even when cleanup is off.
     "FVSmartFix": True,
+    # Turn a spoken "новая строка" into a line break. Enter sends the message
+    # in most chat applications, so a dictated multi-line note cannot be typed
+    # by hand afterwards. Only whole sentences match — see
+    # textclean.apply_voice_commands.
+    "FVVoiceCommands": True,
     # Measured on a 6 GB card with large-v3-turbo already resident, four Russian
     # samples each: qwen2.5:3b cleaned all four in 546-657 ms. gemma3:4b was
     # cleaner still but 1141 ms and prefixed its answer with a bullet.
