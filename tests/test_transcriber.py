@@ -404,3 +404,41 @@ def test_a_failing_warmup_is_swallowed(loaded):
     assert wait_for(lambda: not engine._warmup_in_flight)
     assert engine._gate.acquire(1.0), "the gate must not be left held"
     engine._gate.release()
+
+
+# ── giving the video memory back ─────────────────────────────────────────
+
+
+def test_unloading_nothing_reports_nothing():
+    assert Transcriber().unload() is False
+
+
+def test_unloading_clears_the_model_and_what_is_reported(loaded):
+    """Insights and the doctor read these. Leaving them set would report a
+    model that is no longer resident."""
+    engine, _ = loaded
+    assert engine.is_loaded is True
+    assert engine.unload() is True
+    assert engine.is_loaded is False
+    assert engine.loaded_model is None
+    assert engine.device is None
+
+
+def test_a_decode_in_progress_is_not_unloaded_from_under_it(loaded):
+    """Measured: this frees ~1.9 GB. Doing it mid-transcription would take the
+    user's dictation with it."""
+    engine, _ = loaded
+    assert engine._gate.acquire(1.0), "stand in for a decode holding the gate"
+    try:
+        assert engine.unload() is False
+        assert engine.is_loaded is True
+    finally:
+        engine._gate.release()
+
+
+def test_unloading_lets_the_next_load_start_clean(loaded, fake_whisper):
+    engine, _ = loaded
+    engine.unload()
+    engine.load()
+    assert engine.is_loaded is True
+    assert engine.device is not None

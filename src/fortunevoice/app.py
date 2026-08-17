@@ -156,6 +156,10 @@ class App:
         self._reported_ui_errors: set[str] = set()
         # When the microphone was opened for the pre-roll, 0.0 if it was not.
         self._armed = 0.0
+        # Set on stop(), so the idle watcher ends with the app.
+        self._stopping = threading.Event()
+        # Last time a dictation finished, for FVUnloadModelAfter.
+        self._last_dictation_at = time.monotonic()
         # UI hooks (the tray sets these).
         self.on_state_change: Callable[[State], None] | None = None
         self.on_notify: Callable[[str, str], None] | None = None
@@ -225,6 +229,8 @@ class App:
         # Pay PortAudio's first-open cost now rather than out of the first
         # dictation's opening word. See audio.prewarm().
         threading.Thread(target=audio_prewarm, name="audio-warm", daemon=True).start()
+        threading.Thread(target=self._watch_for_idle, name="idle-watch",
+                         daemon=True).start()
         if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
             # Only pre-load the cleanup model when it will still be there by
             # the time it is wanted. With a short hold, warming at startup
@@ -329,6 +335,7 @@ class App:
         return True
 
     def stop(self) -> None:
+        self._stopping.set()
         if self._listener:
             self._listener.stop()
         if self.ui_available:
@@ -543,6 +550,13 @@ class App:
                 sound.play("error")
                 return
 
+        # Dropped by the idle watcher since the last dictation: start loading
+        # it back now, so the 5.6 s overlaps with the user speaking instead of
+        # landing entirely in the wait after they let go.
+        if not self.transcriber.is_loaded:
+            threading.Thread(target=self._load_model, name="model-reload",
+                             daemon=True).start()
+
         self._recording_started = armed_at or time.monotonic()
         self._last_loud = self._recording_started
         self._peak_level = 0.0
@@ -580,6 +594,32 @@ class App:
         # Tail capture; see TAIL_CAPTURE.
         time.sleep(self.TAIL_CAPTURE)
         self._finish_dictation(key_up, target)
+
+    def _idle_unload_seconds(self) -> float:
+        """After how long with no dictation Whisper is dropped. 0 = never."""
+        return max(0, config.get_int("FVUnloadModelAfter")) * 60
+
+    def _watch_for_idle(self) -> None:
+        """Give the video memory back when the app has plainly been left open.
+
+        Off by default. Measured here: idle with the model resident is 3180 MiB
+        against 1088 with the app closed — ~2.1 GB of a 6 GB card held while
+        nothing is happening. Reloading costs 5.6 s, and that lands inside a
+        dictation, so this is only worth it on a small card left running all
+        day. The user decides; nothing is quietly traded on their behalf.
+        """
+        while not self._stopping.is_set():
+            seconds = self._idle_unload_seconds()
+            if not seconds:
+                self._stopping.wait(60)  # setting may be turned on later
+                continue
+            self._stopping.wait(min(60, seconds / 4))
+            if self.state != State.IDLE or not self.transcriber.is_loaded:
+                continue
+            if time.monotonic() - self._last_dictation_at >= seconds:
+                # The state stays IDLE, which is the truth: the app is ready
+                # and waiting, it just needs a moment on the next press.
+                self.transcriber.unload()
 
     def _arm_auto_stop(self) -> None:
         """Auto-stop the recording. In toggle mode a run of silence ends it, so
@@ -695,6 +735,13 @@ class App:
             # Clear any warmup decode out of the pipeline so it can't sit in
             # front of the real one.
             self.transcriber.cancel_warmup()
+
+            # The reload kicked off at key-down may still be running, or may
+            # never have happened. Either way the decode cannot start without
+            # it, and failing here would throw away a dictation the user has
+            # already spoken.
+            if not self.transcriber.is_loaded:
+                self._load_model()
 
             stt_started = time.monotonic()
             # The prefix cleaned during recording is only usable when the
@@ -916,6 +963,7 @@ class App:
                 return
         audio_seconds = samples.size / SAMPLE_RATE
         self.last_transcript = text
+        self._last_dictation_at = time.monotonic()
 
         # ── Vault: persist before any step that could fail. Keep the raw
         # transcript too when cleanup changed it, so the exact spoken words are

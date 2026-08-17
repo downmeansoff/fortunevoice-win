@@ -22,9 +22,19 @@ from ..log import get as get_logger
 
 logger = get_logger("ui")
 
-# How often the UI thread drains the queue. 25 ms is imperceptible for showing
-# an overlay and cheap enough to leave running while the app idles for hours.
+# How often the UI thread drains the queue while anything is happening. 25 ms
+# is imperceptible for showing an overlay or animating the waveform.
 _PUMP_MS = 25
+# And how often once the queue has been empty for a while. Measured: draining
+# an empty queue forty times a second costs 1.4% of a core, all day, for a tray
+# app doing nothing — the single largest thing this process burns while idle.
+# At 100 ms that is roughly a quarter, and the cost is at most 100 ms before
+# the pill appears, which is well under the 300 ms the hotkey already spends
+# deciding a modifier chord was really held.
+_IDLE_PUMP_MS = 100
+# Empty drains before slowing down. Two seconds of nothing at the fast rate:
+# long enough that a dictation never slows mid-flight.
+_IDLE_AFTER_EMPTY = 80
 
 
 class UiThread:
@@ -33,6 +43,8 @@ class UiThread:
         self._thread: threading.Thread | None = None
         self._ready = threading.Event()
         self._root = None
+        # Consecutive drains that found nothing. See _pump.
+        self._empty_drains = 0
         self._failed = False
 
     # ── lifecycle ────────────────────────────────────────────────────────
@@ -95,6 +107,7 @@ class UiThread:
             logger.debug("could not set the window icon", exc_info=True)
 
     def _pump(self) -> None:
+        ran = False
         while True:
             try:
                 job = self._queue.get_nowait()
@@ -103,12 +116,18 @@ class UiThread:
             if job is None:
                 self._root.quit()
                 return
+            ran = True
             try:
                 job()
             except Exception as exc:  # noqa: BLE001 - one bad callback must not kill the UI
                 logger.exception("UI callback failed")
                 self._report(exc)
-        self._root.after(_PUMP_MS, self._pump)
+        # Back to the fast rate the moment there is anything to do, so a
+        # dictation's overlay and waveform are never the slow ones.
+        self._empty_drains = 0 if ran else self._empty_drains + 1
+        delay = (_IDLE_PUMP_MS if self._empty_drains >= _IDLE_AFTER_EMPTY
+                 else _PUMP_MS)
+        self._root.after(delay, self._pump)
 
     # Set by the app once the tray exists. A window that fails to build is
     # otherwise completely silent: the user clicks "Settings", nothing appears,

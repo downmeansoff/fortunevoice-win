@@ -86,6 +86,13 @@ DEFAULTS: dict[str, Any] = {
     # the full taxonomy every time: on a model that follows it and answers in
     # ~300 ms, the mini prompt only loses accuracy. See PORT_NOTES.md.
     "FVMiniPrompt": True,
+    # Minutes of no dictation after which Whisper is dropped from video
+    # memory. 0 = never, which is the default: the app should be instant.
+    # Measured here — idle with the model is 3180 MiB against 1088 with the
+    # app closed, so it holds ~2.1 GB of a 6 GB card doing nothing; reloading
+    # costs 5.6 s, paid once by the next dictation. Worth it on a small card
+    # left running all day, not worth it otherwise.
+    "FVUnloadModelAfter": 0,
     # Transcribe while the user is still talking.
     "FVStreaming": True,
     # Paste the stitched streaming result (vs. a full batch re-decode).

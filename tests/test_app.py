@@ -28,6 +28,10 @@ def app(monkeypatch):
     """An App with every edge stubbed and every side effect recorded."""
     application = App()
     application._set_state(State.IDLE)
+    # The pipeline loads the model when it finds none — correct in the app,
+    # and a real 5.6 s Whisper load inside a unit test. A placeholder is
+    # enough: every test that decodes stubs `transcribe` anyway.
+    application.transcriber._model = object()
 
     typed: list[str] = []
     held: list[tuple[str, str]] = []
@@ -456,3 +460,55 @@ def test_real_speech_that_happens_to_say_it_is_typed(app, monkeypatch):
     those words on loud audio must still get them."""
     pipeline_with(app, monkeypatch, "Продолжение следует.", level=0.4)
     assert app.typed == ["Продолжение следует."]
+
+
+# ── dropping the model when the app is left open ─────────────────────────
+
+
+def test_unloading_is_off_unless_asked_for(app):
+    """The app should be instant by default. Measured: reloading costs 5.6 s,
+    and that lands inside the next dictation."""
+    from fortunevoice import config
+
+    assert config.DEFAULTS["FVUnloadModelAfter"] == 0
+    assert app._idle_unload_seconds() == 0
+
+
+def test_the_setting_is_in_minutes(app):
+    from fortunevoice import config
+
+    config.set("FVUnloadModelAfter", 30)
+    assert app._idle_unload_seconds() == 1800
+
+
+def test_a_negative_setting_reads_as_never(app):
+    from fortunevoice import config
+
+    config.set("FVUnloadModelAfter", -5)
+    assert app._idle_unload_seconds() == 0
+
+
+def test_a_dictation_reloads_a_model_that_was_dropped(app, monkeypatch):
+    """Without this the next dictation after an unload would raise inside the
+    pipeline and be filed as a failed transcription — the words gone."""
+    loads: list[int] = []
+    monkeypatch.setattr(app.transcriber, "cancel_warmup", lambda: None)
+    monkeypatch.setattr(app, "_load_model",
+                        lambda: loads.append(1) or setattr(app.transcriber, "_model", object()))
+    monkeypatch.setattr(app.transcriber, "transcribe", lambda samples: a_result("вернулась"))
+    app.transcriber._model = None
+
+    app._pipeline(np.full(16_000, 0.3, dtype=np.float32),
+                  None, app_module.time.monotonic(), 42, 5.0)
+    assert loads, "the pipeline must load it rather than fail"
+    assert app.typed == ["вернулась"]
+
+
+def test_a_loaded_model_is_not_reloaded(app, monkeypatch):
+    monkeypatch.setattr(app.transcriber, "cancel_warmup", lambda: None)
+    monkeypatch.setattr(app, "_load_model",
+                        lambda: pytest.fail("already loaded, nothing to do"))
+    monkeypatch.setattr(app.transcriber, "transcribe", lambda samples: a_result("готово"))
+    app._pipeline(np.full(16_000, 0.3, dtype=np.float32),
+                  None, app_module.time.monotonic(), 42, 5.0)
+    assert app.typed == ["готово"]

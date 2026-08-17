@@ -336,6 +336,38 @@ class Transcriber:
         return Result(text=text, avg_logprob=avg_logprob, no_speech_prob=no_speech,
                       segments=segments)
 
+    def unload(self) -> bool:
+        """Drop the model and give its video memory back.
+
+        Measured here: the app holds 3180 MiB at idle against 1088 with it
+        closed, so Whisper sits on ~2.1 GB of a 6 GB card while nothing is
+        happening. Reloading costs 5.6 s, which is why nothing calls this
+        unless the user asks for it — see FVUnloadModelAfter.
+
+        False when there was nothing loaded, or when a decode holds the gate:
+        unloading mid-transcription would take that dictation with it.
+        """
+        if self._model is None:
+            return False
+        if not self._gate.acquire(0.5):
+            logger.debug("not unloading — a decode is in progress")
+            return False
+        try:
+            with self._lock:
+                self._model = None
+                self.loaded_model = None
+                self.device = None
+                self.compute_type = None
+                self._last_decode_at = None
+            logger.info("model unloaded to free video memory")
+        finally:
+            self._gate.release()
+        return True
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._model is not None
+
     def reset_session_language(self) -> None:
         """Forget the detected language so the next dictation detects afresh —
         the user may well switch languages between one and the next."""
