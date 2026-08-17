@@ -300,3 +300,37 @@ is garbled enough that a rewrite can only help.
   callback is too slow; this one only enqueues, and reinstalls itself if it
   ever does run long. If dictation stops responding, that is the first thing
   to check in the log.
+
+### Per-application rules
+
+Dictating a shell command and dictating a chat message want opposite things.
+Cleanup fixing punctuation is right for the message and wrong for
+`git rebase -i HEAD~3`, which it will happily capitalise into something that
+does not run.
+
+Add overrides to `config.json` (the tray opens the folder), keyed by
+executable name:
+
+```json
+"FVAppProfiles": {
+  "WindowsTerminal.exe": { "FVCleanupEnabled": false },
+  "Telegram.exe": { "FVVoiceCommands": true }
+}
+```
+
+Only per-dictation behaviour can be overridden — `FVCleanupEnabled`,
+`FVSmartFix`, `FVVoiceCommands`, `FVStreaming`, `FVPasteViaClipboard`,
+`FVMiniPrompt`. Not hosts, paths or the hotkey: those are properties of the
+installation, not of whichever window happens to be in front.
+
+### Correcting a dictation
+
+Double-click a transcript in History to fix it. Enter saves, Escape abandons,
+Shift+Enter adds a line break. The original speech is kept, so a bad edit is
+always recoverable.
+
+A correction is also the one moment the app knows for certain that a word was
+misheard **and** what the right word was, because you just typed it — so names
+and jargon you introduce are added to the dictionary and bias the next decode.
+Ordinary word swaps are not: only words of four characters or more, in Latin
+script or capitalised mid-sentence, and never more than three from one edit.

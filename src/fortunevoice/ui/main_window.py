@@ -326,6 +326,51 @@ class MainWindow:
         for widget in (card.canvas, card.body, top, body):
             widget.bind("<Button-1>", lambda _e, r=record, c=card: self._copy_record(r, c))
             widget.configure(cursor="hand2")
+        # Double-click to correct a transcript. On the text itself, not the
+        # whole card: a single click still copies, and the two must not fight
+        # over the same pixels for the row's main action.
+        body.bind("<Double-Button-1>",
+                  lambda _e, r=record, c=card, w=body: self._edit_record(r, c, w))
+
+    def _edit_record(self, record, card, label) -> str:
+        """Turn the card's text into an editable field.
+
+        The transcript is the vault's copy of what was said, and a misheard
+        word made it wrong for good — the history, the search and anything
+        retyped from it all carried the mistake forever.
+        """
+        import tkinter as tk
+
+        label.pack_forget()
+        box = tk.Text(card.body, font=theme.font(10), bg=theme.CARD_HI,
+                      fg=theme.TEXT, insertbackground=theme.ACCENT,
+                      relief="flat", bd=0, highlightthickness=0, wrap="word",
+                      height=max(2, min(10, len(record.transcript) // 60 + 1)))
+        box.insert("1.0", record.transcript)
+        box.pack(fill="x")
+        box.focus_set()
+
+        def finish(save: bool) -> str:
+            text = box.get("1.0", "end-1c")
+            box.destroy()
+            label.pack(fill="x")
+            if save and self._store.edit(record, text):
+                # The one moment the app knows for certain that a word was
+                # misheard AND what the right one was — the user just typed it.
+                learned = dictionary.learn_from_correction(record.transcript, text)
+                if learned:
+                    logger.info("learned from a correction: %s", ", ".join(learned))
+                self._refresh_history()
+            return "break"
+
+        # Enter saves, Shift+Enter makes a line break, Escape abandons. A
+        # dictation is usually one line, so Enter being "save" is the common
+        # case; the multi-line ones still need a way to add a break.
+        box.bind("<Return>", lambda _e: finish(True))
+        box.bind("<Shift-Return>", lambda _e: None)
+        box.bind("<Escape>", lambda _e: finish(False))
+        box.bind("<FocusOut>", lambda _e: finish(True))
+        return "break"
 
     def _copy_record(self, record, card) -> None:
         import tkinter as tk

@@ -43,3 +43,74 @@ def set_terms(values: list[str]) -> None:
 def prompt_string() -> str:
     joined = ", ".join(terms())
     return joined[:MAX_PROMPT_CHARS]
+
+
+# ── learning from corrections ────────────────────────────────────────────
+
+# A term has to clear this to be worth biasing the decoder towards. Short
+# words are function words and typos; the prompt window is small and every
+# token in it is decoded on every 30 s chunk, so junk here costs accuracy
+# everywhere.
+MIN_TERM_CHARS = 4
+# Never propose more than this from one edit. A user who rewrote a sentence
+# wholesale is not teaching us vocabulary, and taking twelve words from that
+# would poison the prompt.
+MAX_PER_EDIT = 3
+
+
+def _words(text: str) -> list[str]:
+    out: list[str] = []
+    current: list[str] = []
+    for ch in text:
+        if ch.isalnum() or ch in "-_":
+            current.append(ch)
+        elif current:
+            out.append("".join(current))
+            current = []
+    if current:
+        out.append("".join(current))
+    return out
+
+
+def _looks_like_a_term(word: str, sentence_start: bool) -> bool:
+    """Is this a name or a piece of jargon, rather than an ordinary word?
+
+    Two signals, both cheap and both specific to the thing being fixed:
+    a capital letter away from the start of a sentence, and Latin letters —
+    which in a Russian dictation is by definition a foreign name or a product.
+    """
+    if len(word) < MIN_TERM_CHARS:
+        return False
+    if any("a" <= ch.lower() <= "z" for ch in word):
+        return True
+    return word[:1].isupper() and not sentence_start
+
+
+def learn_from_correction(before: str, after: str) -> list[str]:
+    """Terms the user introduced by correcting a transcript.
+
+    A correction is the one place the app knows for certain that speech
+    recognition got a word wrong AND what the right word was — the user just
+    typed it. Feeding those back as vocabulary is what stops the same name
+    being misheard every single time.
+
+    Returns what was added, so a caller can say so.
+    """
+    heard = {word.lower() for word in _words(before)}
+    known = {term.lower() for term in terms()}
+
+    found: list[str] = []
+    starts_sentence = True
+    for word in _words(after):
+        if (word.lower() not in heard and word.lower() not in known
+                and _looks_like_a_term(word, starts_sentence)
+                and word not in found):
+            found.append(word)
+        # Crude, and right often enough: the word after a full stop is
+        # capitalised for grammar, not because it is a name.
+        starts_sentence = False
+
+    if not found or len(found) > MAX_PER_EDIT:
+        return []
+    set_terms([*terms(), *found])
+    return found

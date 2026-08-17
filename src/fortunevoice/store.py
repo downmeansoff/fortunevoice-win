@@ -11,7 +11,7 @@ import json
 import struct
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -107,6 +107,34 @@ class DictationStore:
                 if (existing.date == record.date
                         and existing.transcript == record.transcript):
                     del records[position]
+                    self._write(records)
+                    return True
+        return False
+
+    def edit(self, record: "DictationRecord", transcript: str) -> bool:
+        """Replace one dictation's text, keeping everything else about it.
+
+        Matched the way `remove` matches, and for the same reason: the caller
+        holds a row out of a filtered, reversed copy.
+
+        `raw` is left alone, and filled in from the old text when it was empty.
+        It is the exact spoken words, and it is what makes a bad edit — by the
+        cleanup model or by the user — recoverable; an edit that overwrote it
+        would be the one edit that cannot be undone.
+        """
+        transcript = transcript.strip()
+        if not transcript or transcript == record.transcript:
+            return False
+        with self._lock:
+            records = self.all()
+            for position, existing in enumerate(records):
+                if (existing.date == record.date
+                        and existing.transcript == record.transcript):
+                    records[position] = replace(
+                        existing, transcript=transcript,
+                        words=len(transcript.split()),
+                        raw=existing.raw or existing.transcript,
+                    )
                     self._write(records)
                     return True
         return False
