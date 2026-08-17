@@ -275,7 +275,7 @@ def foreground_app_name() -> str | None:
 ERROR_ALREADY_EXISTS = 183
 # Per-user, not global: two different Windows accounts on one machine each get
 # their own tray app, their own hotkey and their own history, which is right.
-_MUTEX_NAME = "Local\FortuneVoice.SingleInstance"
+_MUTEX_NAME = r"Local\FortuneVoice.SingleInstance"
 _instance_mutex = None
 
 
