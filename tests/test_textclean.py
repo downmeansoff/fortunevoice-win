@@ -92,3 +92,65 @@ def test_the_phrase_net_stops_at_speech_volume():
     """Above the band, only the audio decides — no phrase is ever blocked at a
     volume a person actually reaches."""
     assert is_hallucinated_silence("Спасибо за просмотр", 0.05) is False
+
+
+# ── spoken line breaks ───────────────────────────────────────────────────
+#
+# Enter sends the message in most chat applications, so a dictated multi-line
+# note cannot be fixed up by hand afterwards. The risk is the mirror image: a
+# phrase eaten when the user meant to say it.
+
+from fortunevoice.textclean import apply_voice_commands  # noqa: E402
+
+
+def test_a_command_sentence_becomes_a_line_break():
+    assert apply_voice_commands("Привет. Новая строка. Как дела?") == "Привет.\nКак дела?"
+
+
+def test_a_paragraph_command_gives_two_breaks():
+    assert apply_voice_commands(
+        "Первый пункт. Новый абзац. Второй пункт.") == "Первый пункт.\n\nВторой пункт."
+
+
+def test_the_phrase_inside_a_sentence_is_left_alone():
+    """"Я начал с новой строки" is a sentence ABOUT a line break. Eating it
+    would leave the user no way to say the words at all."""
+    said = "Я начал с новой строки, потому что так удобнее."
+    assert apply_voice_commands(said) == said
+
+
+def test_case_and_punctuation_do_not_matter():
+    assert apply_voice_commands("Слушай. новая строка. записал?") == "Слушай.\nзаписал?"
+    assert apply_voice_commands("Раз. НОВАЯ СТРОКА! Два.") == "Раз.\nДва."
+
+
+def test_no_indent_is_left_after_the_break():
+    """The space that separated the two sentences would otherwise sit after
+    the newline and read as an indent nobody asked for."""
+    assert "\n " not in apply_voice_commands("Раз. Новая строка. Два.")
+
+
+def test_a_command_at_the_edges_leaves_no_dangling_break():
+    assert apply_voice_commands("Новая строка. Текст.") == "Текст."
+    assert apply_voice_commands("Текст. Новая строка.") == "Текст."
+
+
+def test_a_dictation_that_is_only_a_command_still_produces_the_break():
+    """They asked for a line break and nothing else. Returning empty would
+    make the dictation look like it failed."""
+    assert apply_voice_commands("Новая строка") == "\n"
+
+
+def test_ordinary_text_is_untouched():
+    for said in ("Просто обычный текст без команд.",
+                 "Переносы строк в этом файле сломаны.",
+                 "Let me know if the new line item is approved."):
+        assert apply_voice_commands(said) == said
+
+
+def test_english_commands_work_too():
+    assert apply_voice_commands("Hello. New line. World.") == "Hello.\nWorld."
+
+
+def test_empty_input():
+    assert apply_voice_commands("") == ""

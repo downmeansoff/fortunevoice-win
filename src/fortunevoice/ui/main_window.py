@@ -650,7 +650,11 @@ class MainWindow:
                          lambda: config.get_str("FVOllamaKeepAlive"),
                          lambda v: config.set("FVOllamaKeepAlive", v)).pack()
         self._switch_row(card.body, "wand", TINT_GREEN, t("settings.smartfix"),
-                         t("settings.smartfix_hint"), "FVSmartFix", last=True)
+                         t("settings.smartfix_hint"), "FVSmartFix")
+        self._switch_row(card.body, "keyboard", TINT_BLUE,
+                         t("settings.voice_commands"),
+                         t("settings.voice_commands_hint"), "FVVoiceCommands",
+                         last=True)
         self._ollama_status = theme.label(body, t("ollama.checking"), size=8,
                                           colour=theme.TEXT_FAINT)
         self._ollama_status.pack(anchor="w", pady=(8, 0))

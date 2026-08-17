@@ -213,6 +213,11 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.keep_alive_5m": {"en": "5 minutes", "ru": "5 минут"},
     "settings.keep_alive_1h": {"en": "1 hour", "ru": "1 час"},
     "settings.keep_alive_always": {"en": "Always", "ru": "Всегда"},
+    "settings.voice_commands": {"en": "Line breaks by voice",
+                                "ru": "Переносы строк голосом"},
+    "settings.voice_commands_hint": {
+        "en": "say «new line» or «new paragraph» as a sentence of its own",
+        "ru": "скажите «новая строка» или «новый абзац» отдельной фразой"},
     "settings.smartfix": {"en": "Auto-fix garbled words",
                           "ru": "Чинить искажённые слова"},
     "settings.smartfix_hint": {"en": "only on low-confidence transcripts",
