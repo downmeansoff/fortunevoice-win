@@ -65,6 +65,10 @@ DEFAULTS: dict[str, Any] = {
     # check and the user silently got no cleanup at all. Small is not free.
     "FVOllamaModel": "qwen2.5:3b",
     "FVOllamaHost": "http://localhost:11434",
+    # Per-application overrides, keyed by executable name. Dictating a shell
+    # command and dictating a chat message want opposite things — see
+    # profiles.py, which also lists what may be overridden.
+    "FVAppProfiles": {},
     # Start Ollama when cleanup needs it and nothing is listening. Its Windows
     # app does not stay up, and when it is down cleanup silently stops
     # happening — the dictation still types, just as raw Whisper text, which

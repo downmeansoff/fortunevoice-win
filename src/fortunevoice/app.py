@@ -26,7 +26,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import config, dictionary, injector, metrics, paths, sound, winapi
+from . import config, dictionary, injector, metrics, paths, profiles, sound, winapi
 from .audio import AudioError, AudioRecorder, max_window_rms, prewarm as audio_prewarm
 from .cleaner import OllamaCleaner, keep_alive_seconds
 from .hotkey import HotkeyListener, parse as parse_hotkey
@@ -827,8 +827,12 @@ class App:
         a cold Ollama load stalling this for ~16 s — raw Whisper text NOW beats
         perfect text later, so past the deadline we type raw and let the LLM
         finish unused."""
-        cleanup_enabled = config.get_bool("FVCleanupEnabled")
-        smart_fix = config.get_bool("FVSmartFix")
+        # Whatever is in front decides. Cleanup punctuating a chat message is
+        # right; cleanup punctuating `git rebase -i HEAD~3` into a sentence is
+        # not, and a terminal is where that lands.
+        target = winapi.foreground_app_name()
+        cleanup_enabled = profiles.get_bool("FVCleanupEnabled", target)
+        smart_fix = profiles.get_bool("FVSmartFix", target)
         low_confidence = result.avg_logprob < self.LOW_CONFIDENCE_LOGPROB
         if not (cleanup_enabled or (low_confidence and smart_fix)):
             return raw_text, 0.0, None
@@ -900,7 +904,7 @@ class App:
             return
         # Before anything else sees the text, so History, the result panel and
         # the typed output all agree on what was said.
-        if config.get_bool("FVVoiceCommands"):
+        if profiles.get_bool("FVVoiceCommands", winapi.foreground_app_name()):
             text = apply_voice_commands(text)
             if not text:
                 return
