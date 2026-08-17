@@ -54,13 +54,30 @@ def now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _ends_with_a_newline(path) -> bool:
+    """Did the last write finish?
+
+    A machine losing power mid-append leaves a line without its terminator.
+    Appending straight onto that glues the next dictation's metric to the
+    broken one and loses them BOTH — the damage spreading one record past
+    where it happened. Costs one byte to check, not a read of the file.
+    """
+    try:
+        with path.open("rb") as handle:
+            handle.seek(-1, 2)  # SEEK_END
+            return handle.read(1) == b"\n"
+    except OSError:
+        return True  # missing or empty — nothing to repair
+
+
 def record(metric: DictationMetric) -> None:
     line = json.dumps(asdict(metric), ensure_ascii=False)
     path = paths.metrics_file()
     with _lock:
         try:
+            prefix = "" if _ends_with_a_newline(path) else "\n"
             with path.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
+                handle.write(prefix + line + "\n")
         except OSError as exc:
             logger.warning("could not write metrics: %s", exc)
             return
