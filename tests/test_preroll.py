@@ -135,3 +135,24 @@ def test_arming_is_ignored_unless_idle(app):
     app._set_state(State.PROCESSING)
     app._on_arm()
     assert app.recorder.starts == 0
+
+
+def test_an_arm_that_never_becomes_a_dictation_closes_the_microphone(app, monkeypatch):
+    """The microphone is opened at key-down and handed to `_start_dictation`
+    300 ms later. If anything moved the app out of IDLE in between — another
+    dictation still finishing, a model reload — that function returns early,
+    and the arm it never consumed used to leave the microphone recording with
+    nothing left to stop it.
+    """
+    monkeypatch.setattr(app.transcriber, "warmup", lambda: None)
+    monkeypatch.setattr(app.transcriber, "reset_session_language", lambda: None)
+
+    app._on_arm()
+    assert app.recorder.is_recording
+
+    app._set_state(State.PROCESSING)   # busy by the time the hold completes
+    app._start_dictation()
+
+    assert not app._armed
+    assert app.recorder.stops == 1, "the microphone must not be left open"
+    assert not app.recorder.is_recording

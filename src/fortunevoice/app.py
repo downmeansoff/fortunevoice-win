@@ -466,9 +466,12 @@ class App:
         if not self._armed:
             return
         self._armed = 0.0
-        # Only when the dictation never started: in toggle mode the key-up
-        # arrives while a recording is legitimately running.
-        if self.state == State.IDLE:
+        # Anything except an actual dictation in progress. Guarding on IDLE
+        # instead was not enough: the leak this closes happens precisely when
+        # the app is busy, so the one state that must be spared is RECORDING —
+        # in toggle mode the key-up arrives while a recording is legitimately
+        # running, and stopping it there cuts the user off mid-sentence.
+        if self.state != State.RECORDING:
             self.recorder.stop()
 
     def _on_interrupted(self) -> None:
@@ -509,6 +512,12 @@ class App:
         state = self.state
         logger.info("hotkey DOWN (state = %s)", state.value)
         if state != State.IDLE:
+            # An arm that never became a dictation has to be undone here, or
+            # the microphone opened at key-down stays open with nothing left
+            # to close it. Reachable whenever something moved the app out of
+            # IDLE during the 300 ms hold — a previous dictation still being
+            # delivered, a model reload.
+            self._on_disarm()
             return
         # Already open from the pre-roll, and holding the audio from before
         # the hold threshold elapsed — keep it, and date the recording from
