@@ -504,7 +504,13 @@ class App:
             self._session.abort()
             self._session = None
         self.recorder.stop()
-        self.recovery.clear()
+        # Nothing to clear from recovery: audio is written there only after a
+        # decode fails, and a cancel happens before any decode. This called a
+        # `recovery.clear()` that does not exist, so every Esc raised —
+        # skipping the sound and the pill below and leaving the user with no
+        # sign at all that the cancel had worked. Clearing would also have been
+        # wrong: the folder holds audio from EARLIER failed dictations that the
+        # user can still recover from the tray.
         sound.play("cancel")
         pill = self._pill()
         if pill is not None:
