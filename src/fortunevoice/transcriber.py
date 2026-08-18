@@ -196,6 +196,12 @@ class Transcriber:
         self._warmup_thread: threading.Thread | None = None
         self._warmup_cancel = threading.Event()
         self._warmup_in_flight = False
+        # Serialises load(). Two loaders would build two WhisperModels on the
+        # same card — 2 GB each here — and the loser's would be dropped on the
+        # floor after paying for it. Reachable now that a dictation reloads a
+        # model the idle unload dropped: the background reload at key-down and
+        # the pipeline's own load at key-up are two different threads.
+        self._load_lock = threading.Lock()
         # Language auto-detect settled on for the dictation in progress.
         self._session_language: str | None = None
 
@@ -203,7 +209,17 @@ class Transcriber:
 
     def load(self) -> None:
         """Load FVModel, degrading through backends and then to the fallback
-        model. Raises only when nothing at all could be loaded."""
+        model. Raises only when nothing at all could be loaded.
+
+        Serialised, and a no-op when another thread already finished: paying
+        twice for a 2 GB model on a 6 GB card is how both end up not fitting.
+        """
+        with self._load_lock:
+            if self._model is not None:
+                return
+            self._load_locked()
+
+    def _load_locked(self) -> None:
         from . import paths
 
         _add_cuda_dll_directories()

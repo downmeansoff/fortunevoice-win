@@ -132,6 +132,15 @@ class MainWindow:
         fires that event dozens of times a second, and each one would rewrite
         config.json.
         """
+        # First, because it holds a system-wide key-swallowing hook and has
+        # paused the app's hotkey. Leaving here with it armed took the keyboard
+        # with us.
+        recorder = getattr(self, "_recorder", None)
+        if recorder is not None:
+            try:
+                recorder.cancel()
+            except Exception:  # noqa: BLE001 - never block closing over this
+                logger.debug("could not stop the shortcut recorder", exc_info=True)
         try:
             if self._window.state() == "normal":
                 config.set("FVWindowGeometry", self._window.winfo_geometry())
@@ -563,8 +572,8 @@ class MainWindow:
         theme.label(card.body, t("insights.speed"), size=10, weight="bold", bg=theme.CARD).pack(
             anchor="w", pady=(0, 12))
         for caption, value in [
-            (t("insights.median_total"), f"{median([r['total_ms'] for r in rows]):.0f} ms"),
-            (t("insights.median_decode"), f"{median([r['stt_ms'] for r in rows]):.0f} ms"),
+            (t("insights.median_total"), f"{median([r['total_ms'] for r in rows]):.0f} {t('unit.ms')}"),
+            (t("insights.median_decode"), f"{median([r['stt_ms'] for r in rows]):.0f} {t('unit.ms')}"),
             (t("insights.typed_share"), f"{len(typed) * 100 // len(rows)}%"),
         ]:
             row = tk.Frame(card.body, bg=theme.CARD)
@@ -702,9 +711,18 @@ class MainWindow:
                          last=True)
         self._ollama_status = theme.label(body, t("ollama.checking"), size=8,
                                           colour=theme.TEXT_FAINT)
-        self._ollama_status.pack(anchor="w", pady=(8, 0))
-        theme.label(body, t("settings.cleanup_note"), size=8,
-                    colour=theme.TEXT_FAINT).pack(anchor="w", pady=(2, 0))
+        self._ollama_status.pack(anchor="w", fill="x", pady=(8, 0))
+        note = theme.label(body, t("settings.cleanup_note"), size=8,
+                           colour=theme.TEXT_FAINT)
+        note.pack(anchor="w", fill="x", pady=(2, 0))
+        # Both of these run past the right edge and are cut mid-word at the
+        # window's own minimum size — the note ended at "рядом с обр". Same
+        # binding the Dictionary caption uses; add="+" because a plain bind
+        # would replace the scroll-area's own <Configure> handler.
+        for label in (self._ollama_status, note):
+            body.bind("<Configure>",
+                      lambda e, w=label: w.configure(wraplength=max(280, e.width - 8)),
+                      add="+")
 
         # GENERAL
         widgets.section_title(body, t("settings.group_general")).pack(anchor="w", pady=(20, 8))
@@ -723,7 +741,7 @@ class MainWindow:
         row = widgets.SettingRow(card.body, "chip", TINT_TEAL,
                                  t("settings.whisper_model"),
                                  t("settings.whisper_model_hint"))
-        widgets.Dropdown(row.control, _WHISPER_MODELS,
+        widgets.Dropdown(row.control, _whisper_models(),
                          lambda: config.get_str("FVModel"), self._set_whisper_model).pack()
         self._switch_row(card.body, "clipboard", TINT_GREY, t("settings.clipboard"),
                          t("settings.clipboard_hint"), "FVPasteViaClipboard")
@@ -889,14 +907,18 @@ class MainWindow:
 
 # Whisper sizes faster-whisper can fetch by name, smallest first so the list
 # reads as a speed/accuracy dial.
-_WHISPER_MODELS = [
-    ("tiny", "tiny - fastest, roughest"),
-    ("base", "base"),
-    ("small", "small"),
-    ("medium", "medium"),
-    ("large-v3-turbo", "large-v3-turbo - recommended"),
-    ("large-v3", "large-v3 - most accurate, slowest"),
-]
+def _whisper_models() -> list[tuple[str, str]]:
+    """Built at paint time, not at import: the notes beside the names are
+    translated, and a module-level list would freeze whatever language was
+    active when the module first loaded."""
+    return [
+        ("tiny", f"tiny — {t('model.fastest')}"),
+        ("base", "base"),
+        ("small", "small"),
+        ("medium", "medium"),
+        ("large-v3-turbo", f"large-v3-turbo — {t('model.recommended')}"),
+        ("large-v3", f"large-v3 — {t('model.most_accurate')}"),
+    ]
 
 
 def _microphones() -> list[tuple[str, str]]:

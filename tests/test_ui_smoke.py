@@ -208,3 +208,30 @@ def test_the_key_binding_is_scoped_and_removed(root):
     widget._end()
     assert widget._binding is None, "and ending must remove it"
     frame.destroy()
+
+
+@pytest.mark.ui
+def test_closing_the_window_stops_a_shortcut_recording(root):
+    """The recorder holds a system-wide key-swallowing hook and has paused the
+    app's hotkey. Closing the window while the chip was armed left both that
+    way: the next keystroke anywhere vanished and dictation was dead, with
+    nothing on screen to explain it."""
+    from fortunevoice.ui import main_window as mw
+
+    stopped = []
+
+    class FakeCapture:
+        def stop(self):
+            stopped.append(1)
+
+    window = mw.MainWindow()
+    window._build()
+    window._select("Settings")
+    recorder = window._recorder
+    recorder._listening = True
+    recorder._capture = FakeCapture()
+
+    window._on_close()
+
+    assert stopped == [1], "the global hook must come down with the window"
+    assert recorder._listening is False

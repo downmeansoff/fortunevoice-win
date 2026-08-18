@@ -138,6 +138,15 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "insights.where": {"en": "Where you dictate", "ru": "Куда вы диктуете"},
     "insights.none_yet": {"en": "No dictations yet.", "ru": "Диктовок пока нет."},
     "insights.speed": {"en": "Speed", "ru": "Скорость"},
+    # Units belong in the catalogue like everything else: a Russian window
+    # reading "815 ms" is the one place the translation visibly stops.
+    "unit.ms": {"en": "ms", "ru": "мс"},
+    # The Whisper model list. The names are the models' own and stay as
+    # they are; only what we say ABOUT them is translated.
+    "model.fastest": {"en": "fastest, roughest", "ru": "быстрее всех, грубее всех"},
+    "model.recommended": {"en": "recommended", "ru": "рекомендуется"},
+    "model.most_accurate": {"en": "most accurate, slowest",
+                            "ru": "точнее всех, медленнее всех"},
     "insights.median_total": {"en": "Median key-up to typed",
                               "ru": "Медиана: отпустил — напечаталось"},
     "insights.median_decode": {"en": "Median decode", "ru": "Медиана распознавания"},
@@ -272,6 +281,16 @@ CATALOGUE: dict[str, dict[str, str]] = {
 
     # ── notifications ───────────────────────────────────────────────────
     "notify.bad_hotkey": {"en": "Bad hotkey", "ru": "Неверное сочетание клавиш"},
+    "notify.stuck": {"en": "That dictation got stuck",
+                     "ru": "Диктовка застряла"},
+    "notify.stuck_body": {
+        "en": "The audio was saved — use “Recover failed dictation” in the tray.",
+        "ru": "Звук сохранён — «Восстановить неудавшуюся диктовку» в трее."},
+    "notify.history_failed": {"en": "This dictation was not saved",
+                              "ru": "Эта диктовка не сохранилась"},
+    "notify.history_failed_body": {
+        "en": "The text was typed, but History could not be written — check the disk.",
+        "ru": "Текст напечатан, но записать историю не удалось — проверьте диск."},
     "notify.ui_failed": {"en": "A window failed to open",
                          "ru": "Окно не открылось"},
     "notify.no_cleanup": {"en": "Dictation works, cleanup does not",

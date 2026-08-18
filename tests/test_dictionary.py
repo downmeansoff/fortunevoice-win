@@ -76,3 +76,40 @@ def test_a_missing_or_broken_file_is_not_a_crash():
     assert dictionary.terms() == []
     paths.dictionary_file().write_text('{"a": 1}', encoding="utf-8")
     assert dictionary.terms() == []
+
+
+# ── learning from a correction ───────────────────────────────────────────
+
+
+def test_a_capitalised_word_opening_a_later_sentence_is_not_learned():
+    """`_words()` throws punctuation away, so the sentence-start flag was set
+    once and never again: every capitalised word after the first counted as
+    mid-sentence. An ordinary word opening the second sentence was learned as
+    vocabulary and then fed to Whisper as a prompt bias on every dictation —
+    the opposite of what the dictionary is for."""
+    dictionary.set_terms([])
+    learned = dictionary.learn_from_correction(
+        "я закончил дождь будет",
+        "Я закончил. Завтра будет дождь.",
+    )
+    assert learned == [], f"«Завтра» не термин, а выучено: {learned}"
+
+
+def test_a_real_name_mid_sentence_is_still_learned():
+    dictionary.set_terms([])
+    learned = dictionary.learn_from_correction(
+        "позвони ему завтра", "Позвони Андрею завтра.")
+    assert learned == ["Андрею"]
+
+
+def test_a_latin_term_is_learned_wherever_it_sits():
+    """Latin letters in a Russian dictation are a foreign name or a product by
+    definition, so those count even at the start of a sentence."""
+    dictionary.set_terms([])
+    assert dictionary.learn_from_correction(
+        "подними сервер", "Hetzner подними.") == ["Hetzner"]
+
+
+def test_nothing_is_learned_when_only_the_case_changed():
+    dictionary.set_terms([])
+    assert dictionary.learn_from_correction("привет мир", "Привет мир") == []

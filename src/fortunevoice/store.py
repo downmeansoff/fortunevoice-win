@@ -83,13 +83,18 @@ class DictationStore:
                 continue
         return out
 
-    def add(self, record: DictationRecord) -> None:
+    def add(self, record: DictationRecord) -> bool:
+        """False when the dictation could NOT be saved.
+
+        The caller has to know: the whole delivery order — vault first, then
+        the focused window — rests on this having worked.
+        """
         with self._lock:
             records = self.all()
             records.append(record)
             if len(records) > self.MAX_RECORDS:
                 records = records[-self.MAX_RECORDS :]
-            self._write(records)
+            return self._write(records)
 
     def remove(self, record: "DictationRecord") -> bool:
         """Delete one dictation, matched on timestamp and text.
@@ -107,8 +112,7 @@ class DictationStore:
                 if (existing.date == record.date
                         and existing.transcript == record.transcript):
                     del records[position]
-                    self._write(records)
-                    return True
+                    return self._write(records)
         return False
 
     def edit(self, record: "DictationRecord", transcript: str) -> bool:
@@ -135,8 +139,7 @@ class DictationStore:
                         words=len(transcript.split()),
                         raw=existing.raw or existing.transcript,
                     )
-                    self._write(records)
-                    return True
+                    return self._write(records)
         return False
 
     def clear(self) -> None:
@@ -183,7 +186,14 @@ class DictationStore:
         wpm = (words / (seconds / 60)) if seconds > 0 else 0.0
         return DictationStats(count=len(records), words=words, seconds=seconds, wpm=wpm)
 
-    def _write(self, records: list[DictationRecord]) -> None:
+    def _write(self, records: list[DictationRecord]) -> bool:
+        """False when the history could not be written.
+
+        It used to log and return as if it had worked, so `add()` could not
+        fail and no caller checked. A full disk or a file held open by a
+        backup tool meant dictations silently stopped being kept — the exact
+        failure the vault-first ordering exists to prevent, failing invisibly.
+        """
         tmp = self._path.with_suffix(".json.tmp")
         try:
             tmp.write_text(
@@ -193,6 +203,8 @@ class DictationStore:
             tmp.replace(self._path)
         except OSError as exc:
             logger.error("could not write history: %s", exc)
+            return False
+        return True
 
 
 class RecoveryStore:

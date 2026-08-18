@@ -484,6 +484,14 @@ class ShortcutRecorder:
         self.paint()
         return "break"
 
+    def cancel(self) -> None:
+        """Stop listening, from outside. Closing the window while the chip was
+        armed used to leave the global hook installed: it swallows keys, so the
+        next keystroke anywhere vanished and the app's own hotkey stayed paused
+        — the keyboard half-dead with nothing on screen to explain it."""
+        if self._listening:
+            self._end()
+
     def _end(self) -> None:
         self._listening = False
         if self._capture is not None:

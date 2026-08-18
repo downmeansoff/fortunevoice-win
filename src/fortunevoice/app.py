@@ -156,6 +156,11 @@ class App:
         self._reported_ui_errors: set[str] = set()
         # When the microphone was opened for the pre-roll, 0.0 if it was not.
         self._armed = 0.0
+        # Counts dictations. A pipeline captures it at the start and only
+        # touches shared state afterwards while it is still the current one —
+        # checking the state alone is not enough, because a *second* dictation
+        # can already be in PROCESSING when the first pipeline finishes.
+        self._generation = 0
         # Set on stop(), so the idle watcher ends with the app.
         self._stopping = threading.Event()
         # Last time a dictation finished, for FVUnloadModelAfter.
@@ -396,20 +401,32 @@ class App:
     def hotkey_label(self) -> str:
         return self._listener.spec.label if self._listener else config.get_str("FVHotkey")
 
-    def _load_model(self) -> None:
-        self._set_state(State.LOADING)
+    def _load_model(self, announce: bool = True) -> None:
+        """Load the model, optionally driving the app's state while it happens.
+
+        `announce=False` for a load running *underneath* something else — the
+        reload kicked off at key-down when the idle unload had dropped the
+        model. That one announced LOADING and then IDLE while the user was
+        still speaking, and `_finish_dictation` returns early unless the state
+        is RECORDING, so the whole dictation was thrown away at key-up.
+        """
+        if announce:
+            self._set_state(State.LOADING)
         try:
             self.transcriber.load()
         except TranscriberError as exc:
             logger.error("model load failed: %s", exc)
-            self._set_state(State.ERROR, "Model failed to load")
-            self._notify("FortuneVoice couldn't load the model", str(exc).split("\n")[0])
+            if announce:
+                self._set_state(State.ERROR, "Model failed to load")
+            self._notify("FortuneVoice couldn't load the model",
+                         str(exc).split(chr(10))[0])
             return
-        self._set_state(State.IDLE)
+        if announce:
+            self._set_state(State.IDLE)
 
     def reload_model(self) -> None:
-        threading.Thread(target=self._load_model, name="model-reload", daemon=True).start()
-
+            threading.Thread(target=lambda: self._load_model(announce=False),
+                             name="model-reload", daemon=True).start()
     # ── controller ───────────────────────────────────────────────────────
 
     def _controller_loop(self) -> None:
@@ -419,14 +436,29 @@ class App:
                 return
             # A press that waited behind something slow is not a press the user
             # still means; acting on it would start a recording they abandoned.
-            if kind in ("press", "release") and time.monotonic() - stamp > 1.0:
-                logger.debug("dropping stale %s event", kind)
+            #
+            # Only a press. A release, a cancel and an interrupt are
+            # TERMINATORS: acting on one late is strictly better than not at
+            # all. Dropping a stale release left the app recording with the key
+            # already up — the pill saying "Listening", the microphone open —
+            # until the 300 s cap, and then it typed five minutes of room noise
+            # into whatever had focus by then. The controller can easily be
+            # busy for over a second inside _start_dictation: opening a
+            # Bluetooth microphone, or the cleanup warmup's 1 s probe of
+            # Ollama.
+            if kind == "press" and time.monotonic() - stamp > 1.0:
+                logger.debug("dropping stale press event")
                 continue
             try:
                 if kind == "press":
                     self._on_press()
                 elif kind == "release":
                     self._on_release()
+                elif kind == "autostop":
+                    # Its own event rather than "release": `_on_release` returns
+                    # early in toggle mode, so the silence stop and the hard cap
+                    # were both discarded and the microphone stayed open.
+                    self._stop_dictation()
                 elif kind == "arm":
                     self._on_arm()
                 elif kind == "disarm":
@@ -631,7 +663,7 @@ class App:
                 time.sleep(0.4)
                 now = time.monotonic()
                 if silence_stops and now - self._last_loud > self.SILENCE_STOP_SECONDS:
-                    self._events.put(("release", time.monotonic()))
+                    self._events.put(("autostop", time.monotonic()))
                     return
                 if winapi.key_is_down(winapi.VK_ESCAPE):
                     # Polled here rather than through a second keyboard hook:
@@ -642,7 +674,7 @@ class App:
                     return
                 if now - self._recording_started > self.MAX_RECORDING_SECONDS:
                     logger.warning("recording hit the %.0fs cap", self.MAX_RECORDING_SECONDS)
-                    self._events.put(("release", time.monotonic()))
+                    self._events.put(("autostop", time.monotonic()))
                     return
 
         self._auto_stop = threading.Thread(target=watch, name="auto-stop", daemon=True)
@@ -665,7 +697,7 @@ class App:
             self._no_signal_shown = True
             self._set_state(State.RECORDING, "no signal from the microphone")
 
-    def _arm_watchdog(self, seconds: float) -> None:
+    def _arm_watchdog(self, seconds: float, samples=None) -> None:
         """Last-resort guard on PROCESSING.
 
         The hotkey is gated on the app being idle, so any pipeline step that
@@ -680,6 +712,13 @@ class App:
             if self.state != State.PROCESSING:
                 return
             logger.error("processing never finished after %.0f s — forcing idle", seconds)
+            # The pipeline wedged before it could deliver, so the words exist
+            # nowhere yet. Keeping the audio is the difference between "retry
+            # it from the tray" and the dictation being gone; the tone alone
+            # left the user to guess what had happened.
+            if samples is not None and samples.size:
+                self.recovery.save(samples)
+                self._notify(t("notify.stuck"), t("notify.stuck_body"))
             sound.play("error")
             self._set_state(State.IDLE)
 
@@ -706,16 +745,18 @@ class App:
             self._set_state(State.IDLE)
             return
 
+        self._generation += 1
         self._set_state(State.PROCESSING)
         # The watchdog must exceed the longest possible decode: a multi-minute
         # dictation can take longer than a flat 90 s. Scale it with audio length
         # so a legitimate long recording is never timed out and lost.
         decode_timeout = max(self.TRANSCRIBE_TIMEOUT, audio_seconds * 3)
-        self._arm_watchdog(decode_timeout + self.PROCESSING_WATCHDOG_SLACK)
+        self._arm_watchdog(decode_timeout + self.PROCESSING_WATCHDOG_SLACK, samples)
 
         threading.Thread(
             target=self._pipeline,
-            args=(samples, session, key_up, target_window, decode_timeout),
+            args=(samples, session, key_up, target_window, decode_timeout,
+                  self._generation),
             name="pipeline",
             daemon=True,
         ).start()
@@ -727,6 +768,7 @@ class App:
         key_up: float,
         target_window: int,
         decode_timeout: float,
+        generation: int = 0,
     ) -> None:
         started = time.monotonic()
         audio_seconds = samples.size / SAMPLE_RATE
@@ -831,7 +873,23 @@ class App:
                 )
             )
         finally:
-            self._cancel_watchdog()
+            self._finish_pipeline(generation)
+
+    def _finish_pipeline(self, generation: int = 0) -> None:
+        """Hand the state machine back — but only if this pipeline still owns it.
+
+        Forcing IDLE unconditionally killed the NEXT dictation: let go, start
+        talking again straight away, and the previous pipeline's cleanup landed
+        on a recording that had already begun. The state alone is not enough to
+        decide: a second dictation can already be in PROCESSING by the time a
+        wedged first one returns, and cancelling ITS watchdog would leave the
+        one guard that catches a stuck pipeline switched off.
+        """
+        if generation and generation != self._generation:
+            logger.debug("pipeline %d finished late, leaving state alone", generation)
+            return
+        self._cancel_watchdog()
+        if self.state == State.PROCESSING:
             self._set_state(State.IDLE)
 
     def _handle_empty(
@@ -968,13 +1026,20 @@ class App:
         # ── Vault: persist before any step that could fail. Keep the raw
         # transcript too when cleanup changed it, so the exact spoken words are
         # always recoverable even if the LLM mis-edited. ──
-        self.store.add(
+        saved = self.store.add(
             DictationRecord(
                 date=metrics.now(), words=word_count(text), duration=audio_seconds,
                 app=winapi.foreground_app_name(), transcript=text,
                 raw=None if raw == text else raw,
             )
         )
+        if not saved:
+            # The vault is the reason every other failure below is survivable.
+            # With it gone the text still gets typed — that is the user's
+            # dictation and they should have it — but they must be told that
+            # this one is not recoverable, rather than finding out later that
+            # History has been quietly empty for a week.
+            self._notify(t("notify.history_failed"), t("notify.history_failed_body"))
 
         total_ms = (time.monotonic() - key_up) * 1000
         if config.get_bool("FVDebugTimings"):
@@ -1086,6 +1151,11 @@ class App:
 
         def run() -> None:
             try:
+                # The idle unload may have dropped the model since. This is the
+                # last-resort path for words already lost once; failing it with
+                # a bare beep would lose them for good.
+                if not self.transcriber.is_loaded:
+                    self._load_model(announce=False)
                 timeout = max(self.TRANSCRIBE_TIMEOUT, samples.size / SAMPLE_RATE * 3)
                 result = run_with_timeout(
                     timeout, lambda: self.transcriber.transcribe(samples)

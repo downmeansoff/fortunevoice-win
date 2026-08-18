@@ -165,7 +165,7 @@ def paste_via_clipboard(text: str) -> bool:
     why it is no longer the default: that condition often does not hold, and
     the dictation is then left sitting in the user's clipboard."""
     previous = _clipboard_text()
-    if not _set_clipboard_text(text):
+    if not set_clipboard_text(text):
         return False
     sequence = user32.GetClipboardSequenceNumber()
 
@@ -187,7 +187,7 @@ def paste_via_clipboard(text: str) -> bool:
         if user32.GetClipboardSequenceNumber() != sequence:
             return  # someone else wrote to the clipboard; leave it alone
         if previous is not None:
-            _set_clipboard_text(previous)
+            set_clipboard_text(previous)
 
     import threading
 
