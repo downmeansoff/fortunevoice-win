@@ -232,6 +232,14 @@ class ChordCapture:
     whatever is underneath.
     """
 
+    # Nothing may leave this hook installed forever. It SWALLOWS keys, so a
+    # path that forgets to stop it eats the user's typing system-wide and
+    # leaves the app's own hotkey paused — the whole keyboard half-dead with
+    # no way to tell why. Closing the Settings window mid-recording did
+    # exactly that. Recording a chord takes a second; a minute is a generous
+    # ceiling that still guarantees the hook cannot outlive the session.
+    MAX_LISTENING_SECONDS = 60.0
+
     def __init__(self, on_chord: Callable[[str], None],
                  on_cancel: Callable[[], None] | None = None) -> None:
         self._on_chord = on_chord
@@ -248,6 +256,7 @@ class ChordCapture:
         self._held: set[int] = set()
         self._proc = _HOOKPROC(self._callback)
         self._stop = threading.Event()
+        self._deadline: threading.Timer | None = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -258,8 +267,29 @@ class ChordCapture:
         self._thread = threading.Thread(target=self._run, name="chord-capture",
                                         daemon=True)
         self._thread.start()
+        self._deadline = threading.Timer(self.MAX_LISTENING_SECONDS, self._expire)
+        self._deadline.daemon = True
+        self._deadline.start()
+
+    def _expire(self) -> None:
+        """Nobody stopped us. Give the keyboard back and say the recording was
+        abandoned, rather than eating keys for the rest of the session."""
+        if self._done:
+            return
+        logger.warning("chord capture timed out after %.0f s — releasing the keyboard",
+                       self.MAX_LISTENING_SECONDS)
+        self._done = True
+        if self._on_cancel:
+            try:
+                self._on_cancel()
+            except Exception:  # noqa: BLE001 - the hook must still come down
+                logger.exception("chord capture cancel callback failed")
+        self.stop()
 
     def stop(self) -> None:
+        if self._deadline is not None:
+            self._deadline.cancel()
+            self._deadline = None
         self._stop.set()
         if self._thread_id:
             user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
@@ -397,6 +427,8 @@ class HotkeyListener:
         # should be thrown away.
         self._on_arm = on_arm
         self._on_disarm = on_disarm
+        # Told when the hook could not be installed.
+        self.on_broken: Callable[[str], None] | None = None
         self._thread: threading.Thread | None = None
         self._thread_id = 0
         self._hook = None
@@ -435,6 +467,7 @@ class HotkeyListener:
     def _run(self) -> None:
         self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
         if not self._install():
+            self._report_broken()
             return
         # A 1 s timer wakes GetMessage so the loop can act on _reinstall; the
         # hook itself has nothing to do with timers.
@@ -449,8 +482,20 @@ class HotkeyListener:
                 logger.warning("reinstalling the keyboard hook after a slow callback")
                 self._uninstall()
                 if not self._install():
+                    self._report_broken()
                     break
         self._uninstall()
+
+    def _report_broken(self) -> None:
+        """Say the hotkey is dead. Windows refusing the hook, or refusing to
+        reinstall it after a slow callback, left the app looking alive while
+        the key did nothing — with the only trace in a log file."""
+        if self.on_broken is None:
+            return
+        try:
+            self.on_broken(self._spec.label)
+        except Exception:  # noqa: BLE001 - reporting must not raise here
+            logger.exception("could not report the broken hotkey")
 
     def _install(self) -> bool:
         self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)

@@ -157,3 +157,37 @@ def test_inject_follows_the_setting(monkeypatch):
     config.set("FVPasteViaClipboard", True)
     injector.inject("x")
     assert calls == ["typed", "pasted"]
+
+
+# ── the clipboard route actually running ─────────────────────────────────
+
+
+def test_pasting_via_the_clipboard_does_not_crash(monkeypatch):
+    """FVPasteViaClipboard is the escape hatch for apps that ignore synthesized
+    unicode — some Java and older Electron ones. It called `_set_clipboard_text`,
+    which does not exist: the name is `set_clipboard_text`. Every dictation
+    with the setting on raised NameError inside the pipeline and was filed as a
+    failed transcription, so the one workaround for those apps was itself
+    broken."""
+    sent: list = []
+    monkeypatch.setattr(injector, "_send", lambda events: sent.extend(events) or True)
+    monkeypatch.setattr(injector.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(injector.user32, "GetAsyncKeyState", lambda _vk: 0)
+
+    # What went to the clipboard is captured rather than read back: the
+    # restore thread races a read, and with sleep stubbed it wins.
+    wrote: list[str] = []
+    monkeypatch.setattr(injector, "set_clipboard_text",
+                        lambda text: wrote.append(text) or True)
+    monkeypatch.setattr(injector, "_clipboard_text", lambda: None)
+
+    assert injector.paste_via_clipboard("через буфер") is True
+    assert wrote[0] == "через буфер"
+    pressed = [e.ki.wVk for e in sent]
+    assert injector.VK_CONTROL in pressed and injector.VK_V in pressed
+
+
+def test_the_clipboard_route_reports_a_failure_rather_than_raising(monkeypatch):
+    monkeypatch.setattr(injector, "set_clipboard_text", lambda text: False)
+    monkeypatch.setattr(injector.time, "sleep", lambda _s: None)
+    assert injector.paste_via_clipboard("x") is False

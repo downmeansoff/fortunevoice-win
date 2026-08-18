@@ -151,8 +151,15 @@ def needs_cleanup(text: str) -> bool:
     """
     lower = text.lower()
     for marker in _CORRECTIONS:
-        if marker in lower:
-            return True
+        # Word-bounded on the left. "нет," matched as a bare substring fires on
+        # «интернет,», «конкурент,», «момент,» — every one of those bought a
+        # cleanup round-trip the text did not need.
+        position = lower.find(marker)
+        while position != -1:
+            before = lower[position - 1] if position else " "
+            if not (before.isalnum() or before in "-_"):
+                return True
+            position = lower.find(marker, position + 1)
 
     words = _letter_words(lower)
     if not words:

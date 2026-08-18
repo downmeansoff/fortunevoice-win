@@ -81,6 +81,9 @@ class Switch:
         self.canvas = tk.Canvas(parent, width=self.W, height=self.H,
                                 bg=parent["bg"], highlightthickness=0, bd=0, cursor="hand2")
         self.canvas.bind("<Button-1>", self._toggle)
+        # Tagged so the window can re-read every control from config when
+        # it is shown: the tray changes the same settings behind its back.
+        self.canvas._fv_paint = self.paint
         self.paint()
 
     def pack(self, **kwargs):
@@ -135,6 +138,9 @@ class Dropdown:
         self._fill(options)
         for widget in (self.frame, self.canvas):
             widget.bind("<Button-1>", self._post)
+        # Tagged so the window can re-read every control from config when
+        # it is shown: the tray changes the same settings behind its back.
+        self.canvas._fv_paint = self.paint
         self.paint()
 
     def _fill(self, options: list[tuple[str, str]]) -> None:
@@ -483,6 +489,14 @@ class ShortcutRecorder:
             self._on_listening(True)
         self.paint()
         return "break"
+
+    def cancel(self) -> None:
+        """Stop listening, from outside. Closing the window while the chip was
+        armed used to leave the global hook installed: it swallows keys, so the
+        next keystroke anywhere vanished and the app's own hotkey stayed paused
+        — the keyboard half-dead with nothing on screen to explain it."""
+        if self._listening:
+            self._end()
 
     def _end(self) -> None:
         self._listening = False

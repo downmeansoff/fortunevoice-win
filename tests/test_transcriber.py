@@ -442,3 +442,34 @@ def test_unloading_lets_the_next_load_start_clean(loaded, fake_whisper):
     engine.load()
     assert engine.is_loaded is True
     assert engine.device is not None
+
+
+def test_two_threads_loading_at_once_build_one_model(fake_whisper):
+    """A dictation reloads a model the idle unload dropped, from two places:
+    a background thread at key-down and the pipeline itself at key-up. Two
+    WhisperModels on the same card is 2 GB each here, and the loser's is
+    dropped on the floor after being paid for."""
+    import threading
+
+    engine = Transcriber()
+    barrier = threading.Barrier(4)
+
+    def race():
+        barrier.wait()
+        engine.load()
+
+    threads = [threading.Thread(target=race) for _ in range(3)]
+    for t in threads:
+        t.start()
+    barrier.wait()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert len(fake_whisper.built) == 1, "one model, however many callers"
+    assert engine.is_loaded is True
+
+
+def test_loading_an_already_loaded_model_is_a_no_op(fake_whisper, loaded):
+    engine, _ = loaded
+    engine.load()
+    assert fake_whisper.built == [], "nothing was built"

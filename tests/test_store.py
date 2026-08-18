@@ -167,3 +167,24 @@ def test_edit_leaves_the_neighbours_alone(tmp_path):
                                   duration=1.0, app=None, transcript=f"строка {i}"))
     store.edit(store.all()[1], "исправлено")
     assert [r.transcript for r in store.all()] == ["строка 0", "исправлено", "строка 2"]
+
+
+def test_a_failed_write_is_reported_rather_than_swallowed(monkeypatch, tmp_path):
+    """The vault-first promise is the app's central claim: the words are saved
+    before anything else can go wrong. `_write` logged an OSError and returned
+    as if it had worked, so a full disk or a locked file meant dictations
+    silently stopped being kept — the one failure the design exists to prevent,
+    failing invisibly."""
+    from fortunevoice.store import DictationRecord, DictationStore
+
+    store = DictationStore(tmp_path / "history.json")
+
+    def refuse(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(type(tmp_path), "write_text", refuse, raising=False)
+    monkeypatch.setattr("pathlib.Path.write_text", refuse)
+
+    assert store.add(DictationRecord(date="2026-08-18T12:00:00", words=1,
+                                     duration=1.0, app=None,
+                                     transcript="пропало")) is False

@@ -104,7 +104,20 @@ class Onboarding:
         chord.pack(fill="x")
         inner = tk.Frame(chord, bg=theme.CARD)
         inner.pack(fill="x", padx=theme.px(18), pady=theme.px(16))
-        hotkey = self._app.hotkey_label if self._app else config.get_str("FVHotkey")
+        # The pretty label either way. Without an app this fell back to the
+        # raw config string, so the first thing a new user reads — in the
+        # largest type on the screen — was "ctrl+alt+space" rather than the
+        # "Ctrl+Alt+Space" every other surface shows.
+        if self._app is not None:
+            hotkey = self._app.hotkey_label
+        else:
+            from ..hotkey import parse as parse_hotkey
+
+            raw = config.get_str("FVHotkey")
+            try:
+                hotkey = parse_hotkey(raw).label
+            except ValueError:
+                hotkey = raw
         theme.label(inner, t("setup.hold_to_talk"), size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
         theme.label(inner, hotkey, size=18, weight="bold", colour=theme.ACCENT).pack(anchor="w")
         theme.label(

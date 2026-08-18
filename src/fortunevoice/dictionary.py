@@ -72,6 +72,40 @@ def _words(text: str) -> list[str]:
     return out
 
 
+# What ends a sentence. The word after one of these is capitalised for
+# grammar, not because it is a name.
+_TERMINATORS = ".!?…" + chr(10)
+
+
+def _words_with_sentence_starts(text: str) -> list[tuple[str, bool]]:
+    """Each word, and whether it opens a sentence.
+
+    `_words()` discards punctuation, so a caller walking its output cannot
+    tell. The flag used to be set True once and never again, which made every
+    capitalised word after the first look mid-sentence — and an ordinary word
+    opening the second sentence was learned as vocabulary.
+    """
+    out: list[tuple[str, bool]] = []
+    current: list[str] = []
+    at_start = True
+    pending_start = True
+    for ch in text:
+        if ch.isalnum() or ch in "-_":
+            if not current:
+                at_start = pending_start
+                pending_start = False
+            current.append(ch)
+            continue
+        if current:
+            out.append(("".join(current), at_start))
+            current = []
+        if ch in _TERMINATORS:
+            pending_start = True
+    if current:
+        out.append(("".join(current), at_start))
+    return out
+
+
 def _looks_like_a_term(word: str, sentence_start: bool) -> bool:
     """Is this a name or a piece of jargon, rather than an ordinary word?
 
@@ -100,15 +134,11 @@ def learn_from_correction(before: str, after: str) -> list[str]:
     known = {term.lower() for term in terms()}
 
     found: list[str] = []
-    starts_sentence = True
-    for word in _words(after):
+    for word, starts_sentence in _words_with_sentence_starts(after):
         if (word.lower() not in heard and word.lower() not in known
                 and _looks_like_a_term(word, starts_sentence)
                 and word not in found):
             found.append(word)
-        # Crude, and right often enough: the word after a full stop is
-        # capitalised for grammar, not because it is a name.
-        starts_sentence = False
 
     if not found or len(found) > MAX_PER_EDIT:
         return []

@@ -88,6 +88,10 @@ class MainWindow:
         self._window.lift()
         self._window.focus_force()
         self._select(self._page)
+        # The tray can change the same settings this window shows, so the
+        # switches and chips would be painted with values that are no
+        # longer true — a toggle reading "off" for something that is on.
+        self._repaint_settings()
 
     def _build(self) -> None:
         import tkinter as tk
@@ -125,6 +129,34 @@ class MainWindow:
             builder = getattr(self, f"_build_{name.lower()}")
             builder(page)
 
+    def _repaint_settings(self) -> None:
+        """Re-read every Settings control from config.
+
+        The tray changes several of the same settings this window shows, and
+        the pages are built once and raised rather than rebuilt — so a switch
+        could sit there reading "off" for something the tray had turned on.
+
+        Walks the widget tree rather than keeping a register of controls: the
+        Switches and Dropdowns are Canvases whose `paint()` re-reads through
+        the getter it was constructed with, and a list of them would be one
+        more thing to remember to add to.
+        """
+        page = self._pages.get("Settings")
+        if page is None:
+            return
+
+        def repaint(widget) -> None:
+            painter = getattr(widget, "_fv_paint", None)
+            if painter is not None:
+                try:
+                    painter()
+                except Exception:  # noqa: BLE001 - one stale control is not fatal
+                    logger.debug("could not repaint a settings control", exc_info=True)
+            for child in widget.winfo_children():
+                repaint(child)
+
+        repaint(page)
+
     def _on_close(self) -> None:
         """Remember where the window was before hiding it.
 
@@ -132,6 +164,21 @@ class MainWindow:
         fires that event dozens of times a second, and each one would rewrite
         config.json.
         """
+        # First, because it holds a system-wide key-swallowing hook and has
+        # paused the app's hotkey. Leaving here with it armed took the keyboard
+        # with us.
+        # Terms typed and never saved would go with the window.
+        try:
+            if self._dictionary_dirty():
+                self._save_dictionary()
+        except Exception:  # noqa: BLE001 - never block closing over this
+            logger.debug("could not save the dictionary on close", exc_info=True)
+        recorder = getattr(self, "_recorder", None)
+        if recorder is not None:
+            try:
+                recorder.cancel()
+            except Exception:  # noqa: BLE001 - never block closing over this
+                logger.debug("could not stop the shortcut recorder", exc_info=True)
         try:
             if self._window.state() == "normal":
                 config.set("FVWindowGeometry", self._window.winfo_geometry())
@@ -563,8 +610,8 @@ class MainWindow:
         theme.label(card.body, t("insights.speed"), size=10, weight="bold", bg=theme.CARD).pack(
             anchor="w", pady=(0, 12))
         for caption, value in [
-            (t("insights.median_total"), f"{median([r['total_ms'] for r in rows]):.0f} ms"),
-            (t("insights.median_decode"), f"{median([r['stt_ms'] for r in rows]):.0f} ms"),
+            (t("insights.median_total"), f"{median([r['total_ms'] for r in rows]):.0f} {t('unit.ms')}"),
+            (t("insights.median_decode"), f"{median([r['stt_ms'] for r in rows]):.0f} {t('unit.ms')}"),
             (t("insights.typed_share"), f"{len(typed) * 100 // len(rows)}%"),
         ]:
             row = tk.Frame(card.body, bg=theme.CARD)
@@ -604,15 +651,34 @@ class MainWindow:
         self._dictionary_status.pack(side="left", pady=6)
         theme.button(footer, t("dict.save"), self._save_dictionary, primary=True).pack(side="right")
 
+    def _dictionary_contents(self) -> str:
+        return self._dictionary_text.get("1.0", "end").strip()
+
+    def _dictionary_dirty(self) -> bool:
+        if self._dictionary_text is None:
+            return False
+        return self._dictionary_contents() != getattr(self, "_dictionary_saved", "")
+
     def _refresh_dictionary(self) -> None:
+        """Reload from disk — unless the user has typed something.
+
+        This runs on every tab switch and every window open, and it used to
+        overwrite the box unconditionally: typing three terms and clicking
+        History threw them away with no warning and no way back.
+        """
+        if self._dictionary_dirty():
+            self._dictionary_status.configure(text=t("dict.unsaved"))
+            return
         self._dictionary_text.delete("1.0", "end")
-        self._dictionary_text.insert("1.0", "\n".join(dictionary.terms()))
+        self._dictionary_text.insert("1.0", chr(10).join(dictionary.terms()))
+        self._dictionary_saved = self._dictionary_contents()
         self._dictionary_status.configure(text="")
 
     def _save_dictionary(self) -> None:
         lines = [line.strip() for line in self._dictionary_text.get("1.0", "end").splitlines()]
         terms = [line for line in lines if line]
         dictionary.set_terms(terms)
+        self._dictionary_saved = self._dictionary_contents()
         joined = ", ".join(terms)
         if len(joined) > dictionary.MAX_PROMPT_CHARS:
             # The prompt is capped, so say when the tail is being ignored
@@ -702,9 +768,18 @@ class MainWindow:
                          last=True)
         self._ollama_status = theme.label(body, t("ollama.checking"), size=8,
                                           colour=theme.TEXT_FAINT)
-        self._ollama_status.pack(anchor="w", pady=(8, 0))
-        theme.label(body, t("settings.cleanup_note"), size=8,
-                    colour=theme.TEXT_FAINT).pack(anchor="w", pady=(2, 0))
+        self._ollama_status.pack(anchor="w", fill="x", pady=(8, 0))
+        note = theme.label(body, t("settings.cleanup_note"), size=8,
+                           colour=theme.TEXT_FAINT)
+        note.pack(anchor="w", fill="x", pady=(2, 0))
+        # Both of these run past the right edge and are cut mid-word at the
+        # window's own minimum size — the note ended at "рядом с обр". Same
+        # binding the Dictionary caption uses; add="+" because a plain bind
+        # would replace the scroll-area's own <Configure> handler.
+        for label in (self._ollama_status, note):
+            body.bind("<Configure>",
+                      lambda e, w=label: w.configure(wraplength=max(280, e.width - 8)),
+                      add="+")
 
         # GENERAL
         widgets.section_title(body, t("settings.group_general")).pack(anchor="w", pady=(20, 8))
@@ -723,7 +798,7 @@ class MainWindow:
         row = widgets.SettingRow(card.body, "chip", TINT_TEAL,
                                  t("settings.whisper_model"),
                                  t("settings.whisper_model_hint"))
-        widgets.Dropdown(row.control, _WHISPER_MODELS,
+        widgets.Dropdown(row.control, _whisper_models(),
                          lambda: config.get_str("FVModel"), self._set_whisper_model).pack()
         self._switch_row(card.body, "clipboard", TINT_GREY, t("settings.clipboard"),
                          t("settings.clipboard_hint"), "FVPasteViaClipboard")
@@ -889,14 +964,18 @@ class MainWindow:
 
 # Whisper sizes faster-whisper can fetch by name, smallest first so the list
 # reads as a speed/accuracy dial.
-_WHISPER_MODELS = [
-    ("tiny", "tiny - fastest, roughest"),
-    ("base", "base"),
-    ("small", "small"),
-    ("medium", "medium"),
-    ("large-v3-turbo", "large-v3-turbo - recommended"),
-    ("large-v3", "large-v3 - most accurate, slowest"),
-]
+def _whisper_models() -> list[tuple[str, str]]:
+    """Built at paint time, not at import: the notes beside the names are
+    translated, and a module-level list would freeze whatever language was
+    active when the module first loaded."""
+    return [
+        ("tiny", f"tiny — {t('model.fastest')}"),
+        ("base", "base"),
+        ("small", "small"),
+        ("medium", "medium"),
+        ("large-v3-turbo", f"large-v3-turbo — {t('model.recommended')}"),
+        ("large-v3", f"large-v3 — {t('model.most_accurate')}"),
+    ]
 
 
 def _microphones() -> list[tuple[str, str]]:

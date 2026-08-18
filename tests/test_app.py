@@ -245,13 +245,15 @@ def test_a_long_dictation_gets_a_longer_watchdog(app, monkeypatch):
 
     class FakeThread:
         def __init__(self, target=None, args=(), **kwargs):
-            captured["timeout"] = args[-1]
+            # By position, not args[-1]: the pipeline's argument list grows,
+            # and the last one is now the generation counter.
+            captured["timeout"] = args[4]
 
         def start(self):
             pass
 
     monkeypatch.setattr(app_module.threading, "Thread", FakeThread)
-    monkeypatch.setattr(app, "_arm_watchdog", lambda seconds: None)
+    monkeypatch.setattr(app, "_arm_watchdog", lambda seconds, samples=None: None)
     app.recorder = FakeRecorder(np.zeros(16_000 * 120, dtype=np.float32))
     app._set_state(State.RECORDING)
     app._finish_dictation(app_module.time.monotonic(), 42)
@@ -512,3 +514,159 @@ def test_a_loaded_model_is_not_reloaded(app, monkeypatch):
     app._pipeline(np.full(16_000, 0.3, dtype=np.float32),
                   None, app_module.time.monotonic(), 42, 5.0)
     assert app.typed == ["готово"]
+
+
+# ── the state machine has one owner at a time ────────────────────────────
+
+
+def test_a_model_reload_during_a_recording_does_not_cancel_it(app, monkeypatch):
+    """`_start_dictation` reloads the model in the background when the idle
+    unload dropped it. `_load_model` drove global state unconditionally, so
+    that background load announced LOADING and then IDLE *while the user was
+    speaking* — and `_finish_dictation` returns early unless the state is
+    RECORDING. The whole dictation was dropped at key-up."""
+    monkeypatch.setattr(app.transcriber, "load", lambda: None)
+    app._set_state(State.RECORDING)
+
+    app._load_model(announce=False)
+
+    assert app.state == State.RECORDING, "the recording must survive a reload"
+
+
+def test_a_finished_pipeline_does_not_stop_a_dictation_that_already_started(app):
+    """The pipeline's `finally` forced IDLE with no check that it still owned
+    the state. Let go, start talking again immediately, and the first
+    pipeline's cleanup killed the second recording."""
+    app._set_state(State.RECORDING)      # a new dictation, already under way
+    app._finish_pipeline()
+    assert app.state == State.RECORDING
+
+
+def test_a_finished_pipeline_does_return_an_idle_app_to_idle(app):
+    app._set_state(State.PROCESSING)
+    app._finish_pipeline()
+    assert app.state == State.IDLE
+
+
+def test_toggle_mode_still_stops_on_silence(app, monkeypatch):
+    """The auto-stop posts its stop through the same "release" event the
+    hotkey uses — and `_on_release` returns early in toggle mode, so it was
+    discarded. Silence never ended a toggled recording, and neither did the
+    300 s cap: the microphone stayed open until the user noticed."""
+    from fortunevoice import config
+
+    config.set("FVActivationMode", "toggle")
+    stopped: list[int] = []
+    monkeypatch.setattr(app, "_stop_dictation", lambda: stopped.append(1))
+
+    app._events.put(("autostop", app_module.time.monotonic()))
+    app._events.put(("quit", app_module.time.monotonic()))
+    app._controller_loop()
+
+    assert stopped, "an automatic stop must work in both modes"
+
+
+def test_a_dictation_that_could_not_be_saved_says_so(app, monkeypatch):
+    """The vault is why every later failure is survivable. If it fails the text
+    is still typed — it is the user's dictation — but they have to be told this
+    one is not recoverable, rather than finding out later that History has been
+    quietly empty for a week."""
+    said: list[str] = []
+    app.on_notify = lambda title, body: said.append(title)
+    monkeypatch.setattr(app.store, "add", lambda record: False)
+
+    deliver(app, "не сохранилось")
+    assert app.typed == ["не сохранилось"], "the words still reach the user"
+    assert said, "and the failure is not silent"
+
+
+def test_recovery_reloads_a_model_that_the_idle_unload_dropped(app, monkeypatch):
+    """The last-resort path for words already lost once. After an idle unload
+    it called transcribe() on nothing and answered with a bare error beep."""
+    loads: list[int] = []
+    monkeypatch.setattr(app, "_load_model",
+                        lambda announce=True: loads.append(1) or
+                        setattr(app.transcriber, "_model", object()))
+    monkeypatch.setattr(app.transcriber, "transcribe",
+                        lambda samples: a_result("спасено"))
+    app.recovery.save(np.full(16_000, 0.3, dtype=np.float32))
+    app.transcriber._model = None
+    app._set_state(State.IDLE)
+
+    app.recover_failed()
+    deadline = app_module.time.monotonic() + 5
+    while not loads and app_module.time.monotonic() < deadline:
+        app_module.time.sleep(0.02)
+    assert loads, "it must load the model rather than beep"
+
+
+def test_a_wedged_pipeline_keeps_the_audio_and_explains(app, monkeypatch):
+    """The backstop for a step nobody bounded. It played a tone and forced
+    IDLE — but the words exist nowhere yet at that point, so the dictation was
+    simply gone and the user had a beep to go on."""
+    said: list[str] = []
+    app.on_notify = lambda title, body: said.append(title)
+    app._set_state(State.PROCESSING)
+
+    app._arm_watchdog(0.05, np.full(16_000, 0.3, dtype=np.float32))
+    deadline = app_module.time.monotonic() + 3
+    while app.state != State.IDLE and app_module.time.monotonic() < deadline:
+        app_module.time.sleep(0.02)
+
+    assert app.state == State.IDLE
+    assert app.recovery.pending(), "the audio must survive for a retry"
+    assert said, "and the user must be told where it went"
+
+
+def test_a_late_pipeline_does_not_touch_a_newer_dictation(app):
+    """State alone is not enough to decide ownership: a SECOND dictation can
+    already be in PROCESSING when a wedged first one finally returns, and
+    cancelling its watchdog would switch off the one guard that catches a
+    stuck pipeline."""
+    app._generation = 7
+    app._set_state(State.PROCESSING)
+    cancelled: list[int] = []
+    app._cancel_watchdog = lambda: cancelled.append(1)
+
+    app._finish_pipeline(generation=6)      # the older run, finishing late
+
+    assert app.state == State.PROCESSING, "the newer dictation is left alone"
+    assert cancelled == [], "and keeps its watchdog"
+
+    app._finish_pipeline(generation=7)      # the current one
+    assert app.state == State.IDLE
+
+
+def test_a_late_release_still_stops_the_recording(app, monkeypatch):
+    """A release is a TERMINATOR — acting on it late is strictly better than
+    not at all. It used to be dropped with the press filter, which left the app
+    recording with the key already up, the microphone open and the pill saying
+    "Listening", until the 300 s cap typed five minutes of room noise into
+    whatever had focus by then. The controller can easily be busy for over a
+    second inside _start_dictation: opening a Bluetooth microphone, or the
+    cleanup warmup's one-second probe of Ollama."""
+    stopped: list[int] = []
+    monkeypatch.setattr(app, "_stop_dictation", lambda: stopped.append(1))
+    monkeypatch.setattr(app_module.config, "get_str",
+                        lambda key: "hold" if key == "FVActivationMode"
+                        else app_module.config.DEFAULTS.get(key, ""))
+
+    stale = app_module.time.monotonic() - 5.0     # five seconds behind
+    app._events.put(("release", stale))
+    app._events.put(("quit", app_module.time.monotonic()))
+    app._controller_loop()
+
+    assert stopped == [1], "the recording must still be ended"
+
+
+def test_a_late_press_is_still_dropped(app, monkeypatch):
+    """The original reasoning holds for a press: acting on one the user has
+    given up on would start a recording they never asked for."""
+    started: list[int] = []
+    monkeypatch.setattr(app, "_on_press", lambda: started.append(1))
+
+    app._events.put(("press", app_module.time.monotonic() - 5.0))
+    app._events.put(("quit", app_module.time.monotonic()))
+    app._controller_loop()
+
+    assert started == []
