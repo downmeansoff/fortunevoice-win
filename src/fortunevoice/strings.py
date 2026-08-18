@@ -281,6 +281,12 @@ CATALOGUE: dict[str, dict[str, str]] = {
 
     # ── notifications ───────────────────────────────────────────────────
     "notify.bad_hotkey": {"en": "Bad hotkey", "ru": "Неверное сочетание клавиш"},
+    "notify.hotkey_dead": {"en": "The shortcut stopped working",
+                           "ru": "Сочетание клавиш перестало работать"},
+    "notify.hotkey_dead_body": {
+        "en": "Windows refused the keyboard hook for {hotkey}. Restart FortuneVoice.",
+        "ru": "Windows отказал в перехвате {hotkey}. Перезапустите FortuneVoice."},
+    "dict.unsaved": {"en": "Unsaved changes", "ru": "Есть несохранённое"},
     "notify.stuck": {"en": "That dictation got stuck",
                      "ru": "Диктовка застряла"},
     "notify.stuck_body": {

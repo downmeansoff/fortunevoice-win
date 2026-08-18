@@ -124,3 +124,19 @@ def test_keep_alive_seconds_parses_ollama_durations():
 
     config.set("FVOllamaKeepAlive", "nonsense")
     assert cleaner.keep_alive_seconds() == 300.0, "fall back to the default"
+
+
+def test_a_word_ending_in_net_is_not_a_self_correction():
+    """"нет," was matched as a bare substring, so «интернет,» «момент,»
+    «конкурент,» each bought a cleanup round-trip the text did not need."""
+    from fortunevoice.cleaner import needs_cleanup
+
+    assert needs_cleanup("Проверь интернет, пожалуйста.") is False
+    assert needs_cleanup("Это был важный момент, помнишь?") is False
+
+
+def test_a_real_self_correction_is_still_caught():
+    from fortunevoice.cleaner import needs_cleanup
+
+    assert needs_cleanup("сделай синим, нет, красным") is True
+    assert needs_cleanup("нет, подожди") is True

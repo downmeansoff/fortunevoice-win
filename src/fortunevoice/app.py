@@ -128,6 +128,10 @@ class App:
     # turns out empty the empty-text guard handles it — we never drop a real
     # short word ("да", "нет", "стоп") unheard.
     MIN_SAMPLES = 1_600
+    # A pre-roll older than this is not this dictation's. The hold
+    # threshold is 0.3 s; anything past a second means the arm was
+    # orphaned.
+    ARMED_MAX_AGE = 2.0
 
     def __init__(self) -> None:
         self.recorder = AudioRecorder()
@@ -292,8 +296,14 @@ class App:
             on_arm=lambda: self._events.put(("arm", time.monotonic())),
             on_disarm=lambda: self._events.put(("disarm", time.monotonic())),
         )
+        self._listener.on_broken = self._on_hotkey_broken
         self._listener.start()
         return ok
+
+    def _on_hotkey_broken(self, label: str) -> None:
+        """Windows refused the keyboard hook. Without saying so the app looks
+        alive while the key does nothing, and nothing on screen explains it."""
+        self._notify(t("notify.hotkey_dead"), t("notify.hotkey_dead_body", hotkey=label))
 
     def capture_chord(self, on_chord, on_cancel=None):
         """Record the next chord the user presses, anywhere on the system.
@@ -573,6 +583,15 @@ class App:
         # the hold threshold elapsed — keep it, and date the recording from
         # when the microphone actually opened.
         armed_at, self._armed = self._armed, 0.0
+        # And only if it is fresh. An arm that never became a dictation —
+        # the app was busy, a disarm was lost — would otherwise hand this
+        # recording a start time from minutes ago, and the microphone
+        # buffer along with it.
+        if armed_at and time.monotonic() - armed_at > self.ARMED_MAX_AGE:
+            logger.info("discarding a stale pre-roll (%.1f s old)",
+                        time.monotonic() - armed_at)
+            self.recorder.stop()
+            armed_at = 0.0
         if not armed_at:
             try:
                 self.recorder.start(config.get_str("FVMicrophone"))
@@ -746,6 +765,11 @@ class App:
             return
 
         self._generation += 1
+        # Dictating counts as activity even when the delivery later fails
+        # or the transcript is empty. Advancing this only on success let
+        # the idle watcher unload the model in the middle of a working
+        # session.
+        self._last_dictation_at = time.monotonic()
         self._set_state(State.PROCESSING)
         # The watchdog must exceed the longest possible decode: a multi-minute
         # dictation can take longer than a flat 90 s. Scale it with audio length

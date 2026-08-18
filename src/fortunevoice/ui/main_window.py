@@ -88,6 +88,10 @@ class MainWindow:
         self._window.lift()
         self._window.focus_force()
         self._select(self._page)
+        # The tray can change the same settings this window shows, so the
+        # switches and chips would be painted with values that are no
+        # longer true — a toggle reading "off" for something that is on.
+        self._repaint_settings()
 
     def _build(self) -> None:
         import tkinter as tk
@@ -125,6 +129,34 @@ class MainWindow:
             builder = getattr(self, f"_build_{name.lower()}")
             builder(page)
 
+    def _repaint_settings(self) -> None:
+        """Re-read every Settings control from config.
+
+        The tray changes several of the same settings this window shows, and
+        the pages are built once and raised rather than rebuilt — so a switch
+        could sit there reading "off" for something the tray had turned on.
+
+        Walks the widget tree rather than keeping a register of controls: the
+        Switches and Dropdowns are Canvases whose `paint()` re-reads through
+        the getter it was constructed with, and a list of them would be one
+        more thing to remember to add to.
+        """
+        page = self._pages.get("Settings")
+        if page is None:
+            return
+
+        def repaint(widget) -> None:
+            painter = getattr(widget, "_fv_paint", None)
+            if painter is not None:
+                try:
+                    painter()
+                except Exception:  # noqa: BLE001 - one stale control is not fatal
+                    logger.debug("could not repaint a settings control", exc_info=True)
+            for child in widget.winfo_children():
+                repaint(child)
+
+        repaint(page)
+
     def _on_close(self) -> None:
         """Remember where the window was before hiding it.
 
@@ -135,6 +167,12 @@ class MainWindow:
         # First, because it holds a system-wide key-swallowing hook and has
         # paused the app's hotkey. Leaving here with it armed took the keyboard
         # with us.
+        # Terms typed and never saved would go with the window.
+        try:
+            if self._dictionary_dirty():
+                self._save_dictionary()
+        except Exception:  # noqa: BLE001 - never block closing over this
+            logger.debug("could not save the dictionary on close", exc_info=True)
         recorder = getattr(self, "_recorder", None)
         if recorder is not None:
             try:
@@ -613,15 +651,34 @@ class MainWindow:
         self._dictionary_status.pack(side="left", pady=6)
         theme.button(footer, t("dict.save"), self._save_dictionary, primary=True).pack(side="right")
 
+    def _dictionary_contents(self) -> str:
+        return self._dictionary_text.get("1.0", "end").strip()
+
+    def _dictionary_dirty(self) -> bool:
+        if self._dictionary_text is None:
+            return False
+        return self._dictionary_contents() != getattr(self, "_dictionary_saved", "")
+
     def _refresh_dictionary(self) -> None:
+        """Reload from disk — unless the user has typed something.
+
+        This runs on every tab switch and every window open, and it used to
+        overwrite the box unconditionally: typing three terms and clicking
+        History threw them away with no warning and no way back.
+        """
+        if self._dictionary_dirty():
+            self._dictionary_status.configure(text=t("dict.unsaved"))
+            return
         self._dictionary_text.delete("1.0", "end")
-        self._dictionary_text.insert("1.0", "\n".join(dictionary.terms()))
+        self._dictionary_text.insert("1.0", chr(10).join(dictionary.terms()))
+        self._dictionary_saved = self._dictionary_contents()
         self._dictionary_status.configure(text="")
 
     def _save_dictionary(self) -> None:
         lines = [line.strip() for line in self._dictionary_text.get("1.0", "end").splitlines()]
         terms = [line for line in lines if line]
         dictionary.set_terms(terms)
+        self._dictionary_saved = self._dictionary_contents()
         joined = ", ".join(terms)
         if len(joined) > dictionary.MAX_PROMPT_CHARS:
             # The prompt is capped, so say when the tail is being ignored

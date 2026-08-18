@@ -71,8 +71,19 @@ def executable() -> Path | None:
     for path in _CANDIDATES:
         if path.parent.name and path.is_file():
             return path
-    found = shutil.which("ollama")
-    return Path(found) if found else None
+    # PATH, but never the current directory. `shutil.which` on Windows
+    # searches "." first by default, so a file called ollama.exe sitting in
+    # whatever folder the app happened to start in would be launched — and
+    # this module's own docstring promises it only ever starts a binary from
+    # where Ollama's installer puts it.
+    found = shutil.which("ollama", path=os.environ.get("PATH", ""))
+    if not found:
+        return None
+    resolved = Path(found).resolve()
+    if resolved.parent == Path.cwd().resolve():
+        logger.warning("ignoring %s — it is in the working directory", resolved)
+        return None
+    return resolved
 
 
 def is_up(timeout: float = 1.0) -> bool:
