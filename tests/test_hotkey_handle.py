@@ -245,3 +245,54 @@ def test_an_ordinary_chord_never_arms():
     assert listener.prerolls() is False
     listener._handle(WM_KEYDOWN, event(VK_SPACE))
     assert events == ["press"]
+
+
+def test_press_and_release_are_raised_under_the_lock():
+    """The property that makes an inversion impossible, rather than a race the
+    test has to be lucky enough to lose.
+
+    Press and release come from two different threads — the press from the hold
+    timer, the release from the hook. Each used to drop the lock before calling
+    its callback, so a key-up landing exactly as the timer fired could enqueue
+    the release ahead of the press: the app saw a release with nothing
+    recording (ignored) and then a press with no key held, which records until
+    the 300 s cap. Raising both while holding the lock is what orders them.
+    """
+    held_during: list[bool] = []
+
+    def note(listener):
+        # Not re-entrant: acquiring must FAIL if we are inside the lock.
+        got = listener._press_lock.acquire(blocking=False)
+        held_during.append(not got)
+        if got:
+            listener._press_lock.release()
+
+    listener = HotkeyListener(parse("ctrl+alt"), on_press=lambda: None,
+                              on_release=lambda: None)
+    listener.spec.modifiers_held = lambda *a: True  # type: ignore[method-assign]
+    listener._on_press = lambda: note(listener)
+    listener._on_release = lambda: note(listener)
+    listener.HOLD_SECONDS = 0.01
+
+    listener._handle(WM_KEYDOWN, event(VK_LMENU))
+    time.sleep(0.1)
+    listener._handle(WM_KEYUP, event(VK_LMENU))
+    time.sleep(0.05)
+
+    assert held_during == [True, True], (
+        "both callbacks must run inside the lock, or their order is a race")
+
+
+def test_a_tap_still_disarms_outside_the_lock():
+    """The disarm reaches into the app to stop a recorder; holding a hook lock
+    across that would be asking for a deadlock."""
+    listener, events = make_arming_listener()
+    listener._on_disarm = lambda: (
+        events.append("locked" if not listener._press_lock.acquire(blocking=False)
+                      else "free"),
+        listener._press_lock.locked() or listener._press_lock.release(),
+    )
+    listener._handle(WM_KEYDOWN, event(VK_LMENU))
+    listener._handle(WM_KEYUP, event(VK_LMENU))
+    time.sleep(0.05)
+    assert "free" in events, "the disarm must not run while the lock is held"

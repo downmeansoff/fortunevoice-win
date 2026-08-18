@@ -27,8 +27,18 @@ def _fresh_fit():
 # ── the learned cleanup cost model ───────────────────────────────────────
 
 
-def _rows(pairs):
-    return [{"chars": c, "cleanup_ms": ms} for c, ms in pairs]
+def _rows(pairs, model=None, **extra):
+    """Metric rows the fit will accept.
+
+    `cleanup_model` is required now: `model` in a metric is the WHISPER model,
+    so without this the fit pooled runs from different cleanup models — 1141 ms
+    against 656 ms on the same text — and fitted a line through both.
+    """
+    from fortunevoice import config
+
+    name = model or config.get_str("FVOllamaModel")
+    return [{"chars": c, "cleanup_ms": ms, "cleanup_model": name, **extra}
+            for c, ms in pairs]
 
 
 def test_fit_needs_enough_samples(monkeypatch):
@@ -190,3 +200,26 @@ def test_guard_ignores_a_short_answer():
     """An empty or near-empty rewrite is the other guard's problem; this one
     must not double-report it."""
     assert cleaner._no_invented_content("раз два три четыре", "") is True
+
+
+def test_the_fit_ignores_a_different_cleanup_model(monkeypatch):
+    """Switching model changes the cost outright — measured here, gemma3:4b at
+    1141 ms against qwen2.5:3b at 656 ms on the same sentence. Fitting across
+    the change describes neither."""
+    from fortunevoice import config
+
+    config.set("FVOllamaModel", "qwen2.5:3b")
+    stale = _rows([(chars, 3000 + chars * 9.0) for chars in range(20, 200, 10)],
+                  model="gemma3:4b")
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(stale), raising=False)
+    assert cleaner._fit_from_metrics() is None, "another model's runs are not data"
+
+
+def test_the_fit_ignores_cold_loads_and_chunked_runs(monkeypatch):
+    """A cold load is ~2 s whatever the text, and a chunked run's cost belongs
+    to the flagged sentences rather than the whole transcript's length. Both
+    were being fitted as per-character costs."""
+    rows = (_rows([(30, 2016)], cleanup_cold=True)
+            + _rows([(642, 437)], cleanup_chunks=1))
+    monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(rows * 8), raising=False)
+    assert cleaner._fit_from_metrics() is None

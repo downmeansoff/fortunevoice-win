@@ -126,3 +126,17 @@ def test_residency_check_treats_a_dead_ollama_as_not_loaded(monkeypatch):
 
     monkeypatch.setattr(C.urllib.request, "urlopen", boom)
     assert C.OllamaCleaner()._model_is_resident() is False
+
+
+def test_a_bullet_list_survives_the_selective_rejoin(monkeypatch):
+    """The system prompt asks the model to format an enumeration as «- »
+    bullets, one per line. The selective path rejoined the pieces through
+    `squeeze`, which collapses newlines too, so the list the model was asked
+    for arrived as "- хлеб - молоко - кофе" on a single line."""
+    cleaner = C.OllamaCleaner()
+    listed = "Купить:\n- хлеб\n- молоко\n- кофе"
+    monkeypatch.setattr(C.OllamaCleaner, "_chat", lambda self, system, user: listed)
+
+    long_text = ("нужно купить хлеб молоко и кофе " * 6).strip()
+    out = cleaner.clean(long_text)
+    assert out is None or "\n- молоко" in out or out == long_text, out

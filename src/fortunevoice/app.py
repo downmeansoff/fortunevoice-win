@@ -962,6 +962,7 @@ class App:
         a cold Ollama load stalling this for ~16 s — raw Whisper text NOW beats
         perfect text later, so past the deadline we type raw and let the LLM
         finish unused."""
+        self.cleaner.note_cold()
         # Whatever is in front decides. Cleanup punctuating a chat message is
         # right; cleanup punctuating `git rebase -i HEAD~3` into a sentence is
         # not, and a terminal is where that lands.
@@ -1124,6 +1125,8 @@ class App:
                 batch_ms=shadow.batch_ms if shadow else None,
                 pre_cleaned_words=pre_cleaned_words,
                 cleanup_over_budget=self.cleaner.last_over_budget_chunks or None,
+                cleanup_model=config.get_str("FVOllamaModel"),
+                cleanup_cold=getattr(self.cleaner, "last_was_cold", None),
             )
         )
 

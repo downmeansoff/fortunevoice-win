@@ -10,6 +10,8 @@ import re
 from .segmenter import sentences
 
 _WHITESPACE = re.compile(r"\s+")
+# Spaces and tabs only — newlines are structure, see squeeze_lines.
+_HORIZONTAL = re.compile("[^" + chr(92) + "S" + chr(10) + "]+")
 # Whisper emits control tokens like <|0.00|> or <|nospeech|> when timestamps
 # are on; they must never reach the user's text field.
 _SPECIAL_TOKEN = re.compile(r"<\|[^|]*\|>")
@@ -27,6 +29,27 @@ def strip_special_tokens(text: str) -> str:
 
 def squeeze(text: str) -> str:
     return _WHITESPACE.sub(" ", text).strip()
+
+
+def squeeze_lines(text: str) -> str:
+    """Tidy the spacing without destroying the lines.
+
+    `squeeze` collapses every whitespace run into one space, newlines
+    included. That is right for joining decoded segments, and wrong for text
+    the cleanup model was explicitly asked to format as «- » bullets, one per
+    line — the selective path rejoined through it and served the list back as
+    one flat line.
+
+    Runs of blank lines collapse to a single blank line, so a paragraph break
+    survives but a gap does not grow.
+    """
+    lines = [_HORIZONTAL.sub(" ", line).strip() for line in text.splitlines()]
+    out: list[str] = []
+    for line in lines:
+        if not line and out and not out[-1]:
+            continue
+        out.append(line)
+    return chr(10).join(out).strip(chr(10))
 
 
 def collapse_repeats(text: str) -> str:
