@@ -211,7 +211,24 @@ class StreamingSession:
     def abort(self) -> None:
         """Discard everything (accidental tap, interrupted recording)."""
         self._stopping.set()
+        self._stop_cleanup_worker()
+
+    def _stop_cleanup_worker(self) -> None:
+        """End the block-cleanup thread.
+
+        Only `abort()` used to do this. The normal path — `finish()` — left it
+        blocked on `queue.get()` forever, so every dictation that cleaned a
+        block leaked a thread, and each one held its whole session alive:
+        blocks, samples, the transcriber reference. Daemon threads, so nothing
+        blocked exit, but a long session accumulated them one per dictation.
+        """
+        thread, self._cleanup_thread = self._cleanup_thread, None
+        if thread is None:
+            return
         self._cleanup_queue.put(None)
+        thread.join(timeout=2.0)
+        if thread.is_alive():
+            logger.debug("block-cleanup thread did not end in time")
 
     def _loop(self) -> None:
         if self._stopping.wait(FIRST_PASS_DELAY):
@@ -382,6 +399,13 @@ class StreamingSession:
     # ── finish ───────────────────────────────────────────────────────────
 
     def finish(self, full_samples: np.ndarray) -> Result:
+        """Final result at key-up. Always ends the block-cleanup worker."""
+        try:
+            return self._finish(full_samples)
+        finally:
+            self._stop_cleanup_worker()
+
+    def _finish(self, full_samples: np.ndarray) -> Result:
         """Final result at key-up.
 
         * V2 off / shadow off: plain full batch decode.

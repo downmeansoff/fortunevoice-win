@@ -48,6 +48,14 @@ class DictationMetric:
     batch_ms: float | None = None
     pre_cleaned_words: int | None = None
     cleanup_over_budget: int | None = None
+    # Which model did the cleaning, and whether it had to be loaded first.
+    # Without these the cost fit pooled runs that are not comparable: `model`
+    # above is the WHISPER model, so switching the cleanup model — gemma3:4b at
+    # 1141 ms against qwen2.5:3b at 656 ms on the same text — was invisible to
+    # it, and a cold load (~2 s regardless of length) looked like a very
+    # expensive short dictation.
+    cleanup_model: str | None = None
+    cleanup_cold: bool | None = None
 
 
 def now() -> str:

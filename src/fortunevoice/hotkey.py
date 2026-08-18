@@ -606,6 +606,17 @@ class HotkeyListener:
         if self._on_arm and self.prerolls():
             self._on_arm()
 
+    # Press and release are raised from two different threads — the press from
+    # the hold timer, the release from the hook — and BOTH are raised while
+    # holding _press_lock. That is the only thing that makes their order
+    # certain. Each used to drop the lock first, so a key-up landing exactly as
+    # the timer fired could enqueue the release ahead of the press: the app saw
+    # a release with nothing recording (ignored), then a press with no key held
+    # — a recording that ran until the 300 s cap.
+    #
+    # Safe to hold across these because the callbacks only put an event on a
+    # queue. Nothing here may ever call back into this class.
+
     def _hold_elapsed(self) -> None:
         with self._press_lock:
             # The key-up may have won the race; it clears _held first, so this
@@ -613,7 +624,7 @@ class HotkeyListener:
             if not self._held or self._pressed:
                 return
             self._pressed = True
-        self._on_press()
+            self._on_press()
 
     def _end_press(self) -> None:
         if not self._spec.modifier_trigger:
@@ -623,15 +634,15 @@ class HotkeyListener:
             self._cancel_timer()
             tap = not self._pressed
             self._pressed = False
-        if tap:
-            # Nothing was ever started, but the microphone may have been
-            # opened for the pre-roll — it has to be closed and its audio
-            # dropped, or a Ctrl+Alt reached for by mistake leaves a recording
-            # running until the next one.
-            if self._on_disarm and self.prerolls():
-                self._on_disarm()
-            return
-        self._on_release()
+            if not tap:
+                self._on_release()
+                return
+        # A tap: nothing was ever started, but the microphone may have been
+        # opened for the pre-roll. It has to be closed and its audio dropped,
+        # or a Ctrl+Alt reached for by mistake leaves a recording running until
+        # the next one. Outside the lock — this one reaches into the app.
+        if self._on_disarm and self.prerolls():
+            self._on_disarm()
 
     def _cancel_timer(self) -> None:
         if self._timer is not None:

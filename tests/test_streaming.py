@@ -105,3 +105,56 @@ def test_agreed_prefix_empty():
 
 def test_agreement_key_normalizes():
     assert agreement_key("Привет,  мир!") == agreement_key("привет мир")
+
+
+class _StubTranscriber:
+    """Enough of a Transcriber for a session that never decodes."""
+
+    GATE_WAIT_LIMIT = 1.0
+
+    def transcribe(self, samples):
+        from fortunevoice.transcriber import Result
+
+        return Result(text="")
+
+    def cancel_warmup(self):
+        pass
+
+
+class _StubRecorder:
+    def snapshot(self):
+        return np.zeros(0, dtype=np.float32)
+
+
+def test_finishing_ends_the_block_cleanup_thread():
+    """Only abort() used to stop it. The normal path left it blocked on
+    queue.get() forever, so every dictation that cleaned a block leaked a
+    thread — and each one held its whole session alive: blocks, samples, the
+    transcriber reference."""
+    import threading
+    import time as _time
+
+    from fortunevoice.streaming import StreamingSession
+
+    before = {t.name for t in threading.enumerate()}
+    class _StubCleaner:
+        def clean_block(self, raw, vocabulary=""):
+            return raw
+
+    session = StreamingSession(_StubTranscriber(), _StubRecorder(),
+                               cleaner=_StubCleaner())
+    # Start the worker the way a real dictation does: enough confirmed text to
+    # be worth a block.
+    session._confirmed_texts = ["ну вот это уже подтверждённый кусок текста "
+                                "который стоит того чтобы его вычитать " * 3]
+    session._schedule_cleanup()
+    assert session._cleanup_thread is not None, "the worker started"
+
+    session.finish(np.zeros(16_000, dtype=np.float32))
+
+    assert session._cleanup_thread is None, "and finish must end it"
+    for _ in range(40):
+        if "stream-cleanup" not in {t.name for t in threading.enumerate()} - before:
+            break
+        _time.sleep(0.05)
+    assert "stream-cleanup" not in {t.name for t in threading.enumerate()} - before

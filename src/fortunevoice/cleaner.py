@@ -21,7 +21,7 @@ import urllib.request
 from . import config, metrics
 from .log import get as get_logger
 from .segmenter import chunk_cores, sentences
-from .textclean import squeeze, word_count
+from .textclean import squeeze, squeeze_lines, word_count
 
 logger = get_logger("cleaner")
 
@@ -244,12 +244,31 @@ def _fit() -> tuple[float, float]:
 
 
 def _fit_from_metrics() -> tuple[float, float] | None:
-    """Least-squares fit of cleanup_ms against chars, from real dictations."""
+    """Least-squares fit of cleanup_ms against chars, from real dictations.
+
+    Only over runs that are actually comparable. Pooling everything fitted a
+    line through three different things at once, and the user's own metrics
+    show how badly: 29 chars at 2016 ms (a cold load), 30 chars at 15 ms, and
+    642 chars at 437 ms (a chunked run, where the model saw only the flagged
+    sentences and `chars` counts the whole transcript). A line through those
+    describes nothing, and it gates whether cleanup runs inside a 1.5 s budget.
+
+    So: the same cleanup model, whole-text runs only, and no cold loads.
+    """
+    wanted = config.get_str("FVOllamaModel")
     try:
         rows = [
             (float(r["chars"]), float(r["cleanup_ms"]))
             for r in metrics.read_all()
             if r.get("cleanup_ms") and r.get("chars")
+            # A chunked run's cost belongs to the flagged sentences, not to the
+            # whole transcript's length.
+            and not r.get("cleanup_chunks")
+            # A cold load is ~2 s whatever the text; it is not a per-char cost.
+            and not r.get("cleanup_cold")
+            # Older rows have no cleanup_model. They predate the field and
+            # could be from any model, so they cannot be trusted here.
+            and r.get("cleanup_model") == wanted
         ]
     except Exception:  # noqa: BLE001 - a missing or corrupt file is not fatal
         return None
@@ -394,6 +413,8 @@ class OllamaCleaner:
         self.last_over_budget_chunks = 0
         self._last_warmup: float | None = None
         self._warmup_lock = threading.Lock()
+        # Set by note_cold() before each dictation's cleanup.
+        self.last_was_cold = False
 
     # ── configuration ────────────────────────────────────────────────────
 
@@ -476,6 +497,15 @@ class OllamaCleaner:
             return None
         cleaned = self._clean_whole(raw, base_system(vocabulary))
         return None if cleaned == raw else cleaned
+
+    def note_cold(self) -> None:
+        """Record whether the cleanup model had to be loaded for this run.
+
+        Read once per dictation, before the call, because afterwards it is
+        resident either way. A cold load costs ~2 s whatever the text, so a run
+        that paid one must not be fitted as a per-character cost.
+        """
+        self.last_was_cold = not self._model_is_resident()
 
     def _model_is_resident(self) -> bool:
         """Is the cleanup model loaded in Ollama right now?
@@ -628,7 +658,11 @@ class OllamaCleaner:
             for i in range(start + 1, end + 1):
                 result[i] = ""
 
-        joined = squeeze(" ".join(p for p in result if p))
+        # Lines survive the rejoin: the system prompt asks the model to format
+        # an enumeration as «- » bullets, one per line, and `squeeze` collapses
+        # every whitespace run — newlines included — so the list came back as
+        # one flat line.
+        joined = squeeze_lines(" ".join(p for p in result if p))
         # Global safety net on the assembled text as a last line of defense.
         if not _is_safe(raw, joined):
             return raw

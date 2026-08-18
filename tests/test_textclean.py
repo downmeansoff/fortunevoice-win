@@ -154,3 +154,30 @@ def test_english_commands_work_too():
 
 def test_empty_input():
     assert apply_voice_commands("") == ""
+
+
+# ── keeping the lines a list is made of ──────────────────────────────────
+
+
+def test_squeeze_lines_keeps_the_line_breaks():
+    """The cleanup prompt explicitly asks the model to format an enumeration as
+    «- » bullets, one per line. The selective path then rejoined the pieces
+    through `squeeze`, which collapses ANY whitespace run — newlines included —
+    so the list the model was asked for came back as one flat line:
+    "- первое - второе - третье"."""
+    from fortunevoice.textclean import squeeze_lines
+
+    listed = "Купить:\n- хлеб\n- молоко\n- кофе"
+    assert squeeze_lines(listed) == listed
+
+
+def test_squeeze_lines_still_collapses_spaces_and_tabs():
+    from fortunevoice.textclean import squeeze_lines
+
+    assert squeeze_lines("много   пробелов\tи  табов") == "много пробелов и табов"
+
+
+def test_squeeze_lines_trims_each_line_and_drops_blank_runs():
+    from fortunevoice.textclean import squeeze_lines
+
+    assert squeeze_lines("  раз  \n\n\n  два  ") == "раз\n\nдва"
