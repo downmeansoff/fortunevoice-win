@@ -301,6 +301,25 @@ DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 DPI_AWARENESS_CONTEXT_SYSTEM_AWARE = ctypes.c_void_p(-2)
 
 
+# Windows groups taskbar buttons, and picks the icon, by Application User
+# Model ID. A Python app inherits pythonw.exe's — so the taskbar showed the
+# Python logo next to our own window, and pinning it would have pinned Python.
+# Setting our own is the whole fix; it must happen before any window exists.
+APP_ID = "FortuneVoice.Dictation.Windows.1"
+
+
+def set_app_id() -> None:
+    """Tell Windows this process is FortuneVoice, not Python."""
+    try:
+        shell32 = ctypes.windll.shell32
+        shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = (wintypes.LPCWSTR,)
+        shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:  # noqa: BLE001 - cosmetic, never worth failing startup
+        # No logger in this module by design: it is imported before logging is
+        # configured. A taskbar icon is not worth a second failure here.
+        pass
+
+
 def set_dpi_awareness() -> None:
     """Ask Windows to stop bitmap-stretching this process.
 

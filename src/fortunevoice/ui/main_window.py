@@ -191,13 +191,17 @@ class MainWindow:
     def _build_sidebar(self, parent) -> None:
         import tkinter as tk
 
+        from .. import assets
+
         rail = widgets.Card(parent, bg=theme.SIDEBAR, radius=16, padx=14, pady=18)
         rail.frame.pack(side="left", fill="y", padx=(18, 0), pady=18)
         rail.canvas.configure(width=SIDEBAR_W)
 
         identity = tk.Frame(rail.body, bg=theme.SIDEBAR)
         identity.pack(fill="x", pady=(2, 22))
-        mark = icons.photo(icons.tile("mic", 40, "#FFFFFF", theme.ACCENT, radius=0.30))
+        # The app's own icon, not a second mark. An identity tile that does
+        # not match the shortcut you clicked reads as the wrong app.
+        mark = icons.photo(assets.logo(theme.px(40)))
         self._images.append(mark)
         tk.Label(identity, image=mark, bg=theme.SIDEBAR).pack(side="left", padx=(2, 12))
         text = tk.Frame(identity, bg=theme.SIDEBAR)
@@ -330,7 +334,7 @@ class MainWindow:
             group = _day_label(record.date, today)
             if group != current_group:
                 current_group = group
-                widgets.section_title(body, group).pack(anchor="w", pady=(14, 8))
+                widgets.section_title(body, group).pack(anchor="w", pady=(18, 10))
             self._history_card(body, record)
 
         if len(records) > 300:
@@ -698,7 +702,7 @@ class MainWindow:
         body = self._scroll_area(page)
 
         # DICTATION
-        widgets.section_title(body, t("settings.group_dictation")).pack(anchor="w", pady=(0, 8))
+        widgets.section_title(body, t("settings.group_dictation")).pack(anchor="w", pady=(2, 10))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
         row = widgets.SettingRow(card.body, "tap", TINT_BLUE, t("settings.activation"),
@@ -733,7 +737,7 @@ class MainWindow:
                          lambda v: config.set("FVMicrophone", v)).pack()
 
         # TEXT PROCESSING
-        widgets.section_title(body, t("settings.group_text")).pack(anchor="w", pady=(20, 8))
+        widgets.section_title(body, t("settings.group_text")).pack(anchor="w", pady=(26, 10))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
         self._switch_row(card.body, "bolt", TINT_ORANGE, t("settings.streaming"),

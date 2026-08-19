@@ -215,16 +215,35 @@ def image(name: str, size: int = 16, colour: str = "#F5F4EE", stroke: float = 0.
 
 
 @lru_cache(maxsize=256)
-def tile(name: str, size: int, glyph_colour: str, background: str, radius: float = 0.28):
-    """A glyph on a rounded colour plate — the Settings row icons."""
+def _mix(a: str, b: str, amount: float) -> tuple[int, int, int, int]:
+    """`a` laid over `b` at `amount` opacity, as an opaque colour."""
+    ar, ag, ab, _ = _rgba(a)
+    br, bg, bb, _ = _rgba(b)
+    return (round(br + (ar - br) * amount),
+            round(bg + (ag - bg) * amount),
+            round(bb + (ab - bb) * amount), 255)
+
+
+def tile(name: str, size: int, glyph_colour: str, background: str,
+         radius: float = 0.28, tint: str | None = None):
+    """A glyph on a rounded plate — the Settings row icons.
+
+    `tint` washes the plate rather than colouring the glyph. Colouring the
+    glyph is what made these read as smudges: a muted earth tone on a dark
+    plate measured 2.5-5.8:1, under or barely at the 3:1 a piece of graphics
+    needs, so the shape inside was guesswork. The glyph is near-white now and
+    the tint survives as the plate's cast, which keeps the grouping-by-colour
+    the rows were given it for.
+    """
     from PIL import Image, ImageDraw
 
+    plate_colour = _mix(tint, background, 0.28) if tint else _rgba(background)
     plate = Image.new("RGBA", (size * SCALE, size * SCALE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(plate)
     draw.rounded_rectangle((0, 0, size * SCALE - 1, size * SCALE - 1),
-                           radius=int(size * SCALE * radius), fill=_rgba(background))
+                           radius=int(size * SCALE * radius), fill=plate_colour)
     plate = plate.resize((size, size), Image.LANCZOS)
-    glyph = image(name, int(size * 0.62), glyph_colour, stroke=0.09)
+    glyph = image(name, int(size * 0.58), glyph_colour, stroke=0.095)
     offset = (size - glyph.width) // 2
     plate.alpha_composite(glyph, (offset, offset))
     return plate

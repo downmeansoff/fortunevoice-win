@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     # Before anything creates a window: a process that asks for DPI awareness
     # after the fact is ignored, and Windows bitmap-stretches the whole UI.
     winapi.set_dpi_awareness()
+    # Before any window: Windows reads it once, when the first one appears.
+    winapi.set_app_id()
 
     if not winapi.claim_single_instance():
         # Not a nicety. Each instance installs its own low-level keyboard hook,
