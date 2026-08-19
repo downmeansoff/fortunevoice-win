@@ -557,12 +557,18 @@ class MainWindow:
             bar = max(3, slot * 0.55)
             for index, value in enumerate(values):
                 x = index * slot + (slot - bar) / 2
-                # A day with nothing still gets a stub, so the axis reads as a
-                # timeline rather than as missing data.
-                height = 4 if value == 0 else 8 + (value / biggest) * 100
-                colour = theme.LINE if value == 0 else theme.ACCENT
+                # A day with nothing still gets a mark, so the axis reads as a
+                # timeline rather than as missing data. Flat, not rounded: a
+                # corner radius wider than the stub is tall draws the two
+                # corners as circles with a gap between them, which is what
+                # made an empty month look like a row of tiny dumbbells.
+                if value == 0:
+                    chart.create_rectangle(x, 114, x + bar, 116,
+                                           fill=theme.LINE, outline="")
+                    continue
+                height = 8 + (value / biggest) * 100
                 theme.rounded_rect(chart, x, 116 - height, x + bar, 116,
-                                   min(3, bar / 2), fill=colour)
+                                   min(3, bar / 2), fill=theme.ACCENT)
 
         chart.bind("<Configure>", draw)
 
