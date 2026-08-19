@@ -140,3 +140,83 @@ def test_a_real_self_correction_is_still_caught():
 
     assert needs_cleanup("сделай синим, нет, красным") is True
     assert needs_cleanup("нет, подожди") is True
+
+
+# ── what cleanup is never allowed to do ──────────────────────────────────
+
+
+def test_a_short_dictation_cannot_be_gutted():
+    """The drop guard was off entirely below six words, so "нет я не согласен
+    совсем" could come back as "согласен" and pass — every remaining word does
+    appear in the raw, so the invented-content check sees nothing wrong."""
+    from fortunevoice.cleaner import _kept_enough
+
+    assert _kept_enough("нет я не согласен совсем", "согласен") is False
+
+
+def test_short_cleanup_that_only_removes_filler_is_still_allowed():
+    """The floor exists because short text legitimately loses most of itself:
+    "ну вот привет" is three words and "Привет" is the right answer."""
+    from fortunevoice.cleaner import _kept_enough
+
+    assert _kept_enough("ну вот привет", "Привет") is True
+    assert _kept_enough("э-э короче да", "Да") is True
+
+
+def test_cleanup_may_not_drop_a_negation():
+    """Losing a "не" inverts the sentence. Every other word survives, so the
+    invented-content guard passes it, and the ratio guard sees one word out of
+    twelve — well inside its tolerance."""
+    from fortunevoice.cleaner import _is_safe
+
+    said = ("ну я думаю что мы не будем это делать сегодня потому что "
+            "времени совсем не осталось")
+    inverted = ("Я думаю, что мы будем это делать сегодня, потому что "
+                "времени совсем не осталось.")
+    assert _is_safe(said, inverted) is False
+
+
+def test_an_english_negation_counts_too():
+    from fortunevoice.cleaner import _is_safe
+
+    said = "well i do not think we should ship this today at all honestly"
+    inverted = "I think we should ship this today at all, honestly."
+    assert _is_safe(said, inverted) is False
+
+
+def test_keeping_the_negations_is_fine():
+    """Only filler goes. Every negation the speaker used survives, so the rule
+    has nothing to object to."""
+    from fortunevoice.cleaner import _is_safe
+
+    said = "ну я думаю что мы не будем это делать сегодня вообще никак"
+    cleaned = "Я думаю, что мы не будем это делать сегодня вообще никак."
+    assert _is_safe(said, cleaned) is True
+
+
+def test_losing_one_of_two_negations_is_refused_too():
+    """Russian doubles up — "не будем никак" — and dropping the second changes
+    what was said. Falling back to the raw text costs the user some polish;
+    the alternative costs them the meaning."""
+    from fortunevoice.cleaner import _is_safe
+
+    said = "ну я думаю что мы не будем это делать сегодня вообще никак"
+    trimmed = "Я думаю, что мы не будем это делать сегодня."
+    assert _is_safe(said, trimmed) is False
+
+
+def test_every_guard_is_still_wired_into_is_safe():
+    """Adding the negation rule once dropped the invented-content call from
+    `_is_safe` — the tests caught it, and this one names the risk: the guards
+    live in one function precisely so none can be lost while editing it."""
+    from fortunevoice import cleaner as C
+
+    calls: list[str] = []
+    original_kept, original_invented = C._kept_enough, C._no_invented_content
+    try:
+        C._kept_enough = lambda b, a: calls.append("kept") or True
+        C._no_invented_content = lambda b, a: calls.append("invented") or True
+        C._is_safe("раз два три четыре пять шесть", "раз два три четыре пять шесть")
+    finally:
+        C._kept_enough, C._no_invented_content = original_kept, original_invented
+    assert calls == ["kept", "invented"]
