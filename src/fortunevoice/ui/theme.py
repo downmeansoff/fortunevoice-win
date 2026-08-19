@@ -58,11 +58,14 @@ INK = "#1F1E1D"          # window
 SIDEBAR = "#191817"      # nav rail, a step deeper than the page
 CARD = "#262624"         # content cards
 CARD_HI = "#30302E"      # hover / raised rows
-LINE = "#3A3936"         # hairline borders
+LINE = "#454340"         # hairline borders — visible, still a hairline
 
 TEXT = "#F5F4EE"         # warm off-white, never pure #FFF
-TEXT_MUTED = "#A9A49A"
-TEXT_FAINT = "#7C766C"
+TEXT_MUTED = "#B6B1A6"   # row subtitles: 7.2:1 on a card
+# Section headers and captions. Was #7C766C — 3.37:1, which is the floor for
+# LARGE text and these are 9 px. Small dim type is what made the window read
+# as unfinished before anything else did.
+TEXT_FAINT = "#918B80"
 
 ACCENT = "#D97757"       # clay — the one accent
 ACCENT_DIM = "#C15F3C"   # pressed / hover
@@ -74,26 +77,69 @@ RECORDING = "#D9534F"
 PROCESSING = "#D4A27F"   # kraft
 ERROR = "#D9534F"
 
-# Segoe UI is on every Windows 10/11; the fallbacks are for stripped images.
-FONT = "Segoe UI"
-FONT_MONO = "Consolas"
-# Display face for headings and figures. Georgia ships with Windows and is the
-# nearest stand-in for the serif Claude sets its display type in — a heading in
-# the body sans loses most of the resemblance.
-FONT_SERIF = "Georgia"
+def _first_installed(*candidates: str) -> str:
+    """The first of these the machine actually has.
+
+    Asked once, at import, through Tk itself rather than guessed from the
+    Windows version: a font can be missing from an N edition or a stripped
+    image, and falling back silently beats a window rendered in Courier.
+    """
+    try:
+        import tkinter as tk
+        import tkinter.font as tkfont
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            installed = {name.lower() for name in tkfont.families()}
+        finally:
+            root.destroy()
+    except Exception:  # noqa: BLE001 - no display yet, or no Tk at all
+        return candidates[-1]
+    for name in candidates:
+        if name.lower() in installed:
+            return name
+    return candidates[-1]
+
+
+# Windows 11's own UI face, in its three optical sizes. This is the single
+# biggest difference between "a Tk app" and "a Windows app": Segoe UI Variable
+# is drawn differently at each size — Small tightens the spacing and thickens
+# the strokes so 9 px stays legible, Display opens it up so a heading does not
+# look like a grown-up caption. Plain Segoe UI is one drawing stretched to
+# every size, which is exactly what made the small type look weak.
+FONT_SMALL = _first_installed("Segoe UI Variable Small", "Segoe UI", "Arial")
+FONT = _first_installed("Segoe UI Variable Text", "Segoe UI", "Arial")
+FONT_LARGE = _first_installed("Segoe UI Variable Display", "Segoe UI", "Arial")
+FONT_MONO = _first_installed("Cascadia Mono", "Consolas", "Courier New")
+# Display face for headings and figures. Constantia over Georgia: it was cut
+# for screens, its Cyrillic is drawn rather than adapted, and Georgia's wide
+# slab serifs read as a newspaper next to this palette.
+FONT_SERIF = _first_installed("Constantia", "Georgia", "Times New Roman")
+
+# Below this a caption needs the Small optical size; above it, Display.
+_SMALL_UPTO = 9
+_LARGE_FROM = 16
 
 
 def font(size: int = 10, weight: str = "normal") -> tuple:
-    return (FONT, size, weight)
+    """Body text, in the optical size the point size calls for."""
+    if size <= _SMALL_UPTO:
+        face = FONT_SMALL
+    elif size >= _LARGE_FROM:
+        face = FONT_LARGE
+    else:
+        face = FONT
+    return (face, size, weight)
+
+
+def mono(size: int = 9) -> tuple:
+    return (FONT_MONO, size, "normal")
 
 
 def serif(size: int = 20, weight: str = "normal") -> tuple:
     """Headings and big numbers. Everything else stays in the sans."""
     return (FONT_SERIF, size, weight)
-
-
-def mono(size: int = 9) -> tuple:
-    return (FONT_MONO, size, "normal")
 
 
 def label(parent, text: str = "", size: int = 10, colour: str = TEXT,

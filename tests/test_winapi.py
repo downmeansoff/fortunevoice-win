@@ -215,3 +215,23 @@ def test_the_monitor_handle_is_not_truncated():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True,
                          text=True, cwd=str(SOURCE.parent))
     assert out.stdout.strip() == "True", (out.stdout, out.stderr)
+
+
+def test_the_app_declares_its_own_identity():
+    """Windows groups taskbar buttons, and picks their icon, by Application
+    User Model ID. A Python app inherits pythonw.exe's — so the taskbar showed
+    the Python logo beside our own window, and pinning it would have pinned
+    Python."""
+    assert winapi.APP_ID.startswith("FortuneVoice")
+    winapi.set_app_id()  # must not raise
+
+
+def test_setting_the_app_id_survives_a_refusal(monkeypatch):
+    """It runs before logging is configured, so a failure here must be inert
+    rather than a second exception on the startup path."""
+    class Refuses:
+        def __getattr__(self, name):
+            raise OSError("no shell32 here")
+
+    monkeypatch.setattr(winapi.ctypes, "windll", Refuses())
+    winapi.set_app_id()

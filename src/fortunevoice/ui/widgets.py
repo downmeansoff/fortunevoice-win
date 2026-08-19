@@ -349,7 +349,10 @@ class SettingRow:
         # Colour lives in the glyph, not the plate. Filled tiles put a dozen
         # bright blocks down the left edge and became the loudest thing on the
         # page — the tint still groups the rows, quietly.
-        tile = icons.photo(icons.tile(glyph, theme.px(28), tint, theme.CARD_HI))
+        # Near-white glyph, tint on the plate. The other way round measured
+        # 2.5-5.8:1 and the icons read as smudges.
+        tile = icons.photo(icons.tile(glyph, theme.px(28), theme.TEXT,
+                                      theme.CARD_HI, tint=tint))
         self.frame._images.append(tile)
         tk.Label(row, image=tile, bg=theme.CARD).pack(side="left",
                                                       padx=(0, theme.px(12)))
@@ -371,8 +374,8 @@ class SettingRow:
         if not last:
             # Inset separator, aligned with the text rather than the icon —
             # a full-width rule makes the list look like a table.
-            tk.Frame(self.frame, bg=theme.LINE, height=1).pack(
-                fill="x", padx=(theme.px(40), 0))
+            tk.Frame(self.frame, bg=theme.LINE, height=max(1, theme.px(1))).pack(
+                fill="x", padx=(theme.px(56), theme.px(4)))
 
 
 def section_title(parent, text: str):
@@ -381,7 +384,7 @@ def section_title(parent, text: str):
     Sentence case, not the shouty small-caps this started as: at 8 px, all-caps
     Cyrillic is a grey smear that has to be decoded rather than read.
     """
-    return theme.label(parent, text, size=9, colour=theme.TEXT_MUTED,
+    return theme.label(parent, text, size=10, colour=theme.TEXT_MUTED,
                        weight="bold")
 
 
@@ -550,9 +553,17 @@ class ShortcutRecorder:
         self._end()
 
     def paint(self) -> None:
-        width = int(self.canvas["width"])
+        # Sized to its text, like every other chip in the column. A fixed
+        # 150 px made "ctrl+alt+space" fill the whole box while "Русский" sat
+        # in a third of one, so the right-hand column read as a mistake.
+        label = (t("settings.shortcut_press") if self._listening
+                 else (self._get() or "—"))
+        pad = theme.px(14)
+        width = max(theme.px(96),
+                    pad + theme.text_width(label, theme.font(9)) + pad)
+        height = theme.px(30)
+        self.canvas.configure(width=width, height=height)
         self.canvas.delete("all")
-        height = int(self.canvas["height"])
         if self._listening:
             theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
                                height - theme.px(2), theme.px(7), fill=theme.ACCENT)

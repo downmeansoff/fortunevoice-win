@@ -52,26 +52,31 @@ def test_tray_image_has_no_plate():
     assert image.getpixel((image.width - 1, 0))[3] == 0
 
 
-def test_logo_is_opaque_and_clay():
-    """The app icon is the product logo, not the tray silhouette: a filled
-    gradient tile matching the identity tile in the window's own sidebar. An
-    icon that doesn't match the app it opens looks like the wrong shortcut."""
+def test_the_logo_is_a_sphere():
+    """A circle, not a rounded square: the corners have to be transparent or
+    Windows draws a dark box behind the icon on a light taskbar."""
     image = assets.logo(64).convert("RGBA")
-    centre_top = image.getpixel((32, 6))
-    assert centre_top[3] == 255, "the tile must be opaque"
-    red, green, blue = centre_top[:3]
-    assert red > blue + 40 and red > green + 20, f"expected clay, got {centre_top}"
-    # Corners are rounded, so they are transparent.
-    assert image.getpixel((0, 0))[3] < 40
+    assert image.getpixel((32, 32))[3] == 255, "the middle is solid"
+    for corner in ((0, 0), (63, 0), (0, 63), (63, 63)):
+        assert image.getpixel(corner)[3] < 40, corner
 
 
-def test_logo_has_a_gradient():
-    """Flat colour reads as printed ink; the gradient is what makes it a
-    surface."""
-    image = assets.logo(128).convert("RGBA")
-    top = image.getpixel((64, 4))[:3]
-    bottom = image.getpixel((64, 123))[:3]
-    assert sum(top) > sum(bottom) + 60, f"{top} vs {bottom}"
+def test_the_logo_has_a_reflection():
+    """The bright ellipse in the upper half is what makes it read as glass
+    rather than as a coloured ball."""
+    image = assets.logo(128).convert("RGB")
+    reflection = sum(image.getpixel((64, 30)))
+    body = sum(image.getpixel((64, 90)))
+    assert reflection > body + 120, (reflection, body)
+
+
+def test_the_logo_lightens_towards_the_bottom():
+    """The caustic — light leaving the bottom of the sphere. Without it the
+    shape reads as a flat disc."""
+    image = assets.logo(128).convert("RGB")
+    middle = sum(image.getpixel((64, 70)))
+    low = sum(image.getpixel((64, 118)))
+    assert low > middle + 60, (middle, low)
 
 
 def test_level_changes_the_mark():
