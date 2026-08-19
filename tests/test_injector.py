@@ -191,3 +191,58 @@ def test_the_clipboard_route_reports_a_failure_rather_than_raising(monkeypatch):
     monkeypatch.setattr(injector, "set_clipboard_text", lambda text: False)
     monkeypatch.setattr(injector.time, "sleep", lambda _s: None)
     assert injector.paste_via_clipboard("x") is False
+
+
+def test_a_failed_allocation_leaves_the_clipboard_alone(monkeypatch):
+    """It used to call EmptyClipboard first and only then allocate, so a failed
+    allocation destroyed whatever the user had copied and returned False —
+    they lost their clipboard in exchange for nothing."""
+    emptied: list[int] = []
+    monkeypatch.setattr(injector.user32, "OpenClipboard", lambda _h: 1)
+    monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
+    monkeypatch.setattr(injector.user32, "EmptyClipboard",
+                        lambda: emptied.append(1) or 1)
+    monkeypatch.setattr(injector.kernel32, "GlobalAlloc", lambda flags, size: 0)
+
+    assert injector.set_clipboard_text("текст") is False
+    assert emptied == [], "the user's clipboard must survive a failure"
+
+
+def test_a_block_that_never_reached_the_clipboard_is_freed(monkeypatch):
+    """SetClipboardData failing means ownership did NOT pass. Leaving it
+    unfreed leaks the allocation on every attempt."""
+    freed: list[int] = []
+    monkeypatch.setattr(injector.user32, "OpenClipboard", lambda _h: 1)
+    monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
+    monkeypatch.setattr(injector.user32, "EmptyClipboard", lambda: 1)
+    monkeypatch.setattr(injector.kernel32, "GlobalAlloc", lambda flags, size: 4242)
+    monkeypatch.setattr(injector.kernel32, "GlobalLock",
+                        lambda h: injector.ctypes.addressof(
+                            injector.ctypes.create_string_buffer(64)))
+    monkeypatch.setattr(injector.kernel32, "GlobalUnlock", lambda h: 1)
+    monkeypatch.setattr(injector.user32, "SetClipboardData", lambda fmt, h: 0)
+    monkeypatch.setattr(injector.kernel32, "GlobalFree",
+                        lambda h: freed.append(h) or 0)
+
+    assert injector.set_clipboard_text("текст") is False
+    assert freed == [4242]
+
+
+def test_a_block_the_clipboard_took_is_never_freed(monkeypatch):
+    """Ownership passes on success. Freeing it would hand the next reader a
+    dangling block."""
+    freed: list[int] = []
+    monkeypatch.setattr(injector.user32, "OpenClipboard", lambda _h: 1)
+    monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
+    monkeypatch.setattr(injector.user32, "EmptyClipboard", lambda: 1)
+    monkeypatch.setattr(injector.kernel32, "GlobalAlloc", lambda flags, size: 4242)
+    monkeypatch.setattr(injector.kernel32, "GlobalLock",
+                        lambda h: injector.ctypes.addressof(
+                            injector.ctypes.create_string_buffer(64)))
+    monkeypatch.setattr(injector.kernel32, "GlobalUnlock", lambda h: 1)
+    monkeypatch.setattr(injector.user32, "SetClipboardData", lambda fmt, h: h)
+    monkeypatch.setattr(injector.kernel32, "GlobalFree",
+                        lambda h: freed.append(h) or 0)
+
+    assert injector.set_clipboard_text("текст") is True
+    assert freed == []

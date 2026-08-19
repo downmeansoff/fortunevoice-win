@@ -332,14 +332,43 @@ def mini_system(vocabulary: str) -> str:
     return system
 
 
+# Words whose loss flips the meaning of the sentence. Dropping one is not a
+# tidy-up, and every other word survives — so neither the ratio below nor the
+# invented-content check would notice.
+_NEGATIONS = {"не", "нет", "ни", "нельзя", "никак", "никогда",
+              "not", "no", "never", "cannot", "n't", "dont", "doesnt", "didnt"}
+
+
+def _negations(text: str) -> int:
+    return sum(1 for word in _letter_words(text.lower()) if word in _NEGATIONS)
+
+
 def _kept_enough(before: str, after: str) -> bool:
-    """Cleanup must only remove filler/repeats, never eat real content. If the
-    model dropped more than ~35% of the words (mis-judged content as filler, or
-    truncated), the caller keeps the raw text. Losing punctuation is far better
-    than losing sentences."""
+    """Cleanup must only remove filler/repeats, never eat real content.
+
+    Two rules, because one ratio cannot cover both lengths:
+
+    * **Six words and up**: more than ~35% of the words gone means the model
+      mis-judged content as filler, or truncated. Losing punctuation is far
+      better than losing sentences.
+    * **Below six**: the ratio was simply switched off, so "нет я не согласен
+      совсем" could come back as "согласен" and pass — every remaining word
+      does appear in the raw, so nothing else objected. But a short dictation
+      legitimately loses most of itself ("ну вот привет" → "Привет"), so the
+      test is not a ratio: every word that is NOT filler has to survive.
+    """
     raw_words = word_count(before)
     clean_words = word_count(after)
-    return not (raw_words >= 6 and clean_words < int(raw_words * 0.65))
+    if raw_words >= 6:
+        return clean_words >= int(raw_words * 0.65)
+
+    kept = {word for word in _letter_words(after.lower())}
+    for word in _letter_words(before.lower()):
+        if word in _FILLERS:
+            continue
+        if word not in kept:
+            return False
+    return True
 
 
 # How much of the cleaned text may be words the speaker never said. Some slack
@@ -395,12 +424,20 @@ def _unbullet(text: str) -> str:
 
 
 def _is_safe(before: str, after: str) -> bool:
-    """Both content guards, so no call site can remember one and forget the
-    other."""
+    """Every content guard in one place, so no call site can remember one and
+    forget another."""
     if not _kept_enough(before, after):
         return False
     if not _no_invented_content(before, after):
         logger.warning("cleanup invented content, using raw text")
+        return False
+    # A lost negation inverts the sentence, and neither guard above would see
+    # it: every remaining word appears in the raw, and one word out of twelve
+    # is well inside the ratio. "мы не будем это делать" becoming "мы будем
+    # это делать" is the worst thing cleanup can do — it does not garble the
+    # text, it makes it confidently say the opposite.
+    if _negations(after) < _negations(before):
+        logger.warning("cleanup dropped a negation, using raw text")
         return False
     return True
 

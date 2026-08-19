@@ -15,7 +15,11 @@ import pytest
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 
+import pathlib
+
 from fortunevoice import winapi  # noqa: E402
+
+SOURCE = pathlib.Path(__file__).resolve().parents[1] / "src"
 
 
 # ── DPI ──────────────────────────────────────────────────────────────────
@@ -186,3 +190,28 @@ def test_any_other_error_still_lets_the_app_run(monkeypatch):
     """A locked-down profile that cannot create a mutex is not a reason to
     refuse to dictate."""
     assert claim_with(monkeypatch, 5) is True
+
+
+def test_the_monitor_handle_is_not_truncated():
+    """ctypes defaults an undeclared restype to C int — 32 bits, signed. An
+    HMONITOR on 64-bit Windows is a pointer, so the handle came back truncated
+    and GetMonitorInfoW was handed something that is not a monitor. It happened
+    to work while the real handle fitted in 32 bits, and fell back to the
+    primary screen when it did not — the overlay on the wrong display.
+
+    Checked in a fresh process: monkeypatching a ctypes function pointer and
+    restoring it loses the declaration, so any test that stubs
+    MonitorFromWindow would make this pass or fail depending on the order.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import ctypes;"
+        "from fortunevoice import winapi;"
+        "r = winapi.user32.MonitorFromWindow.restype;"
+        "print(ctypes.sizeof(r) == ctypes.sizeof(ctypes.c_void_p))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, cwd=str(SOURCE.parent))
+    assert out.stdout.strip() == "True", (out.stdout, out.stderr)

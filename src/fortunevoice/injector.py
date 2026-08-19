@@ -217,9 +217,13 @@ def set_clipboard_text(text: str) -> bool:
     if not user32.OpenClipboard(None):
         logger.warning("could not open the clipboard")
         return False
+    handle = None
     try:
-        user32.EmptyClipboard()
-        buffer = (text + "\0").encode("utf-16-le")
+        buffer = (text + chr(0)).encode("utf-16-le")
+        # Allocated and filled BEFORE emptying. The other order destroyed the
+        # user's clipboard and then returned False if the allocation or the
+        # lock failed — they lost whatever they had copied, in exchange for
+        # nothing at all.
         handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(buffer))
         if not handle:
             return False
@@ -228,9 +232,17 @@ def set_clipboard_text(text: str) -> bool:
             return False
         ctypes.memmove(pointer, buffer, len(buffer))
         kernel32.GlobalUnlock(handle)
-        # Ownership passes to the clipboard on success — do not free `handle`.
-        return bool(user32.SetClipboardData(CF_UNICODETEXT, handle))
+
+        user32.EmptyClipboard()
+        if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+            return False
+        # Ownership has passed to the clipboard: freeing it now would hand the
+        # next reader a dangling block.
+        handle = None
+        return True
     finally:
+        if handle:
+            kernel32.GlobalFree(handle)  # it never reached the clipboard
         user32.CloseClipboard()
 
 

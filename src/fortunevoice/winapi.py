@@ -367,6 +367,17 @@ class MONITORINFO(ctypes.Structure):
     ]
 
 
+# Declared, because ctypes defaults an undeclared restype to C int — 32 bits,
+# signed. An HMONITOR on 64-bit Windows is a pointer, so the handle came back
+# truncated and GetMonitorInfoW was handed something that is not a monitor. It
+# happened to work while the real handle fitted in 32 bits, and fell back to
+# the primary screen when it did not — the overlay on the wrong display.
+user32.MonitorFromWindow.argtypes = (wintypes.HWND, wintypes.DWORD)
+user32.MonitorFromWindow.restype = wintypes.HANDLE
+user32.GetMonitorInfoW.argtypes = (wintypes.HANDLE, ctypes.c_void_p)
+user32.GetMonitorInfoW.restype = wintypes.BOOL
+
+
 def work_area_of_window(hwnd: int) -> tuple[int, int, int, int]:
     """Work area (screen minus taskbar) of the monitor holding `hwnd`.
 
