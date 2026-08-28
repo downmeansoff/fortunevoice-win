@@ -203,3 +203,49 @@ def test_capture_reads_a_real_chord():
 
     assert captured == ["ctrl+f1"]
     parse(captured[0])
+
+
+# ── a key-up the hook never saw ──────────────────────────────────────────
+
+
+def _listener_holding(monkeypatch, spec_text="ctrl+alt+space"):
+    from fortunevoice import hotkey as H
+
+    listener = H.HotkeyListener(H.parse(spec_text), lambda: None, lambda: None)
+    listener._held = True
+    return listener
+
+
+def test_a_release_lost_to_a_desktop_switch_is_recovered(monkeypatch):
+    """A UAC prompt, Win+L and Ctrl+Alt+Del switch desktops, and the key-up
+    lands on a desktop this hook is not on. The latch then says the key is
+    still down: the next press is read as auto-repeat and swallowed, and a
+    recording that was running never ends — it runs to the 300 s cap and types
+    five minutes of room noise."""
+    from fortunevoice import hotkey as H
+
+    released: list[int] = []
+    listener = _listener_holding(monkeypatch)
+    monkeypatch.setattr(listener, "_end_press", lambda: released.append(1))
+    monkeypatch.setattr(H.user32, "GetAsyncKeyState", lambda vk: 0)  # all up
+
+    listener._resync_held()
+
+    assert listener._held is False
+    assert released == [1], "the press has to be ended, not just forgotten"
+
+
+def test_a_key_that_is_genuinely_still_down_is_left_alone(monkeypatch):
+    """The resync must not cut a dictation short while the user is still
+    holding the key."""
+    from fortunevoice import hotkey as H
+
+    released: list[int] = []
+    listener = _listener_holding(monkeypatch)
+    monkeypatch.setattr(listener, "_end_press", lambda: released.append(1))
+    monkeypatch.setattr(H.user32, "GetAsyncKeyState", lambda vk: -32768)  # held
+
+    listener._resync_held()
+
+    assert listener._held is True
+    assert released == []

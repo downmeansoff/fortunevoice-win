@@ -13,6 +13,7 @@ cleanup model is slow, down, or wrong.
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 import time
@@ -374,7 +375,12 @@ def _kept_enough(before: str, after: str) -> bool:
     raw_words = word_count(before)
     clean_words = word_count(after)
     if raw_words >= 6:
-        return clean_words >= int(raw_words * 0.65)
+        # Rounded UP. `int()` truncates, and the shortest text this branch
+        # handles is where that hurts most: six words allowed a drop to three,
+        # which is half the dictation gone through a guard whose stated limit
+        # is about a third — and six words is exactly where the strict
+        # every-word-survives rule below stops applying.
+        return clean_words >= math.ceil(raw_words * 0.65)
 
     kept = {word for word in _letter_words(after.lower())}
     for word in _letter_words(before.lower()):

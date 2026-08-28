@@ -55,7 +55,10 @@ CASES = [
 def text_widget():
     tkinter = pytest.importorskip("tkinter")
 
-    root = tkinter.Tk()
+    try:
+        root = tkinter.Tk()
+    except tkinter.TclError as exc:  # pragma: no cover - no desktop session
+        pytest.skip(f"no desktop session: {exc}")
     root.title("fortunevoice injection test")
     root.geometry("640x200+120+120")
     widget = tkinter.Text(root, font=("Segoe UI", 11))
@@ -99,6 +102,14 @@ def _own_the_foreground(root, timeout: float = 3.0) -> bool:
     return False
 
 
+def _we_are_still_in_front() -> bool:
+    import os
+
+    from fortunevoice import winapi
+
+    return winapi.window_process_id(winapi.foreground_window()) == os.getpid()
+
+
 @pytest.mark.parametrize("name,text", CASES, ids=[c[0] for c in CASES])
 def test_types_into_a_focused_field(text_widget, name, text):
     from fortunevoice import injector
@@ -112,6 +123,22 @@ def test_types_into_a_focused_field(text_widget, name, text):
             "another window holds the foreground — refusing to type into it. "
             "Run this from a normal desktop session with nothing stealing focus."
         )
+
+    # Owning the foreground is not enough. `_own_the_foreground` ends on
+    # `root.focus_force()`, which puts Tk's keyboard focus on the TOPLEVEL —
+    # and a toplevel is not a text field. The keystrokes then arrived at a
+    # window with nowhere to put them and were dropped, which reads exactly
+    # like SendInput doing nothing, for every case in this file.
+    widget.focus_set()
+    root.update()
+
+    # Checked again, right here. Winning the foreground a moment ago is not
+    # the same as holding it now — a notification, an installer, anything that
+    # steals focus between the two lands this dictation in someone else's
+    # window. Which is the one outcome this file must never produce, so it is
+    # a skip and not a failure.
+    if not _we_are_still_in_front():
+        pytest.skip("lost the foreground before typing")
 
     assert injector.type_text(text), f"SendInput reported a failure for {name}"
 
