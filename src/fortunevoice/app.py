@@ -967,7 +967,8 @@ class App:
                 return
 
         logger.warning("empty transcript (rms %.3f), nothing to type", audio_level)
-        if audio_level > 0.02:
+        kept_audio = audio_level > 0.02
+        if kept_audio:
             # Loud audio, two failed decodes — that was real speech the decoder
             # lost. Keep the audio for a manual retry.
             self.recovery.save(samples)
@@ -979,6 +980,11 @@ class App:
                 "FortuneVoice didn't hear anything",
                 "The microphone picked up no signal — check the input device in the tray menu.",
             )
+        elif kept_audio:
+            # There WAS speech and the decoder lost it. The recording is on
+            # disk and the tray can retry it — but only if the user is told;
+            # an error beep on its own reads as "the app ate my words".
+            self._notify(t("notify.lost"), t("notify.stuck_body"))
         self._record_drop(
             "silence" if audio_level < 0.006 else "empty", "", audio_seconds, stt_ms,
             key_up, stream_passes, result,

@@ -287,6 +287,8 @@ CATALOGUE: dict[str, dict[str, str]] = {
         "en": "Windows refused the keyboard hook for {hotkey}. Restart FortuneVoice.",
         "ru": "Windows отказал в перехвате {hotkey}. Перезапустите FortuneVoice."},
     "dict.unsaved": {"en": "Unsaved changes", "ru": "Есть несохранённое"},
+    "notify.lost": {"en": "FortuneVoice couldn’t make out that dictation",
+                    "ru": "Не удалось разобрать эту диктовку"},
     "notify.stuck": {"en": "That dictation got stuck",
                      "ru": "Диктовка застряла"},
     "notify.stuck_body": {

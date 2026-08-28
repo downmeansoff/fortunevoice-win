@@ -151,7 +151,16 @@ def _check_ollama() -> bool:
         return True
 
     installed = [m.get("name", "") for m in payload.get("models", [])]
-    if any(name == wanted or name.startswith(wanted.split(":")[0]) for name in installed):
+    # Exact, give or take the implicit ":latest" Ollama adds. Matching on the
+    # family name alone reported "qwen2.5:3b available" when what was installed
+    # was qwen2.5:1.5b — a different model, which cleanup then asked for and
+    # got a 404 from, falling back to raw text with doctor still showing a tick.
+    def _same(name: str) -> bool:
+        head, _, tag = name.partition(":")
+        want_head, _, want_tag = wanted.partition(":")
+        return head == want_head and (tag or "latest") == (want_tag or "latest")
+
+    if any(_same(name) for name in installed):
         _line(OK, f"ollama {wanted} available")
     else:
         _line(

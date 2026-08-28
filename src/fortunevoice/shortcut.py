@@ -87,16 +87,28 @@ def icon() -> Path:
     return path
 
 
+def _literal(value: object) -> str:
+    """Escape for a PowerShell single-quoted string, where doubling the
+    quote is the only escape there is.
+
+    Without this an apostrophe anywhere in the path — a Windows account
+    named O'Brien is all it takes — closed the literal early. PowerShell
+    then failed to parse the script, and "Launch at login" refused to turn
+    on with the switch snapping back and no message anywhere.
+    """
+    return str(value).replace("'", "''")
+
+
 def create(folder: Path, description: str) -> Path:
     link = folder / NAME
     script = f"""
 $shell = New-Object -ComObject WScript.Shell
-$link = $shell.CreateShortcut('{link}')
-$link.TargetPath = '{interpreter()}'
+$link = $shell.CreateShortcut('{_literal(link)}')
+$link.TargetPath = '{_literal(interpreter())}'
 $link.Arguments = '-m fortunevoice'
-$link.WorkingDirectory = '{ROOT}'
-$link.IconLocation = '{icon()},0'
-$link.Description = '{description}'
+$link.WorkingDirectory = '{_literal(ROOT)}'
+$link.IconLocation = '{_literal(icon())},0'
+$link.Description = '{_literal(description)}'
 $link.WindowStyle = 7
 $link.Save()
 """
