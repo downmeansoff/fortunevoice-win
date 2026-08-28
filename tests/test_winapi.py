@@ -259,3 +259,16 @@ def test_setting_the_app_id_survives_a_refusal(monkeypatch):
 
     monkeypatch.setattr(winapi.ctypes, "windll", Refuses())
     winapi.set_app_id()
+
+
+def test_every_clipboard_handle_call_declares_its_signature():
+    """ctypes passes an undeclared argument as C int — 32 bits — so a handle
+    above 2 GB arrives truncated and what gets freed is whatever that torn
+    value happens to name. GlobalFree was the one call in the clipboard path
+    with no declaration."""
+    from fortunevoice.winapi import kernel32
+
+    for name in ("GlobalAlloc", "GlobalLock", "GlobalUnlock", "GlobalFree"):
+        function = getattr(kernel32, name)
+        assert function.argtypes is not None, f"{name} has no argtypes"
+        assert function.restype is not None, f"{name} has no restype"

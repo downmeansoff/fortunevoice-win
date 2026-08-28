@@ -567,6 +567,11 @@ class App:
         captured — transcribe and deliver it (truncated is far better than
         erased), exactly like a normal key-up."""
         if self.state != State.RECORDING:
+            # Not recording yet, but the pre-roll may have the microphone open
+            # — and the device that just died is the one it opened. Nothing
+            # else closes it: the arm is only undone by a key-up that is now
+            # never coming for a device that is gone.
+            self._on_disarm()
             return
         logger.warning("recording interrupted — salvaging captured audio")
         self._finish_dictation(time.monotonic(), winapi.foreground_window())

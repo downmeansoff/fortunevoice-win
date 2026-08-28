@@ -244,7 +244,12 @@ class AudioRecorder:
         ratio = self._source_rate / SAMPLE_RATE
         out_count = int(block.size / ratio)
         if out_count <= 0:
-            self._resample_tail = block
+            # Copied. PortAudio hands the callback a buffer it reuses for the
+            # next block, so holding the array itself means the tail is
+            # overwritten with newer audio before it is ever consumed — a
+            # torn sample at the seam, on exactly the small-block devices
+            # this branch exists for.
+            self._resample_tail = block.copy()
             return np.zeros(0, dtype=np.float32)
         consumed = int(out_count * ratio)
         self._resample_tail = block[consumed:].copy()

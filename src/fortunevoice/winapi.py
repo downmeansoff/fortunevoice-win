@@ -134,6 +134,11 @@ kernel32.GlobalLock.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalLock.restype = wintypes.LPVOID
 kernel32.GlobalUnlock.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalUnlock.restype = wintypes.BOOL
+# Declared like the rest of them. ctypes passes an undeclared argument as C
+# int — 32 bits — so a handle above 2 GB arrived at GlobalFree truncated, and
+# what got freed was whatever that torn value happened to name.
+kernel32.GlobalFree.argtypes = (wintypes.HGLOBAL,)
+kernel32.GlobalFree.restype = wintypes.HGLOBAL
 
 
 # ── window styles (the floating overlays) ────────────────────────────────
