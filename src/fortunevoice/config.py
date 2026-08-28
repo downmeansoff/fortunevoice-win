@@ -120,6 +120,13 @@ DEFAULTS: dict[str, Any] = {
 }
 
 _lock = threading.Lock()
+# Held across the whole read-modify-write in `set()`. `_lock` guards the cache
+# for the duration of one read; it does nothing for two threads that each read
+# the file, change their own key and write the lot back — the second write
+# silently drops the first one's change. Which is not theoretical: the tray
+# sets the microphone, the window saves its geometry as it closes, and the app
+# writes FVOnboarded, all from different threads.
+_write_lock = threading.RLock()
 _cache: dict[str, Any] = {}
 _cache_mtime: float | None = None
 # The last contents successfully parsed out of the file, as written — not
@@ -187,6 +194,11 @@ def get_str(key: str) -> str:
 
 
 def set(key: str, value: Any) -> None:  # noqa: A001 - mirrors UserDefaults.set
+    with _write_lock:
+        _set_locked(key, value)
+
+
+def _set_locked(key: str, value: Any) -> None:
     global _cache_mtime, _stored
     path = paths.config_file()
     current = dict(_load())

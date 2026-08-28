@@ -121,3 +121,32 @@ def test_the_write_is_flushed_before_the_rename(monkeypatch):
     config.set("FVLanguage", "ru")
 
     assert order == ["fsync", "replace"], order
+
+
+def test_two_threads_writing_different_settings_keep_both():
+    """`set()` is a read-modify-write of the whole file. Without a lock across
+    it, two threads each read, change their own key and write the lot back —
+    and the second write silently drops the first one's change. Not
+    theoretical: the tray sets the microphone, the window saves its geometry as
+    it closes, and the app writes FVOnboarded, all from different threads."""
+    import threading
+
+    config.set("FVHotkey", "ctrl+alt")
+    start = threading.Barrier(2)
+    pairs = [("FVLanguage", "en"), ("FVMicrophone", "Mic (MCHOSE V9 PRO)")]
+
+    def writer(key, value):
+        start.wait(5)
+        for _ in range(40):
+            config.set(key, value)
+
+    threads = [threading.Thread(target=writer, args=pair) for pair in pairs]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(20)
+
+    config._cache_mtime = None  # noqa: SLF001 - read what is on disk
+    assert config.get_str("FVLanguage") == "en"
+    assert config.get_str("FVMicrophone") == "Mic (MCHOSE V9 PRO)"
+    assert config.get_str("FVHotkey") == "ctrl+alt"
