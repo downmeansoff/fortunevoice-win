@@ -37,8 +37,12 @@ OVERRIDABLE = frozenset({
     "FVVoiceCommands",
     "FVStreaming",
     "FVPasteViaClipboard",
-    "FVMiniPrompt",
 })
+# Not FVMiniPrompt. It is read inside the cleaner, on a worker thread, after
+# the user has already let go and may well have switched windows — so "the app
+# in front" is no longer a meaningful question by then. It was listed here and
+# read straight from config, which is the worst of both: a documented override
+# that silently did nothing.
 
 
 def _table() -> dict[str, dict]:

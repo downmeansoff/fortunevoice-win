@@ -26,8 +26,9 @@ from __future__ import annotations
 import ctypes
 import time
 
-from . import config
+from . import config, profiles
 from .log import get as get_logger
+from . import winapi
 from .winapi import (
     CF_UNICODETEXT,
     GMEM_MOVEABLE,
@@ -150,7 +151,11 @@ def inject(text: str) -> bool:
     caller should fall back to the result panel."""
     if not text:
         return True
-    if config.get_bool("FVPasteViaClipboard"):
+    # Resolved here rather than by the caller: this is the last moment the
+    # window in front is still the one the text is going into, and the setting
+    # is per-application (profiles.OVERRIDABLE) precisely because the apps that
+    # need the clipboard route are specific ones.
+    if profiles.get_bool("FVPasteViaClipboard", winapi.foreground_app_name()):
         return paste_via_clipboard(text)
     return type_text(text)
 

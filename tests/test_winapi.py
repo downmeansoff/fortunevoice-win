@@ -126,16 +126,40 @@ def test_no_key_reads_as_down_when_nothing_is_pressed():
 # ── the foreground window ────────────────────────────────────────────────
 
 
-def test_a_missing_title_becomes_none_not_an_empty_string(monkeypatch):
+def test_the_executable_wins_over_the_window_title(monkeypatch):
+    """What per-app profiles are keyed by. Matching a profile against the
+    title instead meant "WindowsTerminal.exe" never matched anything, so the
+    whole feature was documented, configurable and dead."""
+    monkeypatch.setattr(winapi, "process_name", lambda hwnd: "Telegram.exe")
+    monkeypatch.setattr(winapi, "window_title", lambda hwnd: "Saved Messages")
+    assert winapi.foreground_app_name() == "Telegram.exe"
+
+
+def test_the_title_is_the_fallback_when_the_process_cannot_be_queried(monkeypatch):
+    """A window we are not allowed to open still has to show as something."""
+    monkeypatch.setattr(winapi, "process_name", lambda hwnd: None)
+    monkeypatch.setattr(winapi, "window_title", lambda hwnd: "Notes - draft.txt")
+    assert winapi.foreground_app_name() == "Notes - draft.txt"
+
+
+def test_nothing_identifiable_becomes_none_not_an_empty_string(monkeypatch):
     """History stores this. An empty string would render as a blank chip on
     the card rather than no chip at all."""
+    monkeypatch.setattr(winapi, "process_name", lambda hwnd: None)
     monkeypatch.setattr(winapi, "window_title", lambda hwnd: "")
     assert winapi.foreground_app_name() is None
 
 
-def test_a_title_is_passed_through(monkeypatch):
-    monkeypatch.setattr(winapi, "window_title", lambda hwnd: "Code.exe")
-    assert winapi.foreground_app_name() == "Code.exe"
+def test_the_executable_of_this_very_process_is_readable():
+    """The ctypes path itself — OpenProcess, QueryFullProcessImageNameW, the
+    basename split. The tests above stub `process_name` out, so without this
+    one a wrong argtype or a leaked handle would sit behind three green
+    assertions. Asked of our own process, which we are always allowed to
+    open."""
+    import os
+
+    name = winapi.process_name_of_pid(os.getpid())
+    assert name and name.lower().endswith(".exe")
 
 
 def test_the_title_of_a_window_that_does_not_exist_is_empty():

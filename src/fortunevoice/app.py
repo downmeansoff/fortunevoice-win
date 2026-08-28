@@ -234,7 +234,8 @@ class App:
 
         ui_thread.on_error = self._on_ui_error
 
-        threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
+        threading.Thread(target=lambda: self._load_model(announce=True),
+                         name="model-load", daemon=True).start()
         # Pay PortAudio's first-open cost now rather than out of the first
         # dictation's opening word. See audio.prewarm().
         threading.Thread(target=audio_prewarm, name="audio-warm", daemon=True).start()
@@ -411,14 +412,24 @@ class App:
     def hotkey_label(self) -> str:
         return self._listener.spec.label if self._listener else config.get_str("FVHotkey")
 
-    def _load_model(self, announce: bool = True) -> None:
+    def _load_model(self, announce: bool = False) -> None:
         """Load the model, optionally driving the app's state while it happens.
 
-        `announce=False` for a load running *underneath* something else — the
-        reload kicked off at key-down when the idle unload had dropped the
-        model. That one announced LOADING and then IDLE while the user was
-        still speaking, and `_finish_dictation` returns early unless the state
-        is RECORDING, so the whole dictation was thrown away at key-up.
+        `announce` means this load OWNS the state machine, and only startup
+        does. Every other load runs *underneath* something else — the reload
+        kicked off at key-down when the idle unload had dropped the model, the
+        one inside the pipeline, the one in `recover_failed`. Announcing there
+        set LOADING and then IDLE while the user was still speaking, and
+        `_finish_dictation` returns early unless the state is RECORDING, so the
+        whole dictation was thrown away at key-up — with the microphone left
+        open, because the matching stop never ran either. The default is False
+        for that reason: forgetting the argument has to fail safe.
+
+        The success path still returns to IDLE from a state this load is
+        entitled to leave: LOADING (startup) or ERROR (the tray's "Retry
+        model", which used to load the model and leave the hotkey dead until a
+        restart). RECORDING and PROCESSING belong to a dictation and are never
+        touched.
         """
         if announce:
             self._set_state(State.LOADING)
@@ -431,12 +442,23 @@ class App:
             self._notify("FortuneVoice couldn't load the model",
                          str(exc).split(chr(10))[0])
             return
-        if announce:
+        if self.state in (State.LOADING, State.ERROR):
             self._set_state(State.IDLE)
 
     def reload_model(self) -> None:
-            threading.Thread(target=lambda: self._load_model(announce=False),
-                             name="model-reload", daemon=True).start()
+        """Drop the model, then load whatever the settings now name.
+
+        The unload is the point. `Transcriber.load()` is a no-op while a model
+        is already resident — deliberately, so two threads racing on a 6 GB
+        card cannot both pay for it — so reloading without unloading first did
+        nothing whatsoever, and choosing a different Whisper model in Settings
+        silently went on using the old one until the app was restarted.
+        """
+        def run() -> None:
+            self.transcriber.unload()
+            self._load_model()
+
+        threading.Thread(target=run, name="model-reload", daemon=True).start()
     # ── controller ───────────────────────────────────────────────────────
 
     def _controller_loop(self) -> None:
@@ -458,6 +480,13 @@ class App:
             # Ollama.
             if kind == "press" and time.monotonic() - stamp > 1.0:
                 logger.debug("dropping stale press event")
+                # The arm that came with it opened the microphone. Dropping
+                # only the press left it open until the next dictation, with
+                # the buffer growing the whole time — and `AudioRecorder.start`
+                # returns early when it is already recording, so that buffer
+                # was then handed to the next decode with everything said in
+                # the room in between.
+                self._on_disarm()
                 continue
             try:
                 if kind == "press":
@@ -625,7 +654,7 @@ class App:
         self.transcriber.reset_session_language()
         self.transcriber.warmup()
 
-        if config.get_bool("FVStreaming"):
+        if profiles.get_bool("FVStreaming", winapi.foreground_app_name()):
             # Hand the cleaner in so confirmed prefixes get cleaned DURING the
             # recording; at key-up only the tail is left to clean.
             live_cleaner = self.cleaner if config.get_bool("FVCleanupEnabled") else None
