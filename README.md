@@ -1,5 +1,7 @@
 # FortuneVoice for Windows
 
+[![CI](https://github.com/downmeansoff/fortunevoice-win/actions/workflows/ci.yml/badge.svg)](https://github.com/downmeansoff/fortunevoice-win/actions/workflows/ci.yml)
+
 Local, offline voice dictation. Hold a hotkey, speak, release — the
 transcribed text is typed into whatever app has focus. Audio never leaves the
 machine.
@@ -234,7 +236,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-116 tests: the macOS project's own suite ported over (sentence splitting,
+534 tests, run on every push by CI: the macOS project's own suite ported over (sentence splitting,
 repeat collapsing, the cleanup skip heuristic and cost model, the streaming
 silence rules, the decoder gate's bounded waits, timeouts, history, recovery,
 stats) plus Windows-specific ones for hotkey parsing, the hook's swallow/fire
