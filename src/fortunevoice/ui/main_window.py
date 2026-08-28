@@ -77,6 +77,11 @@ class MainWindow:
 
         if app is not None:
             self._app = app
+            # The app's store, not one of our own. Two DictationStore objects
+            # over one file means two locks and neither of them helping: the
+            # window deleting a row while a dictation is being appended is a
+            # read-modify-write race that silently loses one of them.
+            self._store = app.store
         ui.call(self._show)
 
     # ── UI thread only ───────────────────────────────────────────────────
@@ -273,8 +278,19 @@ class MainWindow:
         bar.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
+        # Windows sends 120 per notch, but a precision touchpad or a free-spin
+        # wheel sends fractions of it. `-delta // 120` floors, so +40 scrolled
+        # a whole line up while -40 became 0 and did nothing at all — scrolling
+        # up worked and scrolling down did not. Accumulate instead, and spend
+        # whole notches.
+        pending = {"delta": 0}
+
         def on_wheel(event) -> None:
-            canvas.yview_scroll(-event.delta // 120, "units")
+            pending["delta"] += event.delta
+            while abs(pending["delta"]) >= 120:
+                step = 120 if pending["delta"] > 0 else -120
+                pending["delta"] -= step
+                canvas.yview_scroll(-step // 120, "units")
 
         for widget in (canvas, inner):
             widget.bind("<MouseWheel>", on_wheel)
@@ -298,13 +314,28 @@ class MainWindow:
 
         field = widgets.Card(page, radius=11, padx=14, pady=9)
         field.pack(fill="x", pady=(0, 16))
-        glass = icons.photo(icons.image("search", 15, theme.TEXT_FAINT))
+        glass = icons.photo(icons.image("search", theme.px(15), theme.TEXT_FAINT))
         self._images.append(glass)
         tk.Label(field.body, image=glass, bg=theme.CARD).pack(side="left", padx=(0, 10))
         self._search_var = tk.StringVar()
         search = theme.entry(field.body, self._search_var)
         search.pack(side="left", fill="x", expand=True)
-        self._search_var.trace_add("write", lambda *_: self._refresh_history())
+        # Debounced. Every keystroke tore down and rebuilt every card in the
+        # list — canvas-backed, one per dictation — so typing into the search
+        # box on a long history stuttered, and each character cost the same
+        # work again. 160 ms is below the gap between keystrokes in ordinary
+        # typing, so the list settles once the user pauses.
+        self._search_after = None
+
+        def on_search(*_args) -> None:
+            if self._search_after is not None:
+                try:
+                    search.after_cancel(self._search_after)
+                except Exception:  # noqa: BLE001 - already fired
+                    pass
+            self._search_after = search.after(160, self._refresh_history)
+
+        self._search_var.trace_add("write", on_search)
         self._search_is_placeholder = _placeholder(search, t("history.search"))
 
         self._history_body = self._scroll_area(page)
@@ -410,7 +441,10 @@ class MainWindow:
                 # misheard AND what the right one was — the user just typed it.
                 learned = dictionary.learn_from_correction(record.transcript, text)
                 if learned:
-                    logger.info("learned from a correction: %s", ", ".join(learned))
+                    # The count, not the words. These are by construction the
+                    # proper nouns and jargon the user just typed, and the log
+                    # is the file they hand over when something breaks.
+                    logger.info("learned %d word(s) from a correction", len(learned))
                 self._refresh_history()
             return "break"
 
@@ -428,10 +462,22 @@ class MainWindow:
 
         if not injector.set_clipboard_text(record.transcript):
             return
-        flash = tk.Label(card.body, text="Copied", font=theme.font(8, "bold"),
+        flash = tk.Label(card.body, text=t("history.copied"), font=theme.font(8, "bold"),
                          bg=theme.CARD, fg=theme.OK)
         flash.place(relx=1.0, y=0, anchor="ne")
-        card.body.after(1100, flash.destroy)
+
+        def remove() -> None:
+            # The list can be rebuilt before this fires — a search keystroke, a
+            # deletion, a dictation arriving — and destroying a widget that is
+            # already gone raises inside the Tk callback, which takes the UI
+            # thread's error path for something the user cannot even see.
+            try:
+                if flash.winfo_exists():
+                    flash.destroy()
+            except Exception:  # noqa: BLE001 - the whole card went with it
+                pass
+
+        card.body.after(1100, remove)
 
     def _delete_record(self, record) -> str:
         """Remove one dictation. No confirmation: it is one row, the action is
@@ -441,8 +487,16 @@ class MainWindow:
         return "break"  # don't let the click fall through to copy-the-card
 
     def _export_history(self) -> None:
+        from tkinter import messagebox
+
         records = self._store.all()
+        # Both of these used to return in silence, which is the same thing the
+        # button does when it works — so a failed export and a successful one
+        # were indistinguishable from the outside.
         if not records:
+            messagebox.showinfo(t("history.export_empty"),
+                                t("history.export_empty_body"),
+                                parent=self._window)
             return
         target = paths.home() / "history-export.txt"
         lines = [f"{r.date}  {r.app or ''}\n{r.transcript}\n" for r in records]
@@ -450,6 +504,8 @@ class MainWindow:
             target.write_text("\n".join(lines), encoding="utf-8")
         except OSError as exc:
             logger.warning("could not export history: %s", exc)
+            messagebox.showwarning(t("history.export_failed"), str(exc),
+                                   parent=self._window)
             return
         import os
 
@@ -467,6 +523,14 @@ class MainWindow:
         ):
             return
         self._store.clear()
+        # The export is a plaintext copy of everything that was just deleted.
+        # Leaving it behind means "Clear history" clears the list and keeps the
+        # dictations, which is the opposite of what the button promises.
+        export = paths.home() / "history-export.txt"
+        try:
+            export.unlink(missing_ok=True)
+        except OSError as exc:  # noqa: BLE001 - locked by an editor, say so
+            logger.warning("could not remove the history export: %s", exc)
         self._refresh_history()
 
     # ── Insights ─────────────────────────────────────────────────────────
@@ -514,7 +578,7 @@ class MainWindow:
         bg = theme.CARD
         card = widgets.Card(parent, bg=bg, radius=14, padx=18, pady=16)
         icon = icons.photo(icons.image(
-            glyph, 16, theme.ACCENT if primary else theme.TEXT_MUTED))
+            glyph, theme.px(16), theme.ACCENT if primary else theme.TEXT_MUTED))
         self._images.append(icon)
         tk.Label(card.body, image=icon, bg=bg).pack(anchor="w", pady=(0, 10))
         theme.label(card.body, value, size=24, display=True,
@@ -542,7 +606,12 @@ class MainWindow:
             if day in counts:
                 counts[day] += record.words
 
-        chart = tk.Canvas(card.body, height=120, bg=theme.CARD,
+        # Everything in this chart is scaled: at 150% the bars used to stop
+        # two thirds of the way up a canvas that had grown with the rest of the
+        # window, leaving a band of empty card under them.
+        floor, top = theme.px(116), theme.px(8)
+        span = theme.px(100)
+        chart = tk.Canvas(card.body, height=theme.px(120), bg=theme.CARD,
                           highlightthickness=0, bd=0)
         chart.pack(fill="x")
         values = list(counts.values())
@@ -563,11 +632,11 @@ class MainWindow:
                 # corners as circles with a gap between them, which is what
                 # made an empty month look like a row of tiny dumbbells.
                 if value == 0:
-                    chart.create_rectangle(x, 114, x + bar, 116,
+                    chart.create_rectangle(x, floor - theme.px(2), x + bar, floor,
                                            fill=theme.LINE, outline="")
                     continue
-                height = 8 + (value / biggest) * 100
-                theme.rounded_rect(chart, x, 116 - height, x + bar, 116,
+                height = top + (value / biggest) * span
+                theme.rounded_rect(chart, x, floor - height, x + bar, floor,
                                    min(3, bar / 2), fill=theme.ACCENT)
 
         chart.bind("<Configure>", draw)
@@ -758,7 +827,7 @@ class MainWindow:
         # model already configured.
         widgets.Dropdown(row.control, _ollama_models(),
                          lambda: config.get_str("FVOllamaModel"),
-                         lambda v: config.set("FVOllamaModel", v),
+                         lambda v: _set_cleanup_model(v),
                          refresh=_ollama_models).pack()
         row = widgets.SettingRow(card.body, "clock", TINT_ORANGE,
                                  t("settings.keep_alive"),
@@ -1095,6 +1164,20 @@ def _placeholder(entry, text: str):
     entry.bind("<FocusOut>", lambda _e: show())
     show()
     return lambda: state["showing"]
+
+
+def _set_cleanup_model(name: str) -> None:
+    """Change the cleanup model, and forget what the last one cost.
+
+    `cleaner._fit()` learns how long this model takes per character from the
+    metrics file and caches it for five minutes. Left alone across a model
+    change, the new model is budgeted with the old one's timings — a 3b sized
+    like a 1.5b, so chunks are sent that cannot come back in time.
+    """
+    from .. import cleaner
+
+    config.set("FVOllamaModel", name)
+    cleaner.reset_fit()
 
 
 window = MainWindow()

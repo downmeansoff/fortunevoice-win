@@ -13,6 +13,7 @@ cleanup model is slow, down, or wrong.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -336,11 +337,24 @@ def mini_system(vocabulary: str) -> str:
 # tidy-up, and every other word survives — so neither the ratio below nor the
 # invented-content check would notice.
 _NEGATIONS = {"не", "нет", "ни", "нельзя", "никак", "никогда",
-              "not", "no", "never", "cannot", "n't", "dont", "doesnt", "didnt"}
+              "not", "no", "never", "cannot", "dont", "doesnt", "didnt",
+              "cant", "wont", "isnt", "arent", "wasnt", "werent", "havent",
+              "hasnt", "hadnt", "shouldnt", "wouldnt", "couldnt"}
+
+# English hides most of its negations in a contraction, and `_letter_words`
+# splits on non-letters — so "don't" arrived as "don" + "t" and matched
+# nothing at all. "i don't think we can ship this", cleaned to "I think we can
+# ship this", passed every guard: same words, one shorter, no negation counted
+# on either side. Counted directly instead, before tokenising, and the stem is
+# then blanked so "ca" and "wo" cannot be mistaken for words.
+_CONTRACTED_NOT = re.compile("n['\u2019\u02bc]t\\b")
 
 
 def _negations(text: str) -> int:
-    return sum(1 for word in _letter_words(text.lower()) if word in _NEGATIONS)
+    lowered = text.lower()
+    contracted = len(_CONTRACTED_NOT.findall(lowered))
+    rest = _CONTRACTED_NOT.sub(" ", lowered)
+    return contracted + sum(1 for word in _letter_words(rest) if word in _NEGATIONS)
 
 
 def _kept_enough(before: str, after: str) -> bool:
@@ -436,8 +450,12 @@ def _is_safe(before: str, after: str) -> bool:
     # is well inside the ratio. "мы не будем это делать" becoming "мы будем
     # это делать" is the worst thing cleanup can do — it does not garble the
     # text, it makes it confidently say the opposite.
-    if _negations(after) < _negations(before):
-        logger.warning("cleanup dropped a negation, using raw text")
+    # Not `<`. A negation the model ADDS inverts the sentence just as
+    # thoroughly, and the invented-content guard does not see it when the word
+    # already appears somewhere in the raw: "не знаю что делать" coming back
+    # as "Не знаю, что не делать" passed.
+    if _negations(after) != _negations(before):
+        logger.warning("cleanup changed a negation, using raw text")
         return False
     return True
 
@@ -687,6 +705,21 @@ class OllamaCleaner:
             if not _is_safe(core_text, cleaned):
                 logger.warning(
                     "chunk cleanup dropped too much (%d→%d words), keeping raw chunk",
+                    word_count(core_text), word_count(cleaned),
+                )
+                continue
+            # Second line of defence against a model that copies the
+            # <CONTEXT> text back without the tags, returning a chunk that
+            # carries its neighbour's sentence: the words are all in the raw
+            # and the chunk is longer, not shorter, so the per-chunk guards
+            # above pass it. The assembled text is still checked as a whole,
+            # and in every case reproduced here that global check caught it —
+            # this makes the rejection local, so one bad chunk costs its own
+            # cleanup instead of the whole dictation's. Cleanup removes filler
+            # and punctuation; it has no business growing a chunk by half.
+            if word_count(cleaned) > word_count(core_text) * 1.5 + 3:
+                logger.warning(
+                    "chunk cleanup grew (%d→%d words), keeping raw chunk",
                     word_count(core_text), word_count(cleaned),
                 )
                 continue

@@ -208,6 +208,19 @@ def test_a_failed_allocation_leaves_the_clipboard_alone(monkeypatch):
     assert emptied == [], "the user's clipboard must survive a failure"
 
 
+# Kept alive for the whole module. `addressof(create_string_buffer(64))`
+# inline hands out the address of a buffer that is garbage before the call
+# returns, and `set_clipboard_text` then memmoves the text into freed memory —
+# a test that corrupts the interpreter's heap to check a return value.
+_SCRATCH: list = []
+
+
+def _scratch() -> int:
+    buffer = injector.ctypes.create_string_buffer(4096)
+    _SCRATCH.append(buffer)          # outlives the call
+    return injector.ctypes.addressof(buffer)
+
+
 def test_a_block_that_never_reached_the_clipboard_is_freed(monkeypatch):
     """SetClipboardData failing means ownership did NOT pass. Leaving it
     unfreed leaks the allocation on every attempt."""
@@ -216,9 +229,7 @@ def test_a_block_that_never_reached_the_clipboard_is_freed(monkeypatch):
     monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
     monkeypatch.setattr(injector.user32, "EmptyClipboard", lambda: 1)
     monkeypatch.setattr(injector.kernel32, "GlobalAlloc", lambda flags, size: 4242)
-    monkeypatch.setattr(injector.kernel32, "GlobalLock",
-                        lambda h: injector.ctypes.addressof(
-                            injector.ctypes.create_string_buffer(64)))
+    monkeypatch.setattr(injector.kernel32, "GlobalLock", lambda h: _scratch())
     monkeypatch.setattr(injector.kernel32, "GlobalUnlock", lambda h: 1)
     monkeypatch.setattr(injector.user32, "SetClipboardData", lambda fmt, h: 0)
     monkeypatch.setattr(injector.kernel32, "GlobalFree",
@@ -236,9 +247,7 @@ def test_a_block_the_clipboard_took_is_never_freed(monkeypatch):
     monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
     monkeypatch.setattr(injector.user32, "EmptyClipboard", lambda: 1)
     monkeypatch.setattr(injector.kernel32, "GlobalAlloc", lambda flags, size: 4242)
-    monkeypatch.setattr(injector.kernel32, "GlobalLock",
-                        lambda h: injector.ctypes.addressof(
-                            injector.ctypes.create_string_buffer(64)))
+    monkeypatch.setattr(injector.kernel32, "GlobalLock", lambda h: _scratch())
     monkeypatch.setattr(injector.kernel32, "GlobalUnlock", lambda h: 1)
     monkeypatch.setattr(injector.user32, "SetClipboardData", lambda fmt, h: h)
     monkeypatch.setattr(injector.kernel32, "GlobalFree",
@@ -246,3 +255,26 @@ def test_a_block_the_clipboard_took_is_never_freed(monkeypatch):
 
     assert injector.set_clipboard_text("текст") is True
     assert freed == []
+
+
+def test_the_clipboard_route_honours_a_per_app_profile(monkeypatch):
+    """FVPasteViaClipboard is listed in profiles.OVERRIDABLE — the whole point
+    is that the apps needing the clipboard route are specific ones. `inject`
+    read it straight from config, so the profile was accepted, reported as
+    applied, and ignored."""
+    from fortunevoice import config, injector, winapi
+
+    pasted: list[str] = []
+    monkeypatch.setattr(winapi, "process_name", lambda hwnd: "OldJavaApp.exe")
+    monkeypatch.setattr(injector, "paste_via_clipboard",
+                        lambda text: pasted.append(text) or True)
+    monkeypatch.setattr(injector, "type_text",
+                        lambda text: pytest.fail("the profile asked for the clipboard"))
+    config.set("FVPasteViaClipboard", False)
+    config.set("FVAppProfiles", {"OldJavaApp.exe": {"FVPasteViaClipboard": True}})
+    try:
+        assert injector.inject("привет") is True
+        assert pasted == ["привет"]
+    finally:
+        config.set("FVAppProfiles", {})
+        config.set("FVPasteViaClipboard", False)

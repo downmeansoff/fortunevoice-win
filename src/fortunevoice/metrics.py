@@ -21,9 +21,15 @@ from .log import get as get_logger
 logger = get_logger("metrics")
 
 _lock = threading.Lock()
-# A dictation a minute for a year is ~130k lines; well under what a JSONL file
-# handles comfortably, but not unbounded.
-MAX_LINES = 200_000
+# A record is ~515 bytes, so this is ~10 MB — comfortably under the 30 MB at
+# which the trim starts, which is the point. At 200_000 the two gates
+# disagreed: the file had to reach 30 MB before anything happened, and then
+# the line cap kept every line, so nothing was ever removed. From there on
+# every dictation read and split a 30 MB file, under the lock, after the text
+# had already been typed — and the file went on growing towards 100 MB.
+# 20_000 dictations is a year of heavy use, and the cost model only reads the
+# recent ones.
+MAX_LINES = 20_000
 
 
 @dataclass
@@ -96,17 +102,32 @@ def _trim(path) -> None:
     try:
         if path.stat().st_size < 30_000_000:
             return
-        lines = path.read_text(encoding="utf-8").splitlines()
+        # errors="replace", not a wider except: a machine that lost power
+        # mid-append leaves a Cyrillic character cut in half, and one bad byte
+        # then raised UnicodeDecodeError out of every reader. Replacing keeps
+        # the damage inside the one line it belongs to; that line fails the
+        # per-line json parse and is skipped, and every intact record around
+        # it survives.
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         if len(lines) <= MAX_LINES:
             return
-        path.write_text("\n".join(lines[-MAX_LINES:]) + "\n", encoding="utf-8")
+        # Through a temp file, like the history store: a write interrupted
+        # here would otherwise leave the live file truncated, which is the
+        # very corruption this function exists to bound.
+        tmp = path.with_suffix(".jsonl.tmp")
+        tmp.write_text("\n".join(lines[-MAX_LINES:]) + "\n", encoding="utf-8")
+        tmp.replace(path)
     except OSError:
         pass
 
 
 def read_all() -> list[dict]:
     try:
-        raw = paths.metrics_file().read_text(encoding="utf-8")
+        # See _trim: one byte of a half-written character used to throw
+        # UnicodeDecodeError — which is a ValueError, not an OSError — straight
+        # out of the Insights page and out of `doctor stats`, permanently,
+        # until the user found and hand-edited the file.
+        raw = paths.metrics_file().read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
     out = []

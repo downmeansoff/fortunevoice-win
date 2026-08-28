@@ -119,6 +119,13 @@ class App:
     # 4 s, not 2: a two-second pause is a normal mid-sentence think — cutting
     # there loses the continuation. 4 s only ends genuinely finished speech.
     SILENCE_STOP_SECONDS = 4.0
+    # What counts as "still talking" for the toggle-mode auto-stop. It was a
+    # bare 0.2 — four times the level at which the app warns the microphone is
+    # dead, and ten times audio.py's own floor for speech. A normal voice at
+    # normal gain never reached it, so `_last_loud` stayed pinned at the start
+    # of the recording and toggle mode cut the user off four seconds in,
+    # mid-sentence, with the pill still cheerfully saying "Listening".
+    SILENCE_STOP_LOUDNESS = 0.02
     # Hard cap. Hold mode relies on a key-up that can simply never arrive
     # (focus stolen mid-press, the machine sleeping), and without a cap that
     # leaves the app recording forever with the state stuck outside idle —
@@ -208,7 +215,12 @@ class App:
         self._notify(t("notify.ui_failed"), detail)
 
     def _notify(self, title: str, body: str) -> None:
-        logger.info("%s — %s", title, body)
+        # Title only. Notification bodies carry transcript excerpts — the
+        # recovered text, the preview shown when there is no window to show it
+        # in — and this log is the file the user is asked to hand over when
+        # something goes wrong. What it says happened is diagnostic; what was
+        # dictated is not.
+        logger.info("notification: %s", title)
         if self.on_notify:
             try:
                 self.on_notify(title, body)
@@ -234,7 +246,8 @@ class App:
 
         ui_thread.on_error = self._on_ui_error
 
-        threading.Thread(target=self._load_model, name="model-load", daemon=True).start()
+        threading.Thread(target=lambda: self._load_model(announce=True),
+                         name="model-load", daemon=True).start()
         # Pay PortAudio's first-open cost now rather than out of the first
         # dictation's opening word. See audio.prewarm().
         threading.Thread(target=audio_prewarm, name="audio-warm", daemon=True).start()
@@ -411,14 +424,24 @@ class App:
     def hotkey_label(self) -> str:
         return self._listener.spec.label if self._listener else config.get_str("FVHotkey")
 
-    def _load_model(self, announce: bool = True) -> None:
+    def _load_model(self, announce: bool = False) -> None:
         """Load the model, optionally driving the app's state while it happens.
 
-        `announce=False` for a load running *underneath* something else — the
-        reload kicked off at key-down when the idle unload had dropped the
-        model. That one announced LOADING and then IDLE while the user was
-        still speaking, and `_finish_dictation` returns early unless the state
-        is RECORDING, so the whole dictation was thrown away at key-up.
+        `announce` means this load OWNS the state machine, and only startup
+        does. Every other load runs *underneath* something else — the reload
+        kicked off at key-down when the idle unload had dropped the model, the
+        one inside the pipeline, the one in `recover_failed`. Announcing there
+        set LOADING and then IDLE while the user was still speaking, and
+        `_finish_dictation` returns early unless the state is RECORDING, so the
+        whole dictation was thrown away at key-up — with the microphone left
+        open, because the matching stop never ran either. The default is False
+        for that reason: forgetting the argument has to fail safe.
+
+        The success path still returns to IDLE from a state this load is
+        entitled to leave: LOADING (startup) or ERROR (the tray's "Retry
+        model", which used to load the model and leave the hotkey dead until a
+        restart). RECORDING and PROCESSING belong to a dictation and are never
+        touched.
         """
         if announce:
             self._set_state(State.LOADING)
@@ -431,12 +454,23 @@ class App:
             self._notify("FortuneVoice couldn't load the model",
                          str(exc).split(chr(10))[0])
             return
-        if announce:
+        if self.state in (State.LOADING, State.ERROR):
             self._set_state(State.IDLE)
 
     def reload_model(self) -> None:
-            threading.Thread(target=lambda: self._load_model(announce=False),
-                             name="model-reload", daemon=True).start()
+        """Drop the model, then load whatever the settings now name.
+
+        The unload is the point. `Transcriber.load()` is a no-op while a model
+        is already resident — deliberately, so two threads racing on a 6 GB
+        card cannot both pay for it — so reloading without unloading first did
+        nothing whatsoever, and choosing a different Whisper model in Settings
+        silently went on using the old one until the app was restarted.
+        """
+        def run() -> None:
+            self.transcriber.unload()
+            self._load_model()
+
+        threading.Thread(target=run, name="model-reload", daemon=True).start()
     # ── controller ───────────────────────────────────────────────────────
 
     def _controller_loop(self) -> None:
@@ -458,6 +492,13 @@ class App:
             # Ollama.
             if kind == "press" and time.monotonic() - stamp > 1.0:
                 logger.debug("dropping stale press event")
+                # The arm that came with it opened the microphone. Dropping
+                # only the press left it open until the next dictation, with
+                # the buffer growing the whole time — and `AudioRecorder.start`
+                # returns early when it is already recording, so that buffer
+                # was then handed to the next decode with everything said in
+                # the room in between.
+                self._on_disarm()
                 continue
             try:
                 if kind == "press":
@@ -533,6 +574,11 @@ class App:
         captured — transcribe and deliver it (truncated is far better than
         erased), exactly like a normal key-up."""
         if self.state != State.RECORDING:
+            # Not recording yet, but the pre-roll may have the microphone open
+            # — and the device that just died is the one it opened. Nothing
+            # else closes it: the arm is only undone by a key-up that is now
+            # never coming for a device that is gone.
+            self._on_disarm()
             return
         logger.warning("recording interrupted — salvaging captured audio")
         self._finish_dictation(time.monotonic(), winapi.foreground_window())
@@ -625,7 +671,7 @@ class App:
         self.transcriber.reset_session_language()
         self.transcriber.warmup()
 
-        if config.get_bool("FVStreaming"):
+        if profiles.get_bool("FVStreaming", winapi.foreground_app_name()):
             # Hand the cleaner in so confirmed prefixes get cleaned DURING the
             # recording; at key-up only the tail is left to clean.
             live_cleaner = self.cleaner if config.get_bool("FVCleanupEnabled") else None
@@ -704,7 +750,11 @@ class App:
         pill = self._pill()
         if pill is not None:
             pill.push_level(level)
-        if level > 0.2:
+        # Relative to what this microphone actually delivers, with a floor: a
+        # quiet mic must still be heard, and a noisy room must still fall
+        # silent. Compared BEFORE the peak is updated, or the first loud block
+        # raises its own bar.
+        if level > max(self.SILENCE_STOP_LOUDNESS, self._peak_level * 0.25):
             self._last_loud = time.monotonic()
         self._peak_level = max(self._peak_level, level)
         if (
@@ -938,7 +988,8 @@ class App:
                 return
 
         logger.warning("empty transcript (rms %.3f), nothing to type", audio_level)
-        if audio_level > 0.02:
+        kept_audio = audio_level > 0.02
+        if kept_audio:
             # Loud audio, two failed decodes — that was real speech the decoder
             # lost. Keep the audio for a manual retry.
             self.recovery.save(samples)
@@ -950,6 +1001,11 @@ class App:
                 "FortuneVoice didn't hear anything",
                 "The microphone picked up no signal — check the input device in the tray menu.",
             )
+        elif kept_audio:
+            # There WAS speech and the decoder lost it. The recording is on
+            # disk and the tray can retry it — but only if the user is told;
+            # an error beep on its own reads as "the app ate my words".
+            self._notify(t("notify.lost"), t("notify.stuck_body"))
         self._record_drop(
             "silence" if audio_level < 0.006 else "empty", "", audio_seconds, stt_ms,
             key_up, stream_passes, result,

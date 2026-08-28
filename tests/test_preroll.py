@@ -156,3 +156,19 @@ def test_an_arm_that_never_becomes_a_dictation_closes_the_microphone(app, monkey
     assert not app._armed
     assert app.recorder.stops == 1, "the microphone must not be left open"
     assert not app.recorder.is_recording
+
+
+def test_a_device_that_dies_during_the_pre_roll_closes_the_microphone(app):
+    """The arm opened the microphone; the device it opened has just gone. The
+    key-up that would normally close it is never coming, so nothing else
+    would."""
+    import time
+
+    app._on_arm()
+    assert app._armed, "precondition: the pre-roll opened the microphone"
+    app._set_state(State.IDLE)
+
+    app._on_interrupted()
+
+    assert app.recorder.stops == 1, "the pre-roll microphone has to be closed"
+    assert not app._armed

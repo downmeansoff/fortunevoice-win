@@ -60,17 +60,24 @@ def collapse_repeats(text: str) -> str:
     without touching genuinely distinct phrases. Runs always, independent of
     the optional LLM cleanup.
     """
-    kept: list[str] = []
+    # Line by line, because the cleanup model answers a list as one bullet per
+    # line and joining everything with a space turned it straight back into a
+    # paragraph. The repeat filter still spans lines: a fragment repeated
+    # across a line break is the same hallucination.
     last_key = ""
-    for fragment in sentences(text):
-        key = normalize_key(fragment)
-        if not key:
-            continue
-        if key == last_key:
-            continue  # drop the immediate duplicate
-        last_key = key
-        kept.append(fragment.strip())
-    return squeeze(" ".join(kept))
+    lines: list[str] = []
+    for line in text.splitlines() or [text]:
+        kept: list[str] = []
+        for fragment in sentences(line):
+            key = normalize_key(fragment)
+            if not key:
+                continue
+            if key == last_key:
+                continue  # drop the immediate duplicate
+            last_key = key
+            kept.append(fragment.strip())
+        lines.append(" ".join(kept))
+    return squeeze_lines(chr(10).join(lines))
 
 
 def word_count(text: str) -> int:

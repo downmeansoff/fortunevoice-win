@@ -151,3 +151,24 @@ def test_stop_releases_the_reservation():
     recorder.stop()
     assert recorder._count == 0
     assert recorder.snapshot().size == 0
+
+
+def test_the_resampler_tail_does_not_borrow_the_callers_buffer():
+    """PortAudio hands the callback a buffer it reuses for the next block. A
+    tail kept as a view into it is overwritten with newer audio before it is
+    ever consumed — a torn sample at the seam, on exactly the small-block
+    devices this branch exists for."""
+    import numpy as np
+
+    from fortunevoice.audio import AudioRecorder
+
+    recorder = AudioRecorder()
+    recorder._source_rate = 48_000        # 3 source samples per output sample
+    recorder._resample_tail = np.zeros(0, dtype=np.float32)
+
+    reused = np.full(2, 0.5, dtype=np.float32)   # too short to yield a sample
+    assert recorder._downsample(reused).size == 0
+    reused[:] = -1.0                              # PortAudio refills the block
+
+    assert recorder._resample_tail.tolist() == [0.5, 0.5], \
+        "the tail must be a copy, not a window onto the driver's buffer"

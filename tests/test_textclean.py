@@ -181,3 +181,21 @@ def test_squeeze_lines_trims_each_line_and_drops_blank_runs():
     from fortunevoice.textclean import squeeze_lines
 
     assert squeeze_lines("  раз  \n\n\n  два  ") == "раз\n\nдва"
+
+
+def test_a_bullet_list_keeps_its_line_breaks():
+    """The cleanup model answers a list as one bullet per line, and
+    `collapse_repeats` runs on every dictation. Joining the fragments with a
+    space turned the list straight back into a paragraph."""
+    listed = "- купить хлеб\n- позвонить маме\n- забрать посылку"
+    assert collapse_repeats(listed) == listed
+
+
+def test_a_repeat_across_a_line_break_is_still_dropped():
+    """The filter has to keep spanning lines — a hallucinated repeat does not
+    stop at one."""
+    assert collapse_repeats("Потерял.\nПотерял.") == "Потерял."
+
+
+def test_a_plain_paragraph_is_unchanged():
+    assert collapse_repeats("Привет. Как дела?") == "Привет. Как дела?"

@@ -220,3 +220,39 @@ def test_every_guard_is_still_wired_into_is_safe():
     finally:
         C._kept_enough, C._no_invented_content = original_kept, original_invented
     assert calls == ["kept", "invented"]
+
+
+from fortunevoice import cleaner  # noqa: E402
+
+
+# ── a guard that misses half the language is not a guard ─────────────────
+
+
+def test_an_english_contraction_counts_as_a_negation():
+    """`_letter_words` splits on non-letters, so "don't" arrived as "don" +
+    "t" and matched nothing. "i don't think we can ship this", cleaned to "I
+    think we can ship this", passed every guard: the same words, one shorter,
+    no negation counted on either side — and the sentence now says the
+    opposite."""
+    assert cleaner._negations("i don't think we can ship this") == 1
+    assert cleaner._negations("I think we can ship this") == 0
+    assert cleaner._is_safe("i don't think we can ship this",
+                            "I think we can ship this") is False
+
+
+def test_a_typographic_apostrophe_counts_too():
+    """Whisper emits U+2019, not the ASCII quote."""
+    assert cleaner._negations("i don\u2019t agree") == 1
+
+
+def test_an_added_negation_is_refused_as_well_as_a_dropped_one():
+    """A negation the model ADDS inverts the sentence just as thoroughly, and
+    the invented-content guard does not see it when the word already appears
+    somewhere in the raw."""
+    assert cleaner._is_safe("не знаю что делать с этим файлом",
+                            "Не знаю, что не делать с этим файлом.") is False
+
+
+def test_a_negation_that_survives_is_left_alone():
+    assert cleaner._is_safe("мы не будем это делать сегодня",
+                            "Мы не будем это делать сегодня.") is True

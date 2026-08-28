@@ -64,3 +64,19 @@ def test_every_overridable_key_is_a_real_setting():
     """A typo here would be a setting that silently never applies."""
     for key in profiles.OVERRIDABLE:
         assert key in config.DEFAULTS, key
+
+
+def test_the_name_the_app_looks_up_is_the_name_profiles_are_keyed_by(monkeypatch):
+    """The unit tests above always passed. What did not work: every caller
+    passed `winapi.foreground_app_name()`, which returned the window TITLE, so
+    a profile keyed "WindowsTerminal.exe" was compared against "gleb@pc: ~"
+    and never matched anything. The feature was documented, configurable and
+    dead."""
+    from fortunevoice import winapi
+
+    monkeypatch.setattr(winapi, "process_name", lambda hwnd: "WindowsTerminal.exe")
+    monkeypatch.setattr(winapi, "window_title", lambda hwnd: "gleb@pc: ~")
+    config.set("FVCleanupEnabled", True)
+    config.set("FVAppProfiles", {"WindowsTerminal.exe": {"FVCleanupEnabled": False}})
+
+    assert profiles.get_bool("FVCleanupEnabled", winapi.foreground_app_name()) is False

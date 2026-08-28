@@ -221,14 +221,13 @@ class FakeRecorder:
 def test_an_accidental_tap_is_dropped_without_a_decode(app, monkeypatch):
     """Below MIN_SAMPLES is a key brushed, not a word. Decoding it costs a
     full model run and whatever the model invents out of room noise."""
-    started: list = []
     monkeypatch.setattr(app_module.threading, "Thread",
                         lambda **kwargs: pytest.fail("no pipeline for a tap"))
     app.recorder = FakeRecorder(np.zeros(100, dtype=np.float32))
     app._set_state(State.RECORDING)
     app._finish_dictation(app_module.time.monotonic(), 42)
     assert app.state == State.IDLE
-    assert started == []
+    assert app.typed == [], "and nothing reached the focused window"
 
 
 def test_finishing_is_ignored_unless_recording(app):
@@ -670,3 +669,159 @@ def test_a_late_press_is_still_dropped(app, monkeypatch):
     app._controller_loop()
 
     assert started == []
+
+
+# ── a load that does not own the state must not take it ──────────────────
+
+
+def test_the_key_down_reload_does_not_announce_over_the_recording(app, monkeypatch):
+    """The call site, not the helper.
+
+    `_start_dictation` starts the reload with the bare bound method, so while
+    `_load_model` defaulted to announce=True that background load set LOADING
+    and then IDLE *underneath a live recording*. `_stop_dictation` returns
+    early unless the state is RECORDING, so the dictation was dropped at
+    key-up with nothing typed, nothing saved and no sound — and the microphone
+    left open, because the matching stop never ran either.
+    """
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+    announced: list = []
+
+    def slow_load():
+        entered.set()
+        release.wait(3)
+        app.transcriber._model = object()
+
+    real_set_state = app._set_state
+    monkeypatch.setattr(app, "_set_state",
+                        lambda state, *a, **k: announced.append(state)
+                        or real_set_state(state, *a, **k))
+    monkeypatch.setattr(app.recorder, "start", lambda device="": None)
+    monkeypatch.setattr(app.transcriber, "load", slow_load)
+    monkeypatch.setattr(app.transcriber, "warmup", lambda: None)
+    monkeypatch.setattr(app.transcriber, "reset_session_language", lambda: None)
+    monkeypatch.setattr(app.cleaner, "warmup", lambda: None)
+    monkeypatch.setattr(app, "_arm_auto_stop", lambda: None)
+    monkeypatch.setattr(app, "_start_streaming", lambda *a, **k: None, raising=False)
+    app.transcriber._model = None
+    app._set_state(State.IDLE)
+
+    app._start_dictation()
+    assert app.state is State.RECORDING
+    assert entered.wait(3), "the reload thread never reached the load"
+    assert State.LOADING not in announced, (
+        "a reload running underneath a dictation must not announce its own "
+        "state — the pill flashed 'Loading' over 'Listening'")
+
+    release.set()
+    for thread in threading.enumerate():
+        if thread.name == "model-reload":
+            thread.join(3)
+
+    assert app.state is State.RECORDING, "the reload must run underneath the recording"
+
+
+def test_a_successful_retry_leaves_the_error_state(app, monkeypatch):
+    """The tray's "Retry model" loaded the model and then left the app in
+    ERROR — where the hotkey is gated — so the only real fix was a restart."""
+    monkeypatch.setattr(app.transcriber, "unload", lambda: True)
+    monkeypatch.setattr(app.transcriber, "load",
+                        lambda: setattr(app.transcriber, "_model", object()))
+    app._set_state(State.ERROR, "Model failed to load")
+
+    app._load_model()
+
+    assert app.state is State.IDLE
+
+
+def test_changing_the_model_actually_drops_the_old_one(app, monkeypatch):
+    """`Transcriber.load()` is a no-op while a model is resident, so a reload
+    that did not unload first did nothing at all: picking a different Whisper
+    model in Settings kept using the old one until the next launch."""
+    import threading
+
+    order: list[str] = []
+    monkeypatch.setattr(app.transcriber, "unload",
+                        lambda: order.append("unload") or True)
+    monkeypatch.setattr(app.transcriber, "load", lambda: order.append("load"))
+
+    app.reload_model()
+    for thread in threading.enumerate():
+        if thread.name == "model-reload":
+            thread.join(3)
+
+    assert order == ["unload", "load"]
+
+
+def test_a_dropped_stale_press_closes_the_pre_roll_microphone(app, monkeypatch):
+    """The arm that came with the press had already opened the microphone.
+    Dropping only the press left it open with the buffer growing, and
+    `AudioRecorder.start` returns early when it is already recording — so the
+    next dictation was handed that buffer, with everything said in the room in
+    between."""
+    stops: list[int] = []
+    monkeypatch.setattr(app.recorder, "stop", lambda: stops.append(1))
+    app._armed = app_module.time.monotonic()
+
+    app._events.put(("press", app_module.time.monotonic() - 5.0))
+    app._events.put(("quit", app_module.time.monotonic()))
+    app._controller_loop()
+
+    assert stops, "the microphone the arm opened has to be closed"
+    assert not app._armed
+
+
+def test_streaming_honours_a_per_app_profile(app, monkeypatch):
+    """FVStreaming is listed in profiles.OVERRIDABLE, and `_start_dictation`
+    read it straight from config — so the profile was accepted, reported as
+    applied, and ignored. The fixture's foreground app is "Code.exe"."""
+    from fortunevoice import config
+
+    monkeypatch.setattr(app.recorder, "start", lambda device="": None)
+    monkeypatch.setattr(app.transcriber, "warmup", lambda: None)
+    monkeypatch.setattr(app.transcriber, "reset_session_language", lambda: None)
+    monkeypatch.setattr(app.cleaner, "warmup", lambda: None)
+    monkeypatch.setattr(app, "_arm_auto_stop", lambda: None)
+    config.set("FVStreaming", True)
+    config.set("FVAppProfiles", {"Code.exe": {"FVStreaming": False}})
+    app._session = None
+    app._set_state(State.IDLE)
+    try:
+        app._start_dictation()
+        assert app._session is None, "the profile switched streaming off"
+    finally:
+        config.set("FVAppProfiles", {})
+        app._session = None
+
+
+# ── what counts as still talking ─────────────────────────────────────────
+
+
+def test_a_normal_voice_keeps_the_toggle_recording_alive(app):
+    """The threshold was a bare 0.2 RMS — four times the level at which the
+    app warns the microphone is dead. A normal voice never reached it, so in
+    toggle mode `_last_loud` stayed pinned at the start and the recording was
+    cut off four seconds in, mid-sentence, with the pill still saying
+    "Listening"."""
+    app._set_state(State.RECORDING)
+    app._peak_level = 0.0
+    app._last_loud = 0.0
+
+    app._on_level(0.06)          # ordinary speech at ordinary gain
+
+    assert app._last_loud > 0.0, "speech has to count as speech"
+
+
+def test_room_tone_does_not_keep_it_alive(app):
+    """The other half: a threshold low enough to hear a quiet microphone must
+    still let silence be silence, or toggle mode never stops on its own."""
+    app._set_state(State.RECORDING)
+    app._peak_level = 0.4        # the user has been talking loudly
+    app._last_loud = 0.0
+
+    app._on_level(0.004)         # the room with nobody speaking
+
+    assert app._last_loud == 0.0

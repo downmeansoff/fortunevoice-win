@@ -169,3 +169,51 @@ def test_outcomes_are_listed_commonest_first(capsys):
     doctor.stats()
     out = capsys.readouterr().out
     assert out.index("pasted-blind") < out.index("silence")
+
+
+# ── the cleanup model check ──────────────────────────────────────────────
+
+
+def _ollama_report(monkeypatch, capsys, installed):
+    """Run doctor's Ollama check against a fake `/api/tags`."""
+    import json
+    import urllib.request
+
+    from fortunevoice import ollama as ollama_app
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"models": [{"name": name} for name in installed]}).encode("utf-8")
+
+    monkeypatch.setattr(ollama_app, "ensure_running", lambda: True)
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Response())
+    config.set("FVCleanupEnabled", True)
+    doctor._check_ollama()
+    return capsys.readouterr().out
+
+
+def test_a_different_size_of_the_same_family_is_not_the_model(monkeypatch, capsys):
+    """Matching on the family name alone reported "qwen2.5:3b available" when
+    what was installed was qwen2.5:1.5b. Cleanup then asked Ollama for a model
+    it does not have, got a 404 and fell back to raw text — with doctor still
+    showing a tick."""
+    config.set("FVOllamaModel", "qwen2.5:3b")
+    assert "not installed" in _ollama_report(monkeypatch, capsys, ["qwen2.5:1.5b"])
+
+
+def test_the_wanted_model_is_recognised(monkeypatch, capsys):
+    config.set("FVOllamaModel", "qwen2.5:3b")
+    assert "available" in _ollama_report(monkeypatch, capsys, ["qwen2.5:3b"])
+
+
+def test_ollamas_implicit_latest_tag_still_matches(monkeypatch, capsys):
+    """`ollama list` reports a tagless pull as "name:latest"."""
+    config.set("FVOllamaModel", "gemma3")
+    assert "available" in _ollama_report(monkeypatch, capsys, ["gemma3:latest"])

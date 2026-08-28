@@ -152,3 +152,16 @@ def test_an_unreadable_startup_folder_is_not_a_crash(monkeypatch):
 
 def test_the_link_name_is_a_shortcut():
     assert shortcut.NAME.endswith(".lnk")
+
+
+def test_an_apostrophe_in_the_path_does_not_break_the_script():
+    """A Windows account named O'Brien was enough: the single-quoted literal
+    closed early, PowerShell failed to parse the script, and "Launch at login"
+    refused to turn on — the switch snapping back with no message anywhere."""
+    escaped = shortcut._literal("C:" + chr(92) + "Users" + chr(92) + "O'Brien")
+    assert escaped == "C:" + chr(92) + "Users" + chr(92) + "O''Brien"
+
+
+def test_a_path_without_quotes_is_untouched():
+    plain = "C:" + chr(92) + "Users" + chr(92) + "glebo"
+    assert shortcut._literal(plain) == plain

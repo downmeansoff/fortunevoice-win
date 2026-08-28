@@ -134,6 +134,11 @@ kernel32.GlobalLock.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalLock.restype = wintypes.LPVOID
 kernel32.GlobalUnlock.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalUnlock.restype = wintypes.BOOL
+# Declared like the rest of them. ctypes passes an undeclared argument as C
+# int — 32 bits — so a handle above 2 GB arrived at GlobalFree truncated, and
+# what got freed was whatever that torn value happened to name.
+kernel32.GlobalFree.argtypes = (wintypes.HGLOBAL,)
+kernel32.GlobalFree.restype = wintypes.HGLOBAL
 
 
 # ── window styles (the floating overlays) ────────────────────────────────
@@ -259,15 +264,62 @@ def window_title(hwnd: int) -> str:
     return buf.value
 
 
-def foreground_app_name() -> str | None:
-    """Best-effort label for history ("which app did I dictate into").
+# Enough to ask a process for its own path, and nothing else. The full
+# PROCESS_QUERY_INFORMATION is refused for elevated and protected processes;
+# the LIMITED form is granted for those too, which is the difference between
+# per-app profiles working in an admin console and silently not.
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-    The window title is what the user recognises; the executable name would be
-    more stable but means opening the process, which Defender's controlled
-    folder access can refuse. A title is enough for a history row.
+kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.QueryFullProcessImageNameW.argtypes = (
+    wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD),
+)
+kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+kernel32.CloseHandle.restype = wintypes.BOOL
+
+
+def process_name(hwnd: int) -> str | None:
+    """The executable behind a window — "Code.exe" — or None."""
+    return process_name_of_pid(window_process_id(hwnd))
+
+
+def process_name_of_pid(pid: int) -> str | None:
+    """The executable name of a process id. Separate from the window lookup so
+    a test can exercise the ctypes path without needing a foreground window."""
+    if not pid:
+        return None
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer,
+                                                   ctypes.byref(size)):
+            return None
+        return buffer.value.rsplit("\\", 1)[-1] or None
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def foreground_app_name() -> str | None:
+    """Which application the dictation is going into — "Telegram.exe".
+
+    The executable name, not the window title. Per-app profiles are keyed by
+    executable (see profiles.py), and matching them against a title meant they
+    never matched anything at all: the feature was documented, configurable,
+    and dead. It is also the better label for history — a title is one
+    document, so grouping "where you dictate" by it produced a list of file
+    names rather than a list of apps — and it keeps document names and page
+    titles out of a file that sits on disk.
+
+    Falls back to the title when the process cannot be opened, so a window we
+    are not allowed to query still shows as something.
     """
-    title = window_title(foreground_window())
-    return title or None
+    hwnd = foreground_window()
+    return process_name(hwnd) or window_title(hwnd) or None
 
 
 # ── single instance ──────────────────────────────────────────────────────
