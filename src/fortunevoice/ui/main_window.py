@@ -97,6 +97,7 @@ class MainWindow:
         # switches and chips would be painted with values that are no
         # longer true — a toggle reading "off" for something that is on.
         self._repaint_settings()
+        self._repaint_hotkey_chip()
 
     def _build(self) -> None:
         import tkinter as tk
@@ -108,7 +109,7 @@ class MainWindow:
         window.title("FortuneVoice")
         window.geometry(_remembered_geometry())
         window.minsize(theme.px(880), theme.px(560))
-        window.configure(bg=theme.INK)
+        window.configure(bg=theme.PAPER)
         try:
             window.iconbitmap(str(assets.icon_path()))
         except Exception:  # noqa: BLE001 - cosmetic
@@ -119,20 +120,40 @@ class MainWindow:
         # Tk styles the client area only, so a dark app otherwise gets a white
         # Windows title bar sitting on top of it.
         window.update_idletasks()
-        winapi.use_dark_titlebar(window)
+        winapi.use_dark_titlebar(window, dark=False)
         self._window = window
 
-        self._build_sidebar(window)
+        self._build_masthead(window)
 
-        content = tk.Frame(window, bg=theme.INK)
-        content.pack(side="left", fill="both", expand=True, padx=(6, 26), pady=26)
+        content = tk.Frame(window, bg=theme.PAPER)
+        content.pack(fill="both", expand=True,
+                     padx=theme.px(56), pady=(theme.px(30), theme.px(34)))
         self._content = content
 
         for name, _glyph in PAGES:
-            page = tk.Frame(content, bg=theme.INK)
+            page = tk.Frame(content, bg=theme.PAPER)
             self._pages[name] = page
             builder = getattr(self, f"_build_{name.lower()}")
             builder(page)
+
+    def _repaint_hotkey_chip(self) -> None:
+        """Keep the masthead's shortcut honest.
+
+        It is read from config rather than remembered, because the tray, the
+        settings row and the first-run screen can all rebind it, and a
+        masthead that keeps advertising the old chord is worse than no
+        masthead at all.
+        """
+        chip = getattr(self, "_hotkey_chip", None)
+        if chip is None:
+            return
+        try:
+            from ..hotkey import parse
+
+            label = parse(config.get_str("FVHotkey")).label
+        except Exception:  # noqa: BLE001 - an unparseable chord is still text
+            label = config.get_str("FVHotkey")
+        chip.set_text(label)
 
     def _repaint_settings(self) -> None:
         """Re-read every Settings control from config.
@@ -193,41 +214,54 @@ class MainWindow:
 
     # ── sidebar ──────────────────────────────────────────────────────────
 
-    def _build_sidebar(self, parent) -> None:
+    def _build_masthead(self, parent) -> None:
+        """The wordmark and the four tabs, across the top.
+
+        The 200 px rail this replaces cost every page a fifth of its width to
+        say four words, and it boxed those words in — Russian labels are ~15%
+        longer than English and had nowhere to go. Across the top they have
+        the whole window, the pages get their full measure, and the tabs sit
+        on the masthead rule, which is what makes them read as tabs rather
+        than as a list of links.
+        """
         import tkinter as tk
 
         from .. import assets
 
-        rail = widgets.Card(parent, bg=theme.SIDEBAR, radius=16, padx=14, pady=18)
-        rail.frame.pack(side="left", fill="y", padx=(18, 0), pady=18)
-        rail.canvas.configure(width=SIDEBAR_W)
+        masthead = tk.Frame(parent, bg=theme.PAPER)
+        masthead.pack(fill="x")
+        inner = tk.Frame(masthead, bg=theme.PAPER)
+        inner.pack(fill="x", padx=theme.px(56), pady=(theme.px(22), 0))
 
-        identity = tk.Frame(rail.body, bg=theme.SIDEBAR)
-        identity.pack(fill="x", pady=(2, 22))
-        # The app's own icon, not a second mark. An identity tile that does
-        # not match the shortcut you clicked reads as the wrong app.
-        mark = icons.photo(assets.logo(theme.px(40)))
+        brand = tk.Frame(inner, bg=theme.PAPER)
+        brand.pack(fill="x")
+        mark = icons.photo(assets.logo(theme.px(22)))
         self._images.append(mark)
-        tk.Label(identity, image=mark, bg=theme.SIDEBAR).pack(side="left", padx=(2, 12))
-        text = tk.Frame(identity, bg=theme.SIDEBAR)
-        text.pack(side="left")
-        # The product name is set in the display face, like the page titles —
-        # it is the wordmark, not a label.
-        theme.label(text, t("app.name"), size=13, display=True,
-                    bg=theme.SIDEBAR).pack(anchor="w")
-        theme.label(text, t("app.tagline"), size=8, colour=theme.TEXT_MUTED,
-                    bg=theme.SIDEBAR).pack(anchor="w")
+        tk.Label(brand, image=mark, bg=theme.PAPER).pack(side="left")
+        theme.label(brand, t("app.name"), size=15, display=True,
+                    bg=theme.PAPER).pack(side="left", padx=(theme.px(8), 0))
 
+        # The live shortcut, top right, where a masthead puts the date. It is
+        # the one fact you need before you can use this app at all, and it was
+        # previously only visible three clicks deep in Settings.
+        self._hotkey_chip = widgets.Chip(brand, "", outline=True, mono=True)
+        self._hotkey_chip.pack(side="right")
+        self._hotkey_chip.canvas.configure(cursor="hand2")
+        self._hotkey_chip.canvas.bind("<Button-1>",
+                                      lambda _e: self._select("Settings"))
+
+        nav = tk.Frame(inner, bg=theme.PAPER)
+        nav.pack(fill="x", pady=(theme.px(18), 0))
         for name, glyph in PAGES:
-            item = widgets.NavItem(rail.body, name, glyph, self._select,
+            item = widgets.NavItem(nav, name, glyph, self._select,
                                    label=t(_PAGE_LABEL[name]))
-            item.pack(fill="x", pady=2)
+            item.pack(side="left", padx=(0, theme.px(26)))
             self._nav[name] = item
 
-        spacer = tk.Frame(rail.body, bg=theme.SIDEBAR, height=1)
-        spacer.pack(fill="both", expand=True, pady=10)
-        theme.label(rail.body, t("app.runs_locally"), size=8,
-                    colour=theme.TEXT_FAINT, bg=theme.SIDEBAR).pack(anchor="w", pady=(0, 2))
+        self._repaint_hotkey_chip()
+
+        # Edge to edge, and the tab underline sits flush on top of it.
+        tk.Frame(parent, bg=theme.RULE, height=max(1, theme.px(1))).pack(fill="x")
 
     def _select(self, name: str) -> None:
         self._page = name
@@ -307,19 +341,46 @@ class MainWindow:
         import tkinter as tk
 
         bar = self._header(page, t("nav.history"))
-        widgets.IconButton(bar, "trash", self._clear_history,
-                           tooltip=t("history.delete_tip")).pack(side="right")
-        widgets.IconButton(bar, "share", self._export_history,
-                           tooltip=t("history.export_tip")).pack(side="right", padx=(0, 8))
+        # Words, not tiles. Two 34 px rounded squares put "export" and "delete
+        # everything" side by side in the same shape and the same weight, in
+        # the corner where the eye expects the window's own close button —
+        # identified only by a glyph and a tooltip that arrives after a pause.
+        theme.text_button(bar, t("history.delete_action"), self._clear_history,
+                          danger=True).pack(side="right")
+        theme.text_button(bar, t("history.export_action"),
+                          self._export_history).pack(side="right",
+                                                     padx=(0, theme.px(20)))
 
-        field = widgets.Card(page, radius=11, padx=14, pady=9)
-        field.pack(fill="x", pady=(0, 16))
+        # An underlined field, not a box. The card around it was one more
+        # rounded rectangle claiming to be an object; a rule under the words
+        # is what a search field on paper looks like.
+        field = tk.Frame(page, bg=theme.PAPER)
+        field.pack(fill="x")
+        line = tk.Frame(page, bg=theme.STROKE, height=max(1, theme.px(1)))
+        line.pack(fill="x", pady=(0, theme.px(22)))
         glass = icons.photo(icons.image("search", theme.px(15), theme.TEXT_FAINT))
         self._images.append(glass)
-        tk.Label(field.body, image=glass, bg=theme.CARD).pack(side="left", padx=(0, 10))
+        glyph = tk.Label(field, image=glass, bg=theme.PAPER)
+        glyph.pack(side="left", padx=(0, theme.px(10)))
         self._search_var = tk.StringVar()
-        search = theme.entry(field.body, self._search_var)
-        search.pack(side="left", fill="x", expand=True)
+        search = theme.entry(field, self._search_var)
+        search.configure(font=theme.font(10))
+        search.pack(side="left", fill="x", expand=True, pady=theme.px(7))
+
+        # The whole strip is the target. Clicking the magnifier, or the empty
+        # half of a field that reads as one control, used to focus nothing.
+        for widget in (field, glyph):
+            widget.bind("<Button-1>", lambda _e: search.focus_set())
+            widget.configure(cursor="xterm")
+
+        def focused(_event=None) -> None:
+            line.configure(bg=theme.ACCENT, height=max(2, theme.px(2)))
+
+        def blurred(_event=None) -> None:
+            line.configure(bg=theme.STROKE, height=max(1, theme.px(1)))
+
+        search.bind("<FocusIn>", focused, add="+")
+        search.bind("<FocusOut>", blurred, add="+")
         # Debounced. Every keystroke tore down and rebuilt every card in the
         # list — canvas-backed, one per dictation — so typing into the search
         # box on a long history stuttered, and each character cost the same
@@ -365,7 +426,7 @@ class MainWindow:
             group = _day_label(record.date, today)
             if group != current_group:
                 current_group = group
-                widgets.section_title(body, group).pack(anchor="w", pady=(18, 10))
+                widgets.section_title(body, group).pack(fill="x", pady=(theme.px(28), theme.px(14)))
             self._history_card(body, record)
 
         if len(records) > 300:
@@ -373,46 +434,86 @@ class MainWindow:
                         size=8, colour=theme.TEXT_FAINT).pack(anchor="w", pady=(14, 0))
 
     def _history_card(self, parent, record) -> None:
+        """One dictation, set as a line of type rather than boxed in a card.
+
+        The transcript is in the serif on purpose: it is the thing the user
+        made, and everything else on this page — the time, the application,
+        the delete — is administration, set small and grey in the margins
+        either side of it. A rounded rectangle around each one made a list of
+        someone's own sentences look like a list of database rows.
+        """
         import tkinter as tk
 
-        card = widgets.Card(parent, radius=12, padx=16, pady=13)
-        card.pack(fill="x", pady=4)
+        row = tk.Frame(parent, bg=theme.PAPER)
+        row.pack(fill="x")
+        inner = tk.Frame(row, bg=theme.PAPER)
+        inner.pack(fill="x", pady=theme.px(14))
 
-        top = tk.Frame(card.body, bg=theme.CARD)
-        top.pack(fill="x", pady=(0, 6))
-        theme.label(top, record.date[11:16], size=9, colour=theme.TEXT_MUTED,
-                    bg=theme.CARD).pack(side="left")
-        if record.app:
-            widgets.Chip(top, record.app[:26]).pack(side="left", padx=(10, 0))
-        remove = theme.label(top, "\u2715", size=9, colour=theme.TEXT_FAINT,
-                             bg=theme.CARD)
-        remove.configure(cursor="hand2")
-        remove.pack(side="right")
+        # Right-aligned in its own column, so a ragged edge of timestamps
+        # reads as a margin note and not as debris down the left.
+        gutter = tk.Frame(inner, bg=theme.PAPER, width=theme.px(56))
+        gutter.pack(side="left", fill="y")
+        gutter.pack_propagate(False)
+        time_label = tk.Label(gutter, text=record.date[11:16], font=theme.font(9),
+                              bg=theme.PAPER, fg=theme.TEXT_FAINT, anchor="ne")
+        time_label.pack(fill="both", expand=True)
+
+        meta = tk.Frame(inner, bg=theme.PAPER, width=theme.px(180))
+        meta.pack(side="right", fill="y", padx=(theme.px(16), 0))
+        meta.pack_propagate(False)
+        remove = tk.Label(meta, text="\u2715", font=theme.font(9), bg=theme.PAPER,
+                          fg=theme.TEXT_FAINT, cursor="hand2")
         remove.bind("<Button-1>", lambda _e, r=record: self._delete_record(r))
         remove.bind("<Enter>", lambda _e, w=remove: w.configure(fg=theme.ERROR))
-        remove.bind("<Leave>", lambda _e, w=remove: w.configure(fg=theme.TEXT_FAINT))
+        app_label = tk.Label(meta, text=(record.app or "")[:24], font=theme.font(9),
+                             bg=theme.PAPER, fg=theme.TEXT_FAINT, anchor="ne")
+        app_label.pack(side="right", fill="both", expand=True)
 
         body = tk.Label(
-            card.body, text=record.transcript, font=theme.font(10), bg=theme.CARD,
-            fg=theme.TEXT, anchor="w", justify="left", wraplength=640,
+            inner, text=record.transcript, font=theme.serif(12), bg=theme.PAPER,
+            fg=theme.TEXT, anchor="w", justify="left", wraplength=theme.px(660),
         )
-        body.pack(fill="x")
-        # add="+" is load-bearing: Card binds its own auto-sizing handler to
-        # this same event, and a plain bind() replaces it — which left every
-        # card stuck at its initial height instead of hugging its text.
-        card.body.bind(
+        body.pack(side="left", fill="x", expand=True, padx=(theme.px(16), 0))
+        body.bind(
             "<Configure>",
-            lambda e, w=body: w.configure(wraplength=max(240, e.width - 8)),
+            lambda e, w=body: w.configure(wraplength=max(theme.px(240), e.width - 4)),
             add="+",
         )
-        for widget in (card.canvas, card.body, top, body):
-            widget.bind("<Button-1>", lambda _e, r=record, c=card: self._copy_record(r, c))
+
+        painted = (row, inner, gutter, meta, body, time_label, app_label)
+
+        def hover(_event=None) -> None:
+            for widget in painted:
+                widget.configure(bg=theme.PAPER_2)
+            # INK_FAINT on the hover band measures 4.44:1, under the floor —
+            # so the quiet labels step up as the row lights up. The row
+            # getting more legible as you point at it is also the cheapest
+            # responsive feeling in the app.
+            time_label.configure(fg=theme.TEXT_MUTED)
+            app_label.configure(fg=theme.TEXT_MUTED)
+            remove.configure(bg=theme.PAPER_2, fg=theme.TEXT_FAINT)
+            remove.pack(side="right", padx=(theme.px(12), 0))
+
+        def leave(_event=None) -> None:
+            for widget in painted:
+                widget.configure(bg=theme.PAPER)
+            time_label.configure(fg=theme.TEXT_FAINT)
+            app_label.configure(fg=theme.TEXT_FAINT)
+            remove.pack_forget()
+
+        for widget in painted:
+            widget.bind("<Enter>", hover, add="+")
+            widget.bind("<Leave>", leave, add="+")
+            widget.bind("<Button-1>",
+                        lambda _e, r=record, c=row: self._copy_record(r, c))
             widget.configure(cursor="hand2")
         # Double-click to correct a transcript. On the text itself, not the
-        # whole card: a single click still copies, and the two must not fight
+        # whole row: a single click still copies, and the two must not fight
         # over the same pixels for the row's main action.
         body.bind("<Double-Button-1>",
-                  lambda _e, r=record, c=card, w=body: self._edit_record(r, c, w))
+                  lambda _e, r=record, c=row, w=body: self._edit_record(r, c, w))
+
+        tk.Frame(row, bg=theme.RULE_SOFT, height=max(1, theme.px(1))).pack(fill="x")
 
     def _edit_record(self, record, card, label) -> str:
         """Turn the card's text into an editable field.
@@ -457,13 +558,13 @@ class MainWindow:
         box.bind("<FocusOut>", lambda _e: finish(True))
         return "break"
 
-    def _copy_record(self, record, card) -> None:
+    def _copy_record(self, record, row) -> None:
         import tkinter as tk
 
         if not injector.set_clipboard_text(record.transcript):
             return
-        flash = tk.Label(card.body, text=t("history.copied"), font=theme.font(8, "bold"),
-                         bg=theme.CARD, fg=theme.OK)
+        flash = tk.Label(row, text=t("history.copied"), font=theme.font(8, "bold"),
+                         bg=theme.PAPER_2, fg=theme.OK)
         flash.place(relx=1.0, y=0, anchor="ne")
 
         def remove() -> None:
@@ -551,17 +652,27 @@ class MainWindow:
         records = self._store.all()
         rows = metrics.read_all()
 
-        tiles = tk.Frame(body, bg=theme.INK)
-        tiles.pack(fill="x")
+        tiles = tk.Frame(body, bg=theme.PAPER)
+        tiles.pack(fill="x", pady=(theme.px(2), theme.px(24)))
+        # Two hairlines instead of three outlines. The figures are separated
+        # by the thing that actually separates them.
         for index, (glyph, value, caption, primary) in enumerate([
             ("chart", f"{stats.words_per_minute(records):.0f}", t("insights.wpm"), True),
             ("book", f"{stats.total_words(records):,}".replace(",", " "),
              t("insights.total_words"), False),
             ("bolt", f"{stats.streak_days(records)}", t("insights.streak"), False),
         ]):
-            tiles.grid_columnconfigure(index, weight=1, uniform="tile")
+            column = index * 2
+            tiles.grid_columnconfigure(column, weight=1, uniform="fig")
             self._metric_tile(tiles, glyph, value, caption, primary).grid(
-                row=0, column=index, sticky="ew", padx=(0 if index == 0 else 12, 0))
+                row=0, column=column, sticky="ew",
+                padx=(0 if index == 0 else theme.px(28),
+                      0 if index == 2 else theme.px(28)))
+            if index < 2:
+                tk.Frame(tiles, bg=theme.RULE, width=max(1, theme.px(1))).grid(
+                    row=0, column=column + 1, sticky="ns")
+        tk.Frame(body, bg=theme.RULE, height=max(1, theme.px(1))).pack(
+            fill="x", pady=(0, theme.px(30)))
 
         self._activity_card(body, records)
         self._where_card(body, records)
@@ -569,32 +680,32 @@ class MainWindow:
             self._latency_card(body, rows)
 
     def _metric_tile(self, parent, glyph: str, value: str, caption: str, primary: bool):
+        """One figure and its caption. No tile, no glyph.
+
+        A number this size is already the loudest thing on the page; putting a
+        16 px pictogram above it and a rounded box around it was three devices
+        doing one job. The headline metric is marked by colouring its number,
+        and the figures are separated by a hairline rather than by their own
+        outlines.
+        """
         import tkinter as tk
 
-        # Every tile is the same surface. The headline metric is marked by
-        # colouring its number and its glyph, not by flooding a whole card in
-        # accent — a filled block that size stops being emphasis and becomes
-        # the only thing on the page.
-        bg = theme.CARD
-        card = widgets.Card(parent, bg=bg, radius=14, padx=18, pady=16)
-        icon = icons.photo(icons.image(
-            glyph, theme.px(16), theme.ACCENT if primary else theme.TEXT_MUTED))
-        self._images.append(icon)
-        tk.Label(card.body, image=icon, bg=bg).pack(anchor="w", pady=(0, 10))
-        theme.label(card.body, value, size=24, display=True,
+        cell = tk.Frame(parent, bg=theme.PAPER)
+        theme.label(cell, value, size=30, display=True,
                     colour=theme.ACCENT if primary else theme.TEXT,
-                    bg=bg).pack(anchor="w")
-        theme.label(card.body, caption, size=8,
-                    colour=theme.TEXT_FAINT, bg=bg).pack(anchor="w", pady=(2, 0))
-        return card.frame
+                    bg=theme.PAPER).pack(anchor="w")
+        theme.label(cell, caption, size=9, colour=theme.TEXT_MUTED,
+                    bg=theme.PAPER).pack(anchor="w", pady=(theme.px(6), 0))
+        return cell
 
     def _activity_card(self, parent, records) -> None:
         import tkinter as tk
 
-        card = widgets.Card(parent, radius=14, padx=18, pady=16)
-        card.pack(fill="x", pady=(14, 0))
-        theme.label(card.body, t("insights.last_30"), size=10, weight="bold",
-                    bg=theme.CARD).pack(anchor="w", pady=(0, 12))
+        # The card is invisible padding now — its own gap is the section gap.
+        card = widgets.Card(parent, radius=0, padx=0, pady=0)
+        card.pack(fill="x", pady=(theme.px(32), 0))
+        widgets.section_title(card.body, t("insights.last_30")).pack(
+            fill="x", pady=(0, theme.px(14)))
 
         today = dt.date.today()
         counts = {today - dt.timedelta(days=i): 0 for i in range(29, -1, -1)}
@@ -621,6 +732,10 @@ class MainWindow:
             width = chart.winfo_width()
             if width < 10:
                 return
+            # A baseline. Bars standing on nothing are decoration;
+            # bars standing on a rule are a measurement.
+            chart.create_rectangle(0, floor, width, floor + max(1, theme.px(1)),
+                                   fill=theme.RULE, outline="")
             biggest = max(values) or 1
             slot = width / len(values)
             bar = max(3, slot * 0.55)
@@ -645,10 +760,11 @@ class MainWindow:
         import tkinter as tk
 
         by_app = stats.words_by_app(records)[:6]
-        card = widgets.Card(parent, radius=14, padx=18, pady=16)
-        card.pack(fill="x", pady=(14, 0))
-        theme.label(card.body, t("insights.where"), size=10, weight="bold",
-                    bg=theme.CARD).pack(anchor="w", pady=(0, 12))
+        # The card is invisible padding now — its own gap is the section gap.
+        card = widgets.Card(parent, radius=0, padx=0, pady=0)
+        card.pack(fill="x", pady=(theme.px(32), 0))
+        widgets.section_title(card.body, t("insights.where")).pack(
+            fill="x", pady=(0, theme.px(14)))
         if not by_app:
             theme.label(card.body, t("insights.none_yet"), size=9,
                         colour=theme.TEXT_MUTED, bg=theme.CARD).pack(anchor="w")
@@ -684,10 +800,11 @@ class MainWindow:
             return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
         typed = [r for r in rows if str(r.get("outcome", "")).startswith("pasted")]
-        card = widgets.Card(parent, radius=14, padx=18, pady=16)
-        card.pack(fill="x", pady=(14, 0))
-        theme.label(card.body, t("insights.speed"), size=10, weight="bold", bg=theme.CARD).pack(
-            anchor="w", pady=(0, 12))
+        # The card is invisible padding now — its own gap is the section gap.
+        card = widgets.Card(parent, radius=0, padx=0, pady=0)
+        card.pack(fill="x", pady=(theme.px(32), 0))
+        widgets.section_title(card.body, t("insights.speed")).pack(
+            fill="x", pady=(0, theme.px(14)))
         for caption, value in [
             (t("insights.median_total"), f"{median([r['total_ms'] for r in rows]):.0f} {t('unit.ms')}"),
             (t("insights.median_decode"), f"{median([r['stt_ms'] for r in rows]):.0f} {t('unit.ms')}"),
@@ -777,7 +894,8 @@ class MainWindow:
         body = self._scroll_area(page)
 
         # DICTATION
-        widgets.section_title(body, t("settings.group_dictation")).pack(anchor="w", pady=(2, 10))
+        widgets.section_title(body, t("settings.group_dictation")).pack(
+            fill="x", pady=(0, theme.px(14)))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
         row = widgets.SettingRow(card.body, "tap", TINT_BLUE, t("settings.activation"),
@@ -812,7 +930,8 @@ class MainWindow:
                          lambda v: config.set("FVMicrophone", v)).pack()
 
         # TEXT PROCESSING
-        widgets.section_title(body, t("settings.group_text")).pack(anchor="w", pady=(26, 10))
+        widgets.section_title(body, t("settings.group_text")).pack(
+            fill="x", pady=(theme.px(32), theme.px(14)))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
         self._switch_row(card.body, "bolt", TINT_ORANGE, t("settings.streaming"),
@@ -861,7 +980,8 @@ class MainWindow:
                       add="+")
 
         # GENERAL
-        widgets.section_title(body, t("settings.group_general")).pack(anchor="w", pady=(20, 8))
+        widgets.section_title(body, t("settings.group_general")).pack(
+            fill="x", pady=(theme.px(32), theme.px(14)))
         card = widgets.Card(body, radius=14, padx=16, pady=8)
         card.pack(fill="x")
         row = widgets.SettingRow(card.body, "power", TINT_GREEN,
@@ -954,6 +1074,7 @@ class MainWindow:
                                    parent=self._window)
             return False
         config.set("FVHotkey", value)
+        self._repaint_hotkey_chip()   # the masthead advertises it
         if self._app is not None:
             self._app.rebind_hotkey()
         return True

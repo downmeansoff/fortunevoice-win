@@ -487,13 +487,14 @@ DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19
 
 
-def use_dark_titlebar(window) -> bool:
-    """Paint the title bar dark to match the window below it.
+def use_dark_titlebar(window, dark: bool = True) -> bool:
+    """Match the title bar to the window below it.
 
-    Tk styles the client area only, so a dark app gets a white Windows title
-    bar sitting on top of it — the single most "unfinished" thing about the
-    UI, and visible on every window at once. This is the documented way to fix
-    it; there is no Tk option for it.
+    Tk styles the client area only, so the title bar keeps whatever the system
+    would give it — a white bar on a dark app, or a dark bar on a paper one.
+    Either way it is the single most "unfinished" thing about the UI, and it
+    is visible on every window at once. This is the documented way to set it;
+    there is no Tk option.
     """
     hwnd = toplevel_hwnd(window)
     if not hwnd:
@@ -502,7 +503,7 @@ def use_dark_titlebar(window) -> bool:
         dwm = ctypes.WinDLL("dwmapi")
     except OSError:  # pragma: no cover - Windows without DWM
         return False
-    value = ctypes.c_int(1)
+    value = ctypes.c_int(1 if dark else 0)
     for attribute in (DWMWA_USE_IMMERSIVE_DARK_MODE,
                       DWMWA_USE_IMMERSIVE_DARK_MODE_OLD):
         if dwm.DwmSetWindowAttribute(

@@ -27,6 +27,7 @@ def test_no_dangling_theme_attributes():
     ui_dir = Path(__file__).resolve().parents[1] / "src" / "fortunevoice" / "ui"
     used: set[str] = set()
     for path in ui_dir.glob("*.py"):
-        used |= set(re.findall(r"theme\.([A-Za-z_]+)", path.read_text(encoding="utf-8")))
+        used |= set(re.findall(r"theme\.([A-Za-z_][A-Za-z0-9_]*)",
+                              path.read_text(encoding="utf-8")))
     missing = sorted(name for name in used if not hasattr(theme, name))
     assert not missing, f"ui/ references theme attributes that do not exist: {missing}"

@@ -93,6 +93,8 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "history.export_tip": {"en": "Export to a text file",
                            "ru": "Выгрузить в текстовый файл"},
     "history.delete_tip": {"en": "Delete all history", "ru": "Удалить всю историю"},
+    "history.export_action": {"en": "Export", "ru": "Экспорт"},
+    "history.delete_action": {"en": "Clear", "ru": "Очистить"},
     "history.copied": {"en": "Copied", "ru": "Скопировано"},
     "history.export_empty": {"en": "Nothing to export",
                              "ru": "Выгружать нечего"},
