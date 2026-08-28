@@ -708,6 +708,21 @@ class OllamaCleaner:
                     word_count(core_text), word_count(cleaned),
                 )
                 continue
+            # Second line of defence against a model that copies the
+            # <CONTEXT> text back without the tags, returning a chunk that
+            # carries its neighbour's sentence: the words are all in the raw
+            # and the chunk is longer, not shorter, so the per-chunk guards
+            # above pass it. The assembled text is still checked as a whole,
+            # and in every case reproduced here that global check caught it —
+            # this makes the rejection local, so one bad chunk costs its own
+            # cleanup instead of the whole dictation's. Cleanup removes filler
+            # and punctuation; it has no business growing a chunk by half.
+            if word_count(cleaned) > word_count(core_text) * 1.5 + 3:
+                logger.warning(
+                    "chunk cleanup grew (%d→%d words), keeping raw chunk",
+                    word_count(core_text), word_count(cleaned),
+                )
+                continue
 
             result[start] = cleaned
             for i in range(start + 1, end + 1):

@@ -119,6 +119,13 @@ class App:
     # 4 s, not 2: a two-second pause is a normal mid-sentence think — cutting
     # there loses the continuation. 4 s only ends genuinely finished speech.
     SILENCE_STOP_SECONDS = 4.0
+    # What counts as "still talking" for the toggle-mode auto-stop. It was a
+    # bare 0.2 — four times the level at which the app warns the microphone is
+    # dead, and ten times audio.py's own floor for speech. A normal voice at
+    # normal gain never reached it, so `_last_loud` stayed pinned at the start
+    # of the recording and toggle mode cut the user off four seconds in,
+    # mid-sentence, with the pill still cheerfully saying "Listening".
+    SILENCE_STOP_LOUDNESS = 0.02
     # Hard cap. Hold mode relies on a key-up that can simply never arrive
     # (focus stolen mid-press, the machine sleeping), and without a cap that
     # leaves the app recording forever with the state stuck outside idle —
@@ -743,7 +750,11 @@ class App:
         pill = self._pill()
         if pill is not None:
             pill.push_level(level)
-        if level > 0.2:
+        # Relative to what this microphone actually delivers, with a floor: a
+        # quiet mic must still be heard, and a noisy room must still fall
+        # silent. Compared BEFORE the peak is updated, or the first loud block
+        # raises its own bar.
+        if level > max(self.SILENCE_STOP_LOUDNESS, self._peak_level * 0.25):
             self._last_loud = time.monotonic()
         self._peak_level = max(self._peak_level, level)
         if (

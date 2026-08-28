@@ -795,3 +795,33 @@ def test_streaming_honours_a_per_app_profile(app, monkeypatch):
     finally:
         config.set("FVAppProfiles", {})
         app._session = None
+
+
+# ── what counts as still talking ─────────────────────────────────────────
+
+
+def test_a_normal_voice_keeps_the_toggle_recording_alive(app):
+    """The threshold was a bare 0.2 RMS — four times the level at which the
+    app warns the microphone is dead. A normal voice never reached it, so in
+    toggle mode `_last_loud` stayed pinned at the start and the recording was
+    cut off four seconds in, mid-sentence, with the pill still saying
+    "Listening"."""
+    app._set_state(State.RECORDING)
+    app._peak_level = 0.0
+    app._last_loud = 0.0
+
+    app._on_level(0.06)          # ordinary speech at ordinary gain
+
+    assert app._last_loud > 0.0, "speech has to count as speech"
+
+
+def test_room_tone_does_not_keep_it_alive(app):
+    """The other half: a threshold low enough to hear a quiet microphone must
+    still let silence be silence, or toggle mode never stops on its own."""
+    app._set_state(State.RECORDING)
+    app._peak_level = 0.4        # the user has been talking loudly
+    app._last_loud = 0.0
+
+    app._on_level(0.004)         # the room with nobody speaking
+
+    assert app._last_loud == 0.0

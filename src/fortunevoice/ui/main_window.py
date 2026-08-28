@@ -800,7 +800,7 @@ class MainWindow:
         # model already configured.
         widgets.Dropdown(row.control, _ollama_models(),
                          lambda: config.get_str("FVOllamaModel"),
-                         lambda v: config.set("FVOllamaModel", v),
+                         lambda v: _set_cleanup_model(v),
                          refresh=_ollama_models).pack()
         row = widgets.SettingRow(card.body, "clock", TINT_ORANGE,
                                  t("settings.keep_alive"),
@@ -1137,6 +1137,20 @@ def _placeholder(entry, text: str):
     entry.bind("<FocusOut>", lambda _e: show())
     show()
     return lambda: state["showing"]
+
+
+def _set_cleanup_model(name: str) -> None:
+    """Change the cleanup model, and forget what the last one cost.
+
+    `cleaner._fit()` learns how long this model takes per character from the
+    metrics file and caches it for five minutes. Left alone across a model
+    change, the new model is budgeted with the old one's timings — a 3b sized
+    like a 1.5b, so chunks are sent that cannot come back in time.
+    """
+    from .. import cleaner
+
+    config.set("FVOllamaModel", name)
+    cleaner.reset_fit()
 
 
 window = MainWindow()
