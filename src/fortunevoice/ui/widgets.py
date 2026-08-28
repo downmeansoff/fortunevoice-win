@@ -182,14 +182,20 @@ class Dropdown:
         # chevron sat on top of the last word.
         pad, gap = theme.px(12), theme.px(10)
         chevron_size = theme.px(12)
-        width = pad + theme.text_width(text, theme.font(9)) + gap + chevron_size + pad
+        width = pad + theme.text_width(text, theme.font(10)) + gap + chevron_size + pad
         height = theme.px(30)
         self.canvas.configure(width=width, height=height)
         self.canvas.delete("all")
-        theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, height - theme.px(2),
-                           theme.px(7), fill=theme.CARD_HI)
-        self.canvas.create_text(pad, height / 2, text=text, anchor="w",
-                                fill=theme.TEXT, font=theme.font(9))
+        # The value, and a rule under it. A filled pill made every
+        # setting look like a button you had to press rather than a
+        # value you could read, and put a dozen grey blocks down the
+        # right edge of a page whose whole argument is that nothing is
+        # filled. The underline is what says "this one opens".
+        self.canvas.create_text(pad, height / 2 - theme.px(1), text=text,
+                                anchor="w", fill=theme.TEXT, font=theme.font(10))
+        self.canvas.create_rectangle(pad, height - theme.px(5), width - pad,
+                                     height - theme.px(5) + max(1, theme.px(1)),
+                                     fill=theme.STROKE, outline="")
         chevron = icons.photo(icons.image("chevron", chevron_size, theme.TEXT_MUTED,
                                           stroke=0.10))
         self.canvas._images = [chevron]
@@ -198,20 +204,40 @@ class Dropdown:
 
 
 class Chip:
-    """A small tinted pill — the app badge on a history row, the shortcut
-    display in Settings."""
+    """A small label with an edge.
 
-    def __init__(self, parent, text: str, *, bg: str = theme.ACCENT_SOFT,
-                 fg: str = theme.ACCENT_TEXT, size: int = 8) -> None:
+    Two forms. Filled is the quiet one used inside a list; `outline=True` is a
+    hairline box on the page itself, for the shortcut in the masthead — a
+    filled pill there would be the second-loudest thing on a page whose whole
+    argument is that nothing is filled.
+    """
+
+    def __init__(self, parent, text: str, *, bg: str = theme.WELL,
+                 fg: str = theme.TEXT_MUTED, size: int = 8,
+                 outline: bool = False, mono: bool = False) -> None:
         import tkinter as tk
 
-        font = theme.font(size)
-        width = theme.px(14) + theme.text_width(text, font)
-        height = theme.px(19)
-        self.canvas = tk.Canvas(parent, width=width, height=height, bg=parent["bg"],
-                                highlightthickness=0, bd=0)
-        theme.rounded_rect(self.canvas, 0, 0, width - 1, height - 1, theme.px(6), fill=bg)
-        self.canvas.create_text(width / 2, height / 2, text=text, fill=fg, font=font)
+        self._font = theme.mono(size + 1) if mono else theme.font(size)
+        self._fg, self._bg, self._outline = fg, bg, outline
+        self.canvas = tk.Canvas(parent, bg=parent["bg"], highlightthickness=0, bd=0)
+        self.set_text(text)
+
+    def set_text(self, text: str) -> None:
+        """The masthead chip shows the live shortcut, so it has to be able to
+        change when the user rebinds it."""
+        width = theme.px(16) + theme.text_width(text, self._font)
+        height = theme.px(20)
+        self.canvas.configure(width=width, height=height)
+        self.canvas.delete("all")
+        if self._outline:
+            self.canvas.create_rectangle(0, 0, width - 1, height - 1,
+                                         outline=theme.STROKE,
+                                         width=max(1, theme.px(1)))
+        else:
+            theme.rounded_rect(self.canvas, 0, 0, width - 1, height - 1,
+                               theme.px(3), fill=self._bg)
+        self.canvas.create_text(width / 2, height / 2, text=text,
+                                fill=self._fg, font=self._font)
 
     def pack(self, **kwargs):
         self.canvas.pack(**kwargs)
@@ -219,7 +245,7 @@ class Chip:
 
 
 class NavItem:
-    """One row in the sidebar. Active rows get the filled accent plate."""
+    """One tab in the masthead. The active one is underlined, not filled."""
 
     def __init__(self, parent, name: str, glyph: str, on_click: Callable[[str], None],
                  label: str | None = None) -> None:
@@ -249,31 +275,31 @@ class NavItem:
         self.paint()
 
     def paint(self, hover: bool = False) -> None:
-        width = self.canvas.winfo_width() or 220
         self.canvas.delete("all")
+        # Sized to its own text, and always to the BOLD width: the active tab
+        # is bold, and a tab that changed width when you selected it would
+        # shove its neighbours along the row.
+        label = self._label
+        width = theme.text_width(label, theme.font(10, "bold")) + theme.px(2)
+        height = theme.px(34)
+        self.canvas.configure(width=width, height=height)
+        colour = theme.TEXT if (self._active or hover) else theme.TEXT_MUTED
+        # No glyph. Four words across the top do not need pictures to tell
+        # them apart, and the icons were four more shapes competing with the
+        # page title directly beneath them.
+        self.canvas._images = []
+        self.canvas.create_text(width / 2, theme.px(13), text=label, fill=colour,
+                                font=theme.font(10, "bold" if self._active else "normal"))
         if self._active:
-            # A soft raised plate, not a saturated fill. The accent is spent on
-            # the one thing per screen worth looking at first, and "which tab
-            # am I on" is not that thing — the plate alone says it.
-            theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, theme.px(38),
-                               theme.px(10), fill=theme.CARD_HI)
-            colour = theme.TEXT
+            # Two pixels of accent, sitting on the masthead rule. This is the
+            # only thing that says which tab you are on, and it is enough —
+            # the filled plate it replaces was a button pretending to be a
+            # location.
+            self.canvas.create_rectangle(0, height - max(2, theme.px(2)),
+                                         width, height, fill=theme.ACCENT, outline="")
         elif hover:
-            theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1, theme.px(38),
-                               theme.px(10), fill=theme.CARD)
-            colour = theme.TEXT
-        else:
-            colour = theme.TEXT_MUTED
-        # The glyph takes the accent on the active row — one small clay mark
-        # where the eye already is, instead of a whole coloured plate.
-        glyph_colour = theme.ACCENT if self._active else colour
-        glyph = icons.photo(icons.image(self._glyph, theme.px(18), glyph_colour,
-                                        stroke=0.085))
-        self.canvas._images = [glyph]
-        self.canvas.create_image(theme.px(20), theme.px(20), image=glyph)
-        self.canvas.create_text(theme.px(44), theme.px(20), text=self._label,
-                                anchor="w", fill=colour,
-                                font=theme.font(11, "bold" if self._active else "normal"))
+            self.canvas.create_rectangle(0, height - max(1, theme.px(1)),
+                                         width, height, fill=theme.RULE, outline="")
 
 
 class IconButton:
@@ -333,59 +359,67 @@ class IconButton:
 
 
 class SettingRow:
-    """Icon tile · title (+ subtitle) · control, the Settings list unit."""
+    """Title (+ hint) · control. The Settings list unit.
+
+    No icon tile. A dozen tinted rounded squares down the left edge were the
+    loudest thing on the page and the least informative: nobody looks up a
+    setting by its glyph, and the six tints grouped rows that a heading and a
+    rule already group. Deleting the column also gives the hint its full
+    measure, which is where the words that actually help live.
+    """
 
     def __init__(self, parent, glyph: str, tint: str, title: str,
                  subtitle: str = "", last: bool = False) -> None:
         import tkinter as tk
 
-        self.frame = tk.Frame(parent, bg=theme.CARD)
+        self.frame = tk.Frame(parent, bg=theme.PAPER)
         self.frame._images = []
         self.frame.pack(fill="x")
 
-        row = tk.Frame(self.frame, bg=theme.CARD)
-        row.pack(fill="x", pady=theme.px(9))
+        row = tk.Frame(self.frame, bg=theme.PAPER)
+        row.pack(fill="x", pady=theme.px(14))
 
-        # Colour lives in the glyph, not the plate. Filled tiles put a dozen
-        # bright blocks down the left edge and became the loudest thing on the
-        # page — the tint still groups the rows, quietly.
-        # Near-white glyph, tint on the plate. The other way round measured
-        # 2.5-5.8:1 and the icons read as smudges.
-        tile = icons.photo(icons.tile(glyph, theme.px(28), theme.TEXT,
-                                      theme.CARD_HI, tint=tint))
-        self.frame._images.append(tile)
-        tk.Label(row, image=tile, bg=theme.CARD).pack(side="left",
-                                                      padx=(0, theme.px(12)))
-
-        text = tk.Frame(row, bg=theme.CARD)
+        text = tk.Frame(row, bg=theme.PAPER)
         text.pack(side="left", fill="x", expand=True)
         theme.label(text, title, size=10).pack(anchor="w")
         # Kept on the row so callers can swap it — the shortcut row says
         # something different while it is listening for keys.
         self.subtitle = None
         if subtitle:
-            self.subtitle = theme.label(text, subtitle, size=8,
-                                        colour=theme.TEXT_FAINT)
-            self.subtitle.pack(anchor="w")
+            self.subtitle = theme.label(text, subtitle, size=9,
+                                        colour=theme.TEXT_MUTED)
+            self.subtitle.pack(anchor="w", pady=(theme.px(4), 0))
 
-        self.control = tk.Frame(row, bg=theme.CARD)
+        # Fixed width, so every control in the list shares one right edge
+        # whatever it is: a switch, a chord, or "System default".
+        self.control = tk.Frame(row, bg=theme.PAPER, width=theme.px(260),
+                                height=theme.px(30))
         self.control.pack(side="right")
+        self.control.pack_propagate(False)
 
         if not last:
-            # Inset separator, aligned with the text rather than the icon —
-            # a full-width rule makes the list look like a table.
-            tk.Frame(self.frame, bg=theme.LINE, height=max(1, theme.px(1))).pack(
-                fill="x", padx=(theme.px(56), theme.px(4)))
+            tk.Frame(self.frame, bg=theme.RULE_SOFT,
+                     height=max(1, theme.px(1))).pack(fill="x")
 
 
 def section_title(parent, text: str):
-    """Group heading above a settings card.
+    """Group heading, with the rule that carries it across the page.
 
     Sentence case, not the shouty small-caps this started as: at 8 px, all-caps
     Cyrillic is a grey smear that has to be decoded rather than read.
+
+    The rule is what replaces the card. A heading floating above a group of
+    rows does not say where the group begins; a heading with a hairline
+    running from its last letter to the right margin does, and costs nothing.
     """
-    return theme.label(parent, text, size=10, colour=theme.TEXT_MUTED,
-                       weight="bold")
+    import tkinter as tk
+
+    band = tk.Frame(parent, bg=parent["bg"])
+    theme.label(band, text, size=11, colour=theme.TEXT, weight="bold",
+                bg=parent["bg"]).pack(side="left")
+    tk.Frame(band, bg=theme.RULE, height=max(1, theme.px(1))).pack(
+        side="left", fill="x", expand=True, padx=(theme.px(14), 0))
+    return band
 
 
 class ShortcutRecorder:
@@ -568,20 +602,29 @@ class ShortcutRecorder:
         # in a third of one, so the right-hand column read as a mistake.
         label = (t("settings.shortcut_press") if self._listening
                  else (self._get() or "—"))
-        pad = theme.px(14)
+        pad = theme.px(12)
+        chord_font = theme.mono(9)
         width = max(theme.px(96),
-                    pad + theme.text_width(label, theme.font(9)) + pad)
+                    pad + theme.text_width(label, chord_font) + pad)
         height = theme.px(30)
         self.canvas.configure(width=width, height=height)
         self.canvas.delete("all")
         if self._listening:
-            theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
-                               height - theme.px(2), theme.px(7), fill=theme.ACCENT)
+            # Filled, and the only filled control in the window. This is
+            # a mode the user is IN — the keyboard is being swallowed
+            # while it lasts — and a mode you cannot see is how the
+            # whole keyboard ends up feeling broken.
+            self.canvas.create_rectangle(0, theme.px(2), width - 1,
+                                         height - theme.px(2),
+                                         fill=theme.ACCENT, outline="")
             self.canvas.create_text(width / 2, height / 2,
                                     text=t("settings.shortcut_press"),
                                     fill="#FFFFFF", font=theme.font(9, "bold"))
             return
-        theme.rounded_rect(self.canvas, 0, theme.px(2), width - 1,
-                           height - theme.px(2), theme.px(7), fill=theme.CARD_HI)
+        # A chord is something you type, so it is set in the mono face,
+        # in a hairline box — the same box the masthead shows it in.
+        self.canvas.create_rectangle(0, theme.px(3), width - 1,
+                                     height - theme.px(3),
+                                     outline=theme.STROKE, width=max(1, theme.px(1)))
         self.canvas.create_text(width / 2, height / 2, text=self._get() or "—",
-                                fill=theme.TEXT, font=theme.font(9))
+                                fill=theme.TEXT, font=chord_font)

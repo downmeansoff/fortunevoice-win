@@ -1,22 +1,28 @@
 """One palette and a few primitives, so every window looks like the same app.
 
-Dressed like Claude Desktop: warm near-black surfaces rather than the usual
-blue-grey, a single clay accent, and a serif for the headings. Three details
-carry most of that look, and all three are cheap to get wrong —
+**Paper.** A warm off-white page, ink-dark text, hairlines where a boundary
+genuinely exists, and one accent — an iron-gall blue that appears on the
+active tab, the primary button, the bars and the meters, and nowhere else.
 
-* **The greys are warm.** Claude's dark surfaces sit around hue 40°, not 220°.
-  A neutral #202020 next to them reads as a different app; a navy reads as a
-  different decade.
-* **Colour is rationed.** One clay accent, and muted earth tones where the eye
-  needs grouping. Saturated system colours (Apple's blue, green, pink) are
-  what made this look like macOS Settings.
-* **Headings are serif.** Georgia, because it is on every Windows install and
-  is the closest thing to the serif Claude sets its display type in.
+Three decisions carry it, and all three are subtractions:
 
-Dark only, and not theme-aware. This UI appears *over* whatever the user is
-working in, for a second at a time — a surface that tracked the system theme
-would flash white on a light desktop at the exact moment they are looking
-somewhere else.
+* **There are no cards.** Content sits directly on the page, separated by
+  space and a hairline. The window used to be a dark app wearing card-shaped
+  jewellery — a rounded rectangle inside a rounded rectangle, each with its
+  own fill — which is what made it read as a dashboard template. `CARD` is now
+  the page colour, so a card is simply padding.
+* **Colour is rationed to one.** Not six tinted icon tiles down the left of
+  the settings rows. Grouping is done by a heading and a rule, which is what
+  headings and rules are for.
+* **The serif earns its place exactly three times**: the page title, the big
+  figures, and the transcript itself. Setting a person's own words in a text
+  serif is the whole argument of this design — the transcript is the thing the
+  user made, and everything else on the page is administration.
+
+Light, and deliberately not theme-aware. The pill and the result panel appear
+*over* whatever the user is working in, so they carry their own border and
+their own ground rather than tracking a system theme that may not match the
+window underneath.
 """
 
 from __future__ import annotations
@@ -52,30 +58,60 @@ def px(value: float) -> int:
     return int(round(value * SCALE))
 
 
-# Surfaces, darkest to lightest. Warm greys — the whole palette sits near
-# hue 40°, which is what separates "Claude dark" from "generic dark".
-INK = "#1F1E1D"          # window
-SIDEBAR = "#191817"      # nav rail, a step deeper than the page
-CARD = "#262624"         # content cards
-CARD_HI = "#30302E"      # hover / raised rows
-LINE = "#454340"         # hairline borders — visible, still a hairline
+# ── surfaces ─────────────────────────────────────────────────────────────
+# One page colour, and two quieter grounds for the two things that genuinely
+# sit *in* the page rather than on it: a hover band and a sunken well.
+PAPER = "#F7F4EE"        # the window, the masthead, every page, every row
+PAPER_2 = "#F1EDE4"      # row hover; secondary button hover
+WELL = "#EDE8DE"         # sunken: the dictionary editor, meter tracks
+RAISED = "#FCFAF6"       # popup menus and tooltips — the only lighter surface
 
-TEXT = "#F5F4EE"         # warm off-white, never pure #FFF
-TEXT_MUTED = "#B6B1A6"   # row subtitles: 7.2:1 on a card
-# Section headers and captions. Was #7C766C — 3.37:1, which is the floor for
-# LARGE text and these are 9 px. Small dim type is what made the window read
-# as unfinished before anything else did.
-TEXT_FAINT = "#918B80"
+# ── rules and strokes ────────────────────────────────────────────────────
+# Two weights of hairline, because a structural rule and a list separator are
+# not the same thing, and one STROKE for anything the user must be able to
+# find the edge of. A prettier #C7BEAC measures 1.66:1 against the page and
+# would make every control boundary a suggestion.
+RULE = "#CFC5B2"         # masthead, section headings, chart baseline
+RULE_SOFT = "#E6E0D4"    # between rows in a list
+STROKE = "#766E60"       # control boundaries — 4.65:1, never lighter
 
-ACCENT = "#D97757"       # clay — the one accent
-ACCENT_DIM = "#C15F3C"   # pressed / hover
-ACCENT_SOFT = "#33291F"  # tinted chip backgrounds
-ACCENT_TEXT = "#E4A183"  # text on a tinted chip
+# ── text, four tiers and no fifth ────────────────────────────────────────
+TEXT = "#1B1917"         # 15.8:1 — titles, row titles, transcripts, values
+TEXT_MID = "#4A453D"     # 8.8:1  — numbers in lists, secondary body
+TEXT_MUTED = "#6E675C"   # 5.2:1  — captions, row hints, inactive nav
+# The floor. Nothing lighter carries a word: the tempting #8C8477 measures
+# 3.36:1, which is the same mistake this file already made once in the dark
+# palette with #7C766C.
+TEXT_FAINT = "#756D5F"   # 4.7:1  — timestamps, footnotes, placeholders
 
-OK = "#7D9A72"           # muted sage, not a system green
-RECORDING = "#D9534F"
-PROCESSING = "#D4A27F"   # kraft
-ERROR = "#D9534F"
+# ── the one accent, and it is ink rather than paint ──────────────────────
+ACCENT = "#26456B"       # 9.0:1 on paper; white on it is 9.9:1
+ACCENT_DIM = "#172B45"   # pressed
+ACCENT_SOFT = "#E7E9EF"  # menu highlight, text selection
+ACCENT_TEXT = "#26456B"  # accent-coloured text sits on the page, not a chip
+
+# ── state, never used for grouping ───────────────────────────────────────
+OK = "#3F6B4A"           # copied, saved, Ollama reachable
+RECORDING = "#A4322A"
+PROCESSING = "#8A6216"   # amber, warm enough to read as "working"
+ERROR = "#A4322A"
+
+# ── the floating surfaces, which must read over any desktop ──────────────
+# The pill and the result panel appear over the user's own window, so they
+# cannot borrow contrast from a background they do not own. An outer border
+# against a white desktop, a light fill against a dark one, and a printed
+# bevel along the top edge instead of the drop shadow Tk cannot draw.
+PILL_EDGE = "#4A453D"
+PILL_LIFT = "#FFFFFF"
+
+# Old names, pointed at their new roles, so every existing call site keeps
+# working while the layout is rewritten page by page. INK is the page — a
+# `widgets.Card` on it is now invisible padding, which is exactly right.
+INK = PAPER
+SIDEBAR = PAPER
+CARD = PAPER
+CARD_HI = PAPER_2
+LINE = RULE
 
 def _first_installed(*candidates: str) -> str:
     """The first of these the machine actually has.
@@ -160,12 +196,18 @@ def button(parent, text: str, command, primary: bool = False):
     widget = tk.Button(
         parent, text=text, command=command,
         font=font(9, "bold" if primary else "normal"),
-        bg=ACCENT if primary else CARD_HI,
+        bg=ACCENT if primary else PAPER_2,
+        # Not white. A secondary button on paper is ink on a faint band; white
+        # here was invisible the moment the ground stopped being near-black.
         fg="#FFFFFF" if primary else TEXT,
-        activebackground=ACCENT_DIM if primary else LINE,
+        activebackground=ACCENT_DIM if primary else WELL,
         activeforeground="#FFFFFF" if primary else TEXT,
         relief="flat", bd=0, padx=16, pady=8, cursor="hand2", highlightthickness=0,
     )
+    if not primary:
+        # A findable edge, since the fill is only 1.13:1 against the page.
+        widget.configure(highlightthickness=1, highlightbackground=STROKE,
+                         highlightcolor=STROKE)
     return widget
 
 
@@ -174,9 +216,45 @@ def entry(parent, textvariable=None, bg: str | None = None):
 
     return tk.Entry(
         parent, textvariable=textvariable, font=font(10),
-        bg=bg or CARD, fg=TEXT, insertbackground=TEXT,
+        bg=bg or PAPER, fg=TEXT, insertbackground=TEXT,
+        selectbackground=ACCENT_SOFT, selectforeground=TEXT,
         relief="flat", bd=0, highlightthickness=0,
     )
+
+
+def rule(parent, colour: str = RULE, pady=0):
+    """A hairline. One physical pixel at 100%, two at 150%, which is right."""
+    import tkinter as tk
+
+    line = tk.Frame(parent, bg=colour, height=max(1, px(1)))
+    line.pack(fill="x", pady=pady)
+    return line
+
+
+def text_button(parent, text: str, command, danger: bool = False):
+    """A word that acts, for the actions that live beside a page title.
+
+    Not a tile. A 34 px rounded square with a glyph in it is how "export" and
+    "delete everything" came to look like the same control — and how the most
+    destructive action in the app ended up as an unlabelled icon next to the
+    window's own close button.
+    """
+    import tkinter as tk
+
+    widget = tk.Label(parent, text=text, font=font(9), bg=parent["bg"],
+                      fg=TEXT_MUTED, cursor="hand2")
+    hot = ERROR if danger else TEXT
+
+    def enter(_event=None):
+        widget.configure(fg=hot)
+
+    def leave(_event=None):
+        widget.configure(fg=TEXT_MUTED)
+
+    widget.bind("<Enter>", enter)
+    widget.bind("<Leave>", leave)
+    widget.bind("<Button-1>", lambda _e: command())
+    return widget
 
 
 class scrollbar:  # noqa: N801 - stands in for tk.Scrollbar, keeps its name
