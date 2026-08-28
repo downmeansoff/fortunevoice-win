@@ -34,3 +34,26 @@ def no_real_ollama(monkeypatch):
     from fortunevoice import ollama
 
     monkeypatch.setattr(ollama, "executable", lambda: None)
+
+@pytest.fixture(autouse=True)
+def no_real_model_download(request, monkeypatch):
+    """A test run must not reach the network.
+
+    Whisper is loaded from a background thread, and with nothing cached that
+    is a multi-gigabyte download from Hugging Face. It surfaced as a stray SSL
+    error in the middle of an otherwise green suite — reported under whichever
+    test happened to be running when the leaked thread got there — and on a
+    machine with no cached model it would be a test run that hangs for
+    minutes.
+
+    test_transcriber is the exception: it is *about* this code path, and stubs
+    the loader itself.
+    """
+    if request.module.__name__.endswith("test_transcriber"):
+        return
+    from fortunevoice.transcriber import Transcriber, TranscriberError
+
+    def refuse(self):
+        raise TranscriberError("model loading is disabled in tests")
+
+    monkeypatch.setattr(Transcriber, "_load_locked", refuse)
