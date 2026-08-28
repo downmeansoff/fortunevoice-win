@@ -208,7 +208,12 @@ class App:
         self._notify(t("notify.ui_failed"), detail)
 
     def _notify(self, title: str, body: str) -> None:
-        logger.info("%s — %s", title, body)
+        # Title only. Notification bodies carry transcript excerpts — the
+        # recovered text, the preview shown when there is no window to show it
+        # in — and this log is the file the user is asked to hand over when
+        # something goes wrong. What it says happened is diagnostic; what was
+        # dictated is not.
+        logger.info("notification: %s", title)
         if self.on_notify:
             try:
                 self.on_notify(title, body)

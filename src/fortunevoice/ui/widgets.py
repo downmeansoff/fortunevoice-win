@@ -454,12 +454,22 @@ class ShortcutRecorder:
         to change, and a click that lands a pixel outside it silently does
         nothing.
         """
-        for widget in widgets:
-            widget.bind("<Button-1>", self._begin, add="+")
-            try:
-                widget.configure(cursor="hand2")
-            except Exception:  # noqa: BLE001 - not every widget takes a cursor
-                pass
+        def descendants(widget):
+            yield widget
+            for child in widget.winfo_children():
+                yield from descendants(child)
+
+        # Every descendant, not just the direct children. A SettingRow keeps
+        # its title and hint inside a frame, so clicking the words "Сочетание
+        # клавиш" — the obvious place to click — landed on a label nobody had
+        # bound and did nothing.
+        for root in widgets:
+            for widget in descendants(root):
+                widget.bind("<Button-1>", self._begin, add="+")
+                try:
+                    widget.configure(cursor="hand2")
+                except Exception:  # noqa: BLE001 - not every widget takes a cursor
+                    pass
 
     def pack(self, **kwargs):
         self.canvas.pack(**kwargs)

@@ -51,7 +51,7 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "tray.recover": {"en": "Recover failed dictation",
                      "ru": "Восстановить неудавшуюся диктовку"},
     "tray.retry_model": {"en": "Retry model load", "ru": "Загрузить модель заново"},
-    "tray.language": {"en": "Language", "ru": "Язык распознавания"},
+    "tray.language": {"en": "Speech language", "ru": "Язык речи"},
     "tray.microphone": {"en": "Microphone", "ru": "Микрофон"},
     "tray.quit": {"en": "Quit", "ru": "Выход"},
     "tray.title": {"en": "FortuneVoice — {label}", "ru": "FortuneVoice — {label}"},
@@ -93,6 +93,14 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "history.export_tip": {"en": "Export to a text file",
                            "ru": "Выгрузить в текстовый файл"},
     "history.delete_tip": {"en": "Delete all history", "ru": "Удалить всю историю"},
+    "history.copied": {"en": "Copied", "ru": "Скопировано"},
+    "history.export_empty": {"en": "Nothing to export",
+                             "ru": "Выгружать нечего"},
+    "history.export_empty_body": {
+        "en": "History is empty — dictate something first.",
+        "ru": "История пуста — сначала что-нибудь надиктуйте."},
+    "history.export_failed": {"en": "Could not write the file",
+                              "ru": "Не удалось записать файл"},
     "history.delete_title": {"en": "Delete all history", "ru": "Удалить всю историю"},
     "history.delete_body": {
         "en": "Permanently delete all {count} dictations?\n\nThis cannot be undone.",
@@ -190,10 +198,11 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.shortcut_modifier_hint": {
         "en": "Ctrl / Alt work too — hold them briefly to start",
         "ru": "Ctrl и Alt тоже подходят — их нужно чуть придержать"},
-    "settings.shortcut_press": {"en": "Press keys…", "ru": "Нажмите клавиши…"},
+    "settings.shortcut_press": {"en": "Press keys — Esc cancels",
+                                "ru": "Нажмите клавиши — Esc отменит"},
     "settings.shortcut_bad_title": {"en": "That shortcut will not work",
                                     "ru": "Такое сочетание не сработает"},
-    "settings.language": {"en": "Language", "ru": "Язык речи"},
+    "settings.language": {"en": "Speech language", "ru": "Язык речи"},
     "settings.lang_ru": {"en": "Russian", "ru": "Русский"},
     "settings.lang_en": {"en": "English", "ru": "Английский"},
     "settings.lang_auto": {"en": "Auto-detect", "ru": "Определять"},
@@ -216,8 +225,10 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.keep_alive": {"en": "Keep the model in memory",
                             "ru": "Держать модель в памяти"},
     "settings.keep_alive_hint": {
-        "en": "frees ~2 GB of video memory; costs ~3 s on the next dictation",
-        "ru": "освобождает ~2 ГБ видеопамяти, стоит ~3 с на первой диктовке"},
+        "en": "how long it stays after the last dictation — shorter frees "
+              "~2 GB, and costs ~3 s next time",
+        "ru": "сколько держать после последней диктовки: меньше — освободится "
+              "~2 ГБ видеопамяти, но +3 с к следующей"},
     "settings.keep_alive_never": {"en": "Unload at once", "ru": "Выгружать сразу"},
     "settings.keep_alive_5m": {"en": "5 minutes", "ru": "5 минут"},
     "settings.keep_alive_1h": {"en": "1 hour", "ru": "1 час"},

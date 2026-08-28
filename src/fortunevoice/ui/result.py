@@ -85,9 +85,9 @@ class ResultPanel:
         footer.pack(fill="x", padx=18, pady=12)
         self._copy_button = theme.button(footer, t("result.copy"), self._copy, primary=True)
         self._copy_button.pack(side="right")
-        theme.label(footer, t("result.saved"), size=8, colour=theme.TEXT_FAINT).pack(
-            side="left", pady=6
-        )
+        # No "Saved to History" here: the header above already says it, as
+        # part of the reason ("Couldn't type it — saved to History"). Twice, in
+        # two different wordings, read as two different facts.
 
         self._window = window
         window.update_idletasks()
