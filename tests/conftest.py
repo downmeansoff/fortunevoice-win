@@ -49,7 +49,7 @@ def no_real_model_download(request, monkeypatch):
     test_transcriber is the exception: it is *about* this code path, and stubs
     the loader itself.
     """
-    if request.module.__name__.endswith("test_transcriber"):
+    if request.module.__name__.endswith(("test_transcriber", "test_end_to_end")):
         return
     from fortunevoice.transcriber import Transcriber, TranscriberError
 
