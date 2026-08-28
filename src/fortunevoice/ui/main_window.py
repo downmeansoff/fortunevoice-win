@@ -320,7 +320,22 @@ class MainWindow:
         self._search_var = tk.StringVar()
         search = theme.entry(field.body, self._search_var)
         search.pack(side="left", fill="x", expand=True)
-        self._search_var.trace_add("write", lambda *_: self._refresh_history())
+        # Debounced. Every keystroke tore down and rebuilt every card in the
+        # list — canvas-backed, one per dictation — so typing into the search
+        # box on a long history stuttered, and each character cost the same
+        # work again. 160 ms is below the gap between keystrokes in ordinary
+        # typing, so the list settles once the user pauses.
+        self._search_after = None
+
+        def on_search(*_args) -> None:
+            if self._search_after is not None:
+                try:
+                    search.after_cancel(self._search_after)
+                except Exception:  # noqa: BLE001 - already fired
+                    pass
+            self._search_after = search.after(160, self._refresh_history)
+
+        self._search_var.trace_add("write", on_search)
         self._search_is_placeholder = _placeholder(search, t("history.search"))
 
         self._history_body = self._scroll_area(page)
@@ -450,7 +465,19 @@ class MainWindow:
         flash = tk.Label(card.body, text=t("history.copied"), font=theme.font(8, "bold"),
                          bg=theme.CARD, fg=theme.OK)
         flash.place(relx=1.0, y=0, anchor="ne")
-        card.body.after(1100, flash.destroy)
+
+        def remove() -> None:
+            # The list can be rebuilt before this fires — a search keystroke, a
+            # deletion, a dictation arriving — and destroying a widget that is
+            # already gone raises inside the Tk callback, which takes the UI
+            # thread's error path for something the user cannot even see.
+            try:
+                if flash.winfo_exists():
+                    flash.destroy()
+            except Exception:  # noqa: BLE001 - the whole card went with it
+                pass
+
+        card.body.after(1100, remove)
 
     def _delete_record(self, record) -> str:
         """Remove one dictation. No confirmation: it is one row, the action is
