@@ -130,6 +130,15 @@ def test_trimming_keeps_the_newest(monkeypatch):
         def write_text(self, text, **kwargs):
             return self._path.write_text(text, **kwargs)
 
+        def __fspath__(self):
+            # `tmp.replace(path)` needs a real path on the other side.
+            return str(self._path)
+
+        def with_suffix(self, suffix):
+            # The trim writes through a temp file and renames, so a write
+            # interrupted mid-way cannot leave the live file truncated.
+            return self._path.with_suffix(suffix)
+
     metrics._trim(PretendsToBeHuge(real))
     rows = metrics.read_all()
     assert len(rows) == 10
@@ -147,3 +156,23 @@ def test_the_repaired_line_is_not_glued_to_the_next_one():
     lines = paths.metrics_file().read_text(encoding="utf-8").splitlines()
     assert lines[1] == '{"chars": 2, "trunc', "the damaged line is left as it is"
     assert json.loads(lines[2])["chars"] == 3, "and the next one is whole"
+
+
+def test_one_torn_byte_does_not_take_the_whole_file_with_it(tmp_path, monkeypatch):
+    """A machine that loses power mid-append leaves a Cyrillic character cut
+    in half. UnicodeDecodeError is a ValueError, not an OSError, so it went
+    straight past the guard and out of the Insights page and out of `doctor
+    stats` — permanently, until the user found and hand-edited the file."""
+    target = tmp_path / "metrics.jsonl"
+    newline = chr(10).encode("utf-8")
+    good = json.dumps({"date": "2026-08-28", "chars": 7}).encode("utf-8")
+    later = json.dumps({"date": "2026-08-28", "chars": 9}).encode("utf-8")
+    half_a_character = b'{"date": "2026-08-28", "app": "' + bytes([0xD0])
+
+    target.write_bytes(good + newline + half_a_character + newline
+                       + later + newline)
+    monkeypatch.setattr(paths, "metrics_file", lambda: target)
+
+    rows = metrics.read_all()
+
+    assert [r["chars"] for r in rows] == [7, 9], "the intact records must survive"
