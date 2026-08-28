@@ -256,3 +256,15 @@ def test_an_added_negation_is_refused_as_well_as_a_dropped_one():
 def test_a_negation_that_survives_is_left_alone():
     assert cleaner._is_safe("мы не будем это делать сегодня",
                             "Мы не будем это делать сегодня.") is True
+
+
+def test_six_words_may_not_lose_half_of_themselves():
+    """`int()` truncates: six words allowed a drop to three, which is half the
+    dictation gone through a guard whose stated limit is about a third — and
+    six words is exactly where the strict every-word-survives rule stops
+    applying."""
+    from fortunevoice.cleaner import _kept_enough
+
+    assert _kept_enough("мы не будем делать это сегодня", "мы будем это") is False
+    assert _kept_enough("мы не будем делать это сегодня",
+                        "мы не будем это делать") is True

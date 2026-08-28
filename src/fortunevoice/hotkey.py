@@ -477,6 +477,8 @@ class HotkeyListener:
             result = user32.GetMessageW(ctypes.byref(message), None, 0, 0)
             if result in (0, -1):
                 break
+            if message.message == WM_TIMER:
+                self._resync_held()
             if message.message == WM_TIMER and self._reinstall:
                 self._reinstall = False
                 logger.warning("reinstalling the keyboard hook after a slow callback")
@@ -485,6 +487,28 @@ class HotkeyListener:
                     self._report_broken()
                     break
         self._uninstall()
+
+    def _resync_held(self) -> None:
+        """Recover from a key-up the hook never saw.
+
+        A UAC prompt, Win+L and Ctrl+Alt+Del all switch to a different
+        desktop, and the release lands on a desktop this hook is not on. The
+        latch then says the key is still down, which has two consequences: the
+        next press is read as auto-repeat and swallowed, so the first attempt
+        after unlocking does nothing; and a recording that was running when
+        the desktop switched never ends, so it runs to the 300 s cap and types
+        five minutes of room noise.
+
+        Checked once a second against the physical keyboard, which is the one
+        thing here that cannot be out of date.
+        """
+        if not self._held:
+            return
+        if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in self._spec.keys):
+            return
+        logger.info("the hotkey release was never delivered — resyncing")
+        self._held = False
+        self._end_press()
 
     def _report_broken(self) -> None:
         """Say the hotkey is dead. Windows refusing the hook, or refusing to
