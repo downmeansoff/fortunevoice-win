@@ -438,6 +438,26 @@ def section_title(parent, text: str):
     return band
 
 
+def _pretty_chord(raw: str) -> str:
+    """"ctrl+alt+space" as "Ctrl+Alt+Space".
+
+    The same spelling the header chip and the tray tooltip use. The
+    row showed the raw config string, so the one place you go to
+    CHANGE the shortcut was the one place that spelled it
+    differently — and lowercase, next to the words "Сочетание
+    клавиш", reads like literal text to type rather than the keys
+    you hold.
+    """
+    if not raw:
+        return ""
+    try:
+        from ..hotkey import parse
+
+        return parse(raw).label
+    except Exception:  # noqa: BLE001 - an unparseable chord still shows
+        return raw
+
+
 class ShortcutRecorder:
     """Click, then press the combination you want.
 
@@ -617,7 +637,7 @@ class ShortcutRecorder:
         # 150 px made "ctrl+alt+space" fill the whole box while "Русский" sat
         # in a third of one, so the right-hand column read as a mistake.
         label = (t("settings.shortcut_press") if self._listening
-                 else (self._get() or "—"))
+                 else (_pretty_chord(self._get()) or "—"))
         pad = theme.px(12)
         chord_font = theme.mono(9)
         width = max(theme.px(96),

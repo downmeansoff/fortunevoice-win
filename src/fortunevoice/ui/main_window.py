@@ -966,7 +966,12 @@ class MainWindow:
                   lambda e, w=caption: w.configure(wraplength=max(320, e.width - 8)),
                   add="+")
 
-        card = widgets.Card(page, radius=14, padx=16, pady=14)
+        # Outlined. CARD is an alias of PAPER, so an unbordered panel on the
+        # page is invisible — the whole page read as a title, a caption, a
+        # large nothing, and a Save button in the corner, with no sign that
+        # the nothing was the thing you type into.
+        card = widgets.Card(page, radius=14, padx=16, pady=14,
+                            outline=theme.RULE_SOFT)
         card.pack(fill="both", expand=True)
         text = tk.Text(
             card.body, wrap="word", font=theme.mono(10), bg=theme.CARD, fg=theme.TEXT,
@@ -975,14 +980,25 @@ class MainWindow:
         )
         text.pack(fill="both", expand=True)
         self._dictionary_text = text
+        (self._dictionary_is_ghost,
+         self._dictionary_show_ghost) = _ghost_lines(text, t("dict.example"))
 
-        footer = tk.Frame(page, bg=theme.INK)
+        footer = tk.Frame(page, bg=page["bg"])
         footer.pack(fill="x", pady=(14, 0))
         self._dictionary_status = theme.label(footer, "", size=9, colour=theme.TEXT_FAINT)
         self._dictionary_status.pack(side="left", pady=6)
         theme.button(footer, t("dict.save"), self._save_dictionary, primary=True).pack(side="right")
 
     def _dictionary_contents(self) -> str:
+        """What the user typed — never the example shown in its place.
+
+        Without this the page opened announcing unsaved changes it did not
+        have, and closing it would have written the four example words into
+        the dictionary as if the user had asked for them.
+        """
+        if getattr(self, "_dictionary_is_ghost", None) is not None:
+            if self._dictionary_is_ghost():
+                return ""
         return self._dictionary_text.get("1.0", "end").strip()
 
     def _dictionary_dirty(self) -> bool:
@@ -1002,6 +1018,13 @@ class MainWindow:
             return
         self._dictionary_text.delete("1.0", "end")
         self._dictionary_text.insert("1.0", chr(10).join(dictionary.terms()))
+        # Reloading the page wipes the example along with everything else,
+        # and an empty unbordered box is exactly the "nothing to type
+        # into" this page started out as. Put it back when there is
+        # nothing to show.
+        ghost = getattr(self, "_dictionary_show_ghost", None)
+        if ghost is not None:
+            ghost()
         self._dictionary_saved = self._dictionary_contents()
         self._dictionary_status.configure(text="")
 
@@ -1434,6 +1457,37 @@ def _set_cleanup_model(name: str) -> None:
 
     config.set("FVOllamaModel", name)
     cleaner.reset_fit()
+
+
+def _ghost_lines(widget, sample: str):
+    """Show `sample` in a text box until the user types into it.
+
+    An empty multi-line field with no border and no prompt does not look like
+    an input at all — and this one wants a specific shape, one term per line,
+    which a caption above the field describes and an example demonstrates in
+    a tenth of the time.
+    """
+    state = {"showing": False}
+
+    def show() -> None:
+        if widget.get("1.0", "end").strip():
+            return
+        state["showing"] = True
+        widget.insert("1.0", sample)
+        widget.configure(fg=theme.TEXT_FAINT)
+
+    def clear(_event=None) -> None:
+        if not state["showing"]:
+            return
+        state["showing"] = False
+        widget.delete("1.0", "end")
+        widget.configure(fg=theme.TEXT)
+
+    widget.bind("<FocusIn>", clear, add="+")
+    widget.bind("<Key>", clear, add="+")
+    widget.bind("<Button-1>", clear, add="+")
+    show()
+    return (lambda: state["showing"]), show
 
 
 window = MainWindow()

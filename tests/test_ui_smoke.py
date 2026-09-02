@@ -343,3 +343,34 @@ def test_history_search_matches_the_application_too(window, root):
 
     shown = [w for w in window._history_body.winfo_children()]
     assert shown, "the row was filtered out by its own application name"
+
+
+def test_the_dictionary_example_is_not_the_users_content(window, root):
+    """The page shows four example terms in a greyed-out ghost, because an
+    empty borderless box does not look like an input. They must not count as
+    typed: the page opened announcing unsaved changes it did not have, and
+    closing it would have written the examples into the dictionary as if the
+    user had asked for them."""
+    window._select("Dictionary")
+    root.update()
+
+    shown = window._dictionary_text.get("1.0", "end").strip()
+    assert shown, "the example has to be visible in the first place"
+    assert window._dictionary_contents() == "", "but it is not content"
+    assert not window._dictionary_dirty(), "and it is not an unsaved change"
+
+
+def test_typing_replaces_the_dictionary_example(window, root):
+    window._select("Dictionary")
+    root.update()
+
+    # focus_set is what a click does, and clearing the ghost is bound to
+    # <FocusIn>. Synthesising a keypress needs a keycode this Tk build
+    # will not invent for a bare keysym.
+    window._dictionary_text.focus_set()
+    window._dictionary_text.event_generate("<FocusIn>", when="now")
+    root.update()
+    window._dictionary_text.insert("1.0", "Фортуна")
+    root.update()
+
+    assert window._dictionary_contents() == "Фортуна"

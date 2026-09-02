@@ -176,6 +176,8 @@ CATALOGUE: dict[str, dict[str, str]] = {
               "в строке. Передаются распознавателю как подсказка, а модели "
               "вычитки — как предпочтительное написание.",
     },
+    "dict.example": {"en": "Anthropic\nFortuneVoice\nqwen2.5\nCTranslate2",
+                     "ru": "Фортуна\nЯндекс\nqwen2.5\nCTranslate2"},
     "dict.save": {"en": "Save", "ru": "Сохранить"},
     "dict.saved": {"en": "Saved {count} terms.", "ru": "Сохранено терминов: {count}."},
     "dict.saved_capped": {
