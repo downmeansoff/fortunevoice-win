@@ -760,6 +760,10 @@ class OllamaCleaner:
             # exact "the end is missing" bug. Never cap real output.
             "options": {"temperature": 0.2, "num_predict": -1},
         }
+        if config.get_str("FVCleanupDevice").lower() == "cpu":
+            # Ollama reads num_gpu as "layers to offload"; zero keeps the whole
+            # model in system memory and leaves the card to Whisper.
+            body["options"]["num_gpu"] = 0
         try:
             payload = self._post(body, timeout=20)
         except Exception as exc:  # noqa: BLE001 - any failure degrades to raw

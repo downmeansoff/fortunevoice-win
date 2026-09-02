@@ -180,6 +180,7 @@ without a restart. Only values you change are stored.
 | `FVAutoStartOllama` | `true` | Start Ollama when cleanup needs it and nothing is listening |
 | `FVAppProfiles` | `{}` | Per-application overrides — see below |
 | `FVOllamaModel` | `qwen2.5:3b` | Cleanup model. Smaller ones translate the text instead of cleaning it |
+| `FVCleanupDevice` | `gpu` | Where the cleanup model runs. On a 6 GB card with Whisper resident, `qwen2.5:3b` will not load on the GPU at all (`cudaMalloc failed: out of memory`) and `qwen2.5:1.5b`, which does fit, had every one of four cleanups rejected by the safety guards. On `cpu` the same 3b takes ~4 s warm, uses no video memory, and works — seconds instead of gigabytes. |
 | `FVOllamaHost` | `http://localhost:11434` | Where Ollama is. Point it at another machine to keep the video memory here free |
 | `FVMiniPrompt` | `true` | Short prompt for short dictations; turn off on a fast model |
 | `FVUnloadModelAfter` | `0` | Minutes of no dictation before Whisper is dropped from video memory. `0` = never. It holds ~2.1 GB while idle; reloading costs 5.6 s on the next dictation |
