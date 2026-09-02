@@ -325,10 +325,12 @@ is garbled enough that a rewrite can only help.
 
 ## Known limits
 
-- **A paste can be silently ignored.** Some terminals take Ctrl+Shift+V
-  rather than Ctrl+V, and Tk applications bind paste to the letter "v",
-  which a Russian layout does not produce. The transcript is in History
-  either way, but if a particular app swallows pastes, give it
+- **A paste can be silently ignored.** Consoles are handled — cmd,
+  PowerShell, Windows Terminal, mintty and the rest are always typed
+  into, because they bind paste to Ctrl+Shift+V or to nothing. Tk
+  applications are not: they bind paste to the letter "v", which a
+  Russian layout does not produce. The transcript is in History either
+  way, and an app that swallows pastes can be given
   `"FVDelivery": "type"` in `FVAppProfiles`.
 - **Editable-field detection is weak.** Windows has no cheap equivalent of the
   macOS Accessibility role query, so the app types unless it is certain there

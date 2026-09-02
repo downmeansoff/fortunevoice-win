@@ -343,3 +343,105 @@ def test_a_profile_can_keep_one_app_on_typing():
         assert injector.wants_paste(long_text, "Telegram.exe") is True
     finally:
         config.set("FVAppProfiles", {})
+
+
+# ── consoles do not take Ctrl+V ──────────────────────────────────────────
+
+
+def test_a_terminal_is_typed_into_however_long_the_text_is():
+    """Windows terminals bind paste to Ctrl+Shift+V, or to right-click, or to
+    nothing — and a paste they ignore is a dictation that goes nowhere, which
+    is the one failure this app is built never to produce."""
+    from fortunevoice import config, injector
+
+    long_text = "раз два три четыре пять " * 20
+    config.set("FVAppProfiles", {})
+    config.set("FVDelivery", "auto")
+    config.set("FVPasteViaClipboard", False)
+
+    assert injector.wants_paste(long_text, "WindowsTerminal.exe") is False
+    assert injector.wants_paste(long_text, "powershell.exe") is False
+    assert injector.wants_paste(long_text, "Telegram.exe") is True
+
+
+def test_the_console_list_ignores_case():
+    from fortunevoice import injector
+
+    assert injector.is_console("CMD.EXE") is True
+    assert injector.is_console("cmd.exe") is True
+    assert injector.is_console(None) is False
+
+
+def test_asking_for_paste_in_a_terminal_still_pastes():
+    """An explicit choice beats the guess: a user who set it knows something
+    about their terminal that this list does not."""
+    from fortunevoice import config, injector
+
+    config.set("FVAppProfiles", {})
+    config.set("FVDelivery", "paste")
+    try:
+        assert injector.wants_paste("короткое", "WindowsTerminal.exe") is True
+    finally:
+        config.set("FVDelivery", "auto")
+
+
+# ── what the clipboard holds afterwards ──────────────────────────────────
+
+
+def test_the_dictation_is_not_left_on_an_empty_clipboard(monkeypatch):
+    """When there was nothing to put back — the clipboard was empty, or held
+    an image or files, which this code cannot reproduce — the old behaviour
+    left the transcript sitting there: every Ctrl+V for the rest of the day,
+    and every clipboard-history tool, holding something the user said out
+    loud."""
+    import threading
+
+    from fortunevoice import injector
+
+    emptied: list[int] = []
+    monkeypatch.setattr(injector, "_clipboard_text", lambda: None)
+    monkeypatch.setattr(injector, "set_clipboard_text", lambda text: True)
+    monkeypatch.setattr(injector, "release_held_modifiers", lambda: None)
+    monkeypatch.setattr(injector, "_send", lambda events: True)
+    monkeypatch.setattr(injector.user32, "GetClipboardSequenceNumber", lambda: 7)
+    monkeypatch.setattr(injector.user32, "OpenClipboard", lambda handle: 1)
+    monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
+    monkeypatch.setattr(injector.user32, "EmptyClipboard",
+                        lambda: emptied.append(1) or 1)
+    # The restore waits five seconds before deciding; the test does not.
+    monkeypatch.setattr(injector.time, "sleep", lambda seconds: None)
+
+    assert injector.paste_via_clipboard("сказанное вслух") is True
+    for thread in threading.enumerate():
+        if thread.name == "clipboard-restore":
+            thread.join(3)
+
+    assert emptied == [1], "the transcript must not outlive the paste"
+
+
+def test_something_copied_meanwhile_is_left_alone(monkeypatch):
+    """The user copied something in those five seconds. That is theirs, and
+    putting our old snapshot back would take it away from them."""
+    import threading
+
+    from fortunevoice import injector
+
+    touched: list[str] = []
+    monkeypatch.setattr(injector, "_clipboard_text", lambda: "то что было")
+    monkeypatch.setattr(injector, "set_clipboard_text",
+                        lambda text: touched.append(text) or True)
+    monkeypatch.setattr(injector, "release_held_modifiers", lambda: None)
+    monkeypatch.setattr(injector, "_send", lambda events: True)
+    monkeypatch.setattr(injector.user32, "EmptyClipboard",
+                        lambda: touched.append("EMPTIED") or 1)
+    monkeypatch.setattr(injector.time, "sleep", lambda seconds: None)
+    numbers = iter([1, 2])  # changed between the paste and the restore
+    monkeypatch.setattr(injector.user32, "GetClipboardSequenceNumber",
+                        lambda: next(numbers, 2))
+
+    assert injector.paste_via_clipboard("диктовка") is True
+    for thread in threading.enumerate():
+        if thread.name == "clipboard-restore":
+            thread.join(3)
+
+    assert touched == ["диктовка"], touched
