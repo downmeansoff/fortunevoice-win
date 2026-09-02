@@ -284,6 +284,11 @@ def test_a_hook_that_ignores_its_own_probe_is_reinstalled(monkeypatch):
     listener = _listener(monkeypatch)
     probes = []
     monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    # Somebody is at the machine: the probe is real input, and it is
+    # only sent when the system has seen activity our hook did not.
+    # Without this the test asks the real desktop and passes or fails
+    # depending on whether anyone touched it.
+    monkeypatch.setattr(H.winapi, "milliseconds_since_last_input", lambda: 300.0)
     listener._last_seen = time.monotonic() - 60
 
     listener._check_still_hooked()          # asks
