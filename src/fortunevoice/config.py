@@ -65,6 +65,19 @@ DEFAULTS: dict[str, Any] = {
     # check and the user silently got no cleanup at all. Small is not free.
     "FVOllamaModel": "qwen2.5:3b",
     "FVOllamaHost": "http://localhost:11434",
+    # Where the cleanup model runs: "gpu" or "cpu".
+    #
+    # Measured on a 6 GB card with Whisper large-v3-turbo resident (3150 MiB
+    # free): qwen2.5:3b on the GPU kills llama-server with "cudaMalloc failed:
+    # out of memory", and qwen2.5:1.5b — which does fit — produced zero usable
+    # cleanups out of four, every one rejected by the safety guards. On the
+    # CPU the same 3b takes 10.5 s cold and 4.2 s warm, uses no video memory
+    # at all, and comes back properly cleaned.
+    #
+    # So on a small card the CPU is not a fallback, it is the only place the
+    # feature works. It costs seconds instead of gigabytes, which is the
+    # trade the user gets to make.
+    "FVCleanupDevice": "gpu",
     # Per-application overrides, keyed by executable name. Dictating a shell
     # command and dictating a chat message want opposite things — see
     # profiles.py, which also lists what may be overridden.
