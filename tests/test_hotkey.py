@@ -60,11 +60,17 @@ def test_ordinary_key_is_not_a_modifier_trigger():
         assert parse(text).modifier_trigger is False, text
 
 
-def test_the_arriving_key_is_not_checked_against_the_async_state():
+def test_the_arriving_key_is_not_checked_against_the_async_state(monkeypatch):
     """A low-level hook runs before Windows commits the keystroke, so
     GetAsyncKeyState still reports the key being pressed as up. Checking it
     there made Ctrl+Alt never fire once — nothing is held in this process, and
     the chord must still be considered satisfied by the key the hook reports."""
+    from fortunevoice import hotkey as H
+
+    # Nothing down, stated rather than assumed: the second assertion used
+    # to ask the real keyboard, so the test failed whenever Ctrl happened
+    # to be held while the suite ran.
+    monkeypatch.setattr(H, "_key_is_down", lambda vk: False)
     spec = parse("ctrl")
     assert spec.modifiers_held(0xA2) is True   # "Ctrl just arrived"
     assert spec.modifiers_held() is False      # nothing is actually down
@@ -227,7 +233,9 @@ def test_a_release_lost_to_a_desktop_switch_is_recovered(monkeypatch):
     released: list[int] = []
     listener = _listener_holding(monkeypatch)
     monkeypatch.setattr(listener, "_end_press", lambda: released.append(1))
-    monkeypatch.setattr(H.user32, "GetAsyncKeyState", lambda vk: 0)  # all up
+    # The helper, not the ctypes pointer: restoring an attribute on the
+    # shared user32 object drops the argtypes declared at import.
+    monkeypatch.setattr(H, "_key_is_down", lambda vk: False)
 
     listener._resync_held()
 
@@ -243,7 +251,7 @@ def test_a_key_that_is_genuinely_still_down_is_left_alone(monkeypatch):
     released: list[int] = []
     listener = _listener_holding(monkeypatch)
     monkeypatch.setattr(listener, "_end_press", lambda: released.append(1))
-    monkeypatch.setattr(H.user32, "GetAsyncKeyState", lambda vk: -32768)  # held
+    monkeypatch.setattr(H, "_key_is_down", lambda vk: True)
 
     listener._resync_held()
 

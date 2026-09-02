@@ -324,10 +324,11 @@ is garbled enough that a rewrite can only help.
 
 ## Known limits
 
-- **No result panel.** When the text can't be typed (you switched windows, no
-  editable field), macOS shows a floating panel with a Copy button. Here you
-  get a tray balloon and the transcript in History; "Copy last dictation" in
-  the tray menu puts it on the clipboard.
+- **A paste can be silently ignored.** Some terminals take Ctrl+Shift+V
+  rather than Ctrl+V, and Tk applications bind paste to the letter "v",
+  which a Russian layout does not produce. The transcript is in History
+  either way, but if a particular app swallows pastes, give it
+  `"FVDelivery": "type"` in `FVAppProfiles`.
 - **Editable-field detection is weak.** Windows has no cheap equivalent of the
   macOS Accessibility role query, so the app types unless it is certain there
   is nowhere to type. Same bias as the original: losing a dictation is worse
