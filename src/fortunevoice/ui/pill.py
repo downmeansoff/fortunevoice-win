@@ -54,7 +54,8 @@ def _label_width() -> int:
     scaling and clipped the text on a 125% display.
     """
     font = theme.font(8)
-    return max(theme.text_width(text, font) for text in _MODE_TEXT.values())
+    return max(theme.text_width(text + _CLOCK_SUFFIX, font)
+               for text in _MODE_TEXT.values())
 
 # Magenta is the colour key for the rounded corners: anything painted in it
 # becomes a hole in the window. Nothing else may use it.
@@ -63,6 +64,7 @@ CHROMA = "#FF00FE"
 _MODE_COLOUR = {
     "recording": theme.RECORDING,
     "processing": theme.PROCESSING,
+    "cleaning": theme.PROCESSING,
     "error": theme.ERROR,
     "no-signal": theme.TEXT_FAINT,
     "cancelled": theme.TEXT_MUTED,
@@ -70,10 +72,17 @@ _MODE_COLOUR = {
 _MODE_TEXT = {
     "recording": t("pill.listening"),
     "processing": t("pill.transcribing"),
+    # Its own state. One label covered both the decode and a cold Ollama
+    # load, which the app itself prices at about nine seconds — and nine
+    # seconds of an identical animation after you have let go is exactly
+    # where a user decides the thing has hung.
+    "cleaning": t("pill.cleaning"),
     "error": t("pill.failed"),
     "no-signal": t("pill.no_signal"),
     "cancelled": t("pill.cancelled"),
 }
+# Room for the seconds counter that appears once a wait stops being instant.
+_CLOCK_SUFFIX = " \u00b7 88s"
 
 _LABEL_W = _label_width()
 WIDTH = _PAD + _BARS_W + _LABEL_GAP + _LABEL_W + _PAD
@@ -85,7 +94,8 @@ class Pill:
         self._canvas = None
         self._mode = "recording"
         self._visible = False
-        self._level = 0.0              # written by the audio thread
+        self._level = 0.0
+        self._since = 0.0              # written by the audio thread
         self._history = [0.0] * BARS
         self._animating = False
         self._hide_after: float | None = None
@@ -161,6 +171,10 @@ class Pill:
     def _show(self, mode: str) -> None:
         if self._window is None:
             self._build()
+        # Restarted whenever the state changes, so the clock times the wait
+        # the user is actually in rather than the whole dictation.
+        if mode != self._mode:
+            self._since = time.monotonic()
         self._mode = mode
         self._hide_after = None
         if not self._visible:
@@ -199,8 +213,12 @@ class Pill:
     def _draw(self) -> None:
         canvas = self._canvas
         canvas.delete("all")
-        _rounded(canvas, 0, 0, WIDTH, HEIGHT, HEIGHT // 2, theme.INK)
-        _rounded(canvas, 0, 0, WIDTH, HEIGHT, HEIGHT // 2, "", outline=theme.LINE)
+        _rounded(canvas, 0, 0, WIDTH, HEIGHT, HEIGHT // 2, theme.PAPER)
+        # Its own edge. This floats over the user's window and cannot borrow
+        # contrast from a background it does not own — a hairline in the
+        # page's own rule colour disappeared against a light desktop.
+        _rounded(canvas, 0, 0, WIDTH, HEIGHT, HEIGHT // 2, "",
+                 outline=theme.PILL_EDGE)
 
         colour = _MODE_COLOUR.get(self._mode, theme.TEXT)
         self._advance()
@@ -218,9 +236,19 @@ class Pill:
                 fill=shade, outline="",
             )
 
+        label = _MODE_TEXT.get(self._mode, "")
+        # A clock, once the wait stops being instant. Three seconds is past
+        # the point where a decode normally lands, so a number appearing at
+        # all says "still working", and a number that keeps climbing says how
+        # long — which is the difference between waiting and wondering.
+        since = getattr(self, "_since", 0.0)
+        if since and self._mode in ("processing", "cleaning"):
+            elapsed = int(time.monotonic() - since)
+            if elapsed >= 3:
+                label = f"{label} \u00b7 {elapsed}s"
         canvas.create_text(
             left + _BARS_W + _LABEL_GAP, mid,
-            text=_MODE_TEXT.get(self._mode, ""),
+            text=label,
             fill=theme.TEXT_MUTED if self._mode != "error" else theme.ERROR,
             font=theme.font(8), anchor="w",
         )
