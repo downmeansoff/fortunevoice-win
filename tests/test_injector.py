@@ -278,3 +278,68 @@ def test_the_clipboard_route_honours_a_per_app_profile(monkeypatch):
     finally:
         config.set("FVAppProfiles", {})
         config.set("FVPasteViaClipboard", False)
+
+
+# ── typing or pasting ────────────────────────────────────────────────────
+
+
+def _route(text_to_send, **settings):
+    """The route `inject` would take, with the given settings."""
+    from fortunevoice import config, injector
+
+    config.set("FVAppProfiles", {})
+    for key, value in settings.items():
+        config.set(key, value)
+    return injector.wants_paste(text_to_send, None)
+
+
+def test_a_short_dictation_is_typed(monkeypatch):
+    """Typing leaves the clipboard alone, and under a hundred characters the
+    cost is imperceptible."""
+    assert _route("Привет, буду через десять минут.",
+                  FVDelivery="auto", FVPasteOver=120,
+                  FVPasteViaClipboard=False) is False
+
+
+def test_a_long_dictation_is_pasted(monkeypatch):
+    """Typing costs one keystroke per character and the RECEIVING app pays it:
+    measured into a bare Tk text field, 732 characters take 1.9 s to arrive,
+    and an app that runs handlers per keystroke is far slower. A paste is one
+    event whatever the length."""
+    long_text = "Проверь последний коммит, там поменялась логика подписки. " * 4
+    assert len(long_text) > 120
+    assert _route(long_text, FVDelivery="auto", FVPasteOver=120,
+                  FVPasteViaClipboard=False) is True
+
+
+def test_always_type_is_honoured_however_long_it_is():
+    """A terminal that takes Ctrl+Shift+V rather than Ctrl+V would swallow a
+    paste silently."""
+    long_text = "раз два три четыре пять " * 40
+    assert _route(long_text, FVDelivery="type", FVPasteViaClipboard=False) is False
+
+
+def test_always_paste_is_honoured_however_short_it_is():
+    assert _route("да", FVDelivery="paste", FVPasteViaClipboard=False) is True
+
+
+def test_the_old_boolean_still_wins():
+    """FVPasteViaClipboard predates FVDelivery. Somebody who set it to true is
+    someone whose app ignores synthesized input, and an upgrade must not start
+    typing into it again."""
+    assert _route("да", FVDelivery="type", FVPasteViaClipboard=True) is True
+
+
+def test_a_profile_can_keep_one_app_on_typing():
+    """The terminal case, per application."""
+    from fortunevoice import config, injector
+
+    long_text = "раз два три четыре пять " * 40
+    config.set("FVDelivery", "auto")
+    config.set("FVPasteViaClipboard", False)
+    config.set("FVAppProfiles", {"WindowsTerminal.exe": {"FVDelivery": "type"}})
+    try:
+        assert injector.wants_paste(long_text, "WindowsTerminal.exe") is False
+        assert injector.wants_paste(long_text, "Telegram.exe") is True
+    finally:
+        config.set("FVAppProfiles", {})

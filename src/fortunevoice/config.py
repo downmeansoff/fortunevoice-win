@@ -100,8 +100,25 @@ DEFAULTS: dict[str, Any] = {
     # Compute both and paste the batch one, logging the diff. Costs a second
     # full decode per dictation — for validating a change, not for daily use.
     "FVStreamingShadow": False,
-    # Route text through the clipboard + Ctrl+V instead of typing it. Escape
-    # hatch for apps that ignore synthesized unicode input.
+    # How the transcript gets into the focused window.
+    #
+    #   "auto"  — type it when it is short, paste it when it is long
+    #   "type"  — always synthesize keystrokes
+    #   "paste" — always go through the clipboard + Ctrl+V
+    #
+    # Typing leaves the clipboard alone, which is why it was the only route
+    # for a long time. But the cost is per keystroke and it is paid by the
+    # RECEIVING app: measured into a bare Tk text field, 732 characters take
+    # 1.9 s to arrive, and an editor or an Electron app that runs handlers on
+    # every keystroke is far slower than that — long dictations became half a
+    # minute of watching letters appear one at a time. A paste is one event
+    # regardless of length.
+    "FVDelivery": "auto",
+    # Where "auto" switches over. Two sentences of dictation is around this,
+    # and below it typing is imperceptible.
+    "FVPasteOver": 120,
+    # Kept: "always paste", as a boolean, from before FVDelivery existed. When
+    # true it still wins, so an existing config kepps behaving as it did.
     "FVPasteViaClipboard": False,
     "FVDebugTimings": False,
     # Days of dictation history to keep. 0 = forever.
