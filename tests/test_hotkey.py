@@ -369,3 +369,82 @@ def test_a_probe_that_cannot_be_sent_proves_nothing(monkeypatch):
     listener._check_still_hooked()
 
     assert listener._reinstall is False
+
+
+# -- the probe is real input, so it may not be sent to an empty desk ------
+
+
+def _deaf_listener(monkeypatch, idle_ms, sent_ago=1000.0):
+    """A listener whose hook has heard nothing for a minute."""
+    import time
+
+    from fortunevoice import hotkey as H
+
+    listener = H.HotkeyListener(H.parse("ctrl+alt"), lambda: None, lambda: None)
+    listener._last_seen = time.monotonic() - 60
+    listener._probe_at = 0.0
+    listener._probe_sent_at = time.monotonic() - sent_ago
+    monkeypatch.setattr(H.winapi, "milliseconds_since_last_input", lambda: idle_ms)
+    return listener
+
+
+def test_an_idle_machine_is_never_probed(monkeypatch):
+    """The probe presses a key, and Windows counts that as somebody being at
+    the desk: the screen never blanks, the screensaver never starts, "lock
+    after N minutes" never fires, the machine never sleeps, and a laptop runs
+    the night out. Sending one every twenty seconds of quiet turned the app
+    into a mouse jiggler nobody asked for."""
+    from fortunevoice import hotkey as H
+
+    probes = []
+    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    listener = _deaf_listener(monkeypatch, idle_ms=600_000.0)
+
+    listener._check_still_hooked()
+
+    assert probes == [], "nobody is here; there is nothing to prove"
+    assert listener._reinstall is False
+
+
+def test_a_machine_in_use_is_probed(monkeypatch):
+    """Somebody is at the mouse but has not typed for a minute -- which is
+    exactly what a dead hook looks like, and the only way to tell is to ask."""
+    from fortunevoice import hotkey as H
+
+    probes = []
+    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    listener = _deaf_listener(monkeypatch, idle_ms=300.0)
+
+    listener._check_still_hooked()
+
+    assert probes == [1]
+    assert listener._probe_at, "and the answer is expected on the next tick"
+
+
+def test_the_probe_does_not_answer_its_own_question(monkeypatch):
+    """Our own probe shows up in GetLastInputInfo as recent input. Treating
+    that as the user being present would keep the machine awake by itself,
+    which is the whole bug."""
+    from fortunevoice import hotkey as H
+
+    probes = []
+    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    listener = _deaf_listener(monkeypatch, idle_ms=300.0, sent_ago=1.0)
+
+    listener._check_still_hooked()
+
+    assert probes == []
+
+
+def test_a_probe_nobody_answered_reinstalls_the_hook(monkeypatch):
+    """The point of the whole mechanism."""
+    import time
+
+    from fortunevoice import hotkey as H
+
+    listener = _deaf_listener(monkeypatch, idle_ms=300.0)
+    listener._probe_at = time.monotonic() - 1
+
+    listener._check_still_hooked()
+
+    assert listener._reinstall is True
