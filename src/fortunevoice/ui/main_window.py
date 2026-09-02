@@ -1087,13 +1087,25 @@ class MainWindow:
                          lambda v: config.set("FVMicrophone", v)).pack()
         row = widgets.SettingRow(card.body, "clipboard", TINT_ORANGE,
                                  t("settings.delivery"),
-                                 t("settings.delivery_hint"), last=True)
+                                 t("settings.delivery_hint"))
         widgets.Dropdown(row.control,
                          [("auto", t("settings.delivery_auto")),
                           ("type", t("settings.delivery_type")),
                           ("paste", t("settings.delivery_paste"))],
                          lambda: config.get_str("FVDelivery"),
                          lambda v: config.set("FVDelivery", v)).pack()
+        row = widgets.SettingRow(card.body, "chip", TINT_GREY,
+                                 t("settings.unload_model"),
+                                 t("settings.unload_model_hint"),
+                                 last=True)
+        widgets.Dropdown(row.control,
+                         [("0", t("settings.unload_never")),
+                          ("5", t("settings.unload_5m")),
+                          ("10", t("settings.unload_10m")),
+                          ("30", t("settings.unload_30m"))],
+                         lambda: str(config.get_int("FVUnloadModelAfter")),
+                         lambda v: config.set("FVUnloadModelAfter",
+                                              int(v))).pack()
 
         # TEXT PROCESSING
         widgets.section_title(body, t("settings.group_text")).pack(

@@ -214,6 +214,17 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "settings.lang_ru": {"en": "Russian", "ru": "Русский"},
     "settings.lang_en": {"en": "English", "ru": "Английский"},
     "settings.lang_auto": {"en": "Auto-detect", "ru": "Определять"},
+    "settings.unload_model": {"en": "Free video memory when idle",
+                              "ru": "Освобождать видеопамять в простое"},
+    "settings.unload_model_hint": {
+        "en": "Whisper holds ~2 GB doing nothing; the reload costs ~5 s, "
+              "and it starts while you are still speaking",
+        "ru": "Whisper держит ~2 ГБ просто так; возврат стоит ~5 с и "
+              "начинается, пока вы ещё говорите"},
+    "settings.unload_never": {"en": "Never", "ru": "Никогда"},
+    "settings.unload_5m": {"en": "After 5 minutes", "ru": "Через 5 минут"},
+    "settings.unload_10m": {"en": "After 10 minutes", "ru": "Через 10 минут"},
+    "settings.unload_30m": {"en": "After 30 minutes", "ru": "Через 30 минут"},
     "settings.delivery": {"en": "Inserting the text",
                           "ru": "Вставка текста"},
     "settings.delivery_hint": {
