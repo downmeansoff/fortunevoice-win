@@ -37,6 +37,10 @@ OVERRIDABLE = frozenset({
     "FVVoiceCommands",
     "FVStreaming",
     "FVPasteViaClipboard",
+    # A terminal is the case that wants typing kept: some of them take
+    # Ctrl+Shift+V rather than Ctrl+V, and a paste they ignore is a dictation
+    # that goes nowhere.
+    "FVDelivery",
 })
 # Not FVMiniPrompt. It is read inside the cleaner, on a worker thread, after
 # the user has already let go and may well have switched windows — so "the app
@@ -70,6 +74,14 @@ def overrides_for(app: str | None) -> dict:
                            app, ", ".join(sorted(ignored)))
         return allowed
     return {}
+
+
+def get_str(key: str, app: str | None) -> str:
+    """`config.get_str`, with the profile for `app` on top."""
+    overrides = overrides_for(app)
+    if key in overrides:
+        return str(overrides[key])
+    return config.get_str(key)
 
 
 def get_bool(key: str, app: str | None) -> bool:

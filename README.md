@@ -187,7 +187,9 @@ without a restart. Only values you change are stored.
 | `FVStreamingV2` | `true` | Type the stitched streaming result rather than re-decoding the whole recording |
 | `FVStreamingShadow` | `false` | Compute both and log the difference. A second full decode per dictation — for checking a change, not for daily use |
 | `FVMicrophone` | `""` | Input device name substring; empty = system default |
-| `FVPasteViaClipboard` | `false` | Clipboard + Ctrl+V instead of typing (for apps that ignore synthesized input) |
+| `FVDelivery` | `auto` | How the text gets in: `auto` types short dictations and pastes long ones, `type` always types, `paste` always pastes. Typing costs one keystroke per character and the receiving app pays it — a long dictation into an editor takes tens of seconds — while a paste is one event whatever the length. |
+| `FVPasteOver` | `120` | Characters above which `auto` pastes. |
+| `FVPasteViaClipboard` | `false` | Always paste. Predates `FVDelivery`; still wins when true. |
 | `FVDebugTimings` | `false` | Log the full latency breakdown |
 | `FVRetentionDays` | `0` | Days of history to keep; 0 = forever |
 | `FVOverlay` | `true` | The floating pill while you speak |
@@ -354,6 +356,7 @@ executable name:
 
 Only per-dictation behaviour can be overridden — `FVCleanupEnabled`,
 `FVSmartFix`, `FVVoiceCommands`, `FVStreaming`, `FVPasteViaClipboard`,
+`FVDelivery`,
 `FVMiniPrompt`. Not hosts, paths or the hotkey: those are properties of the
 installation, not of whichever window happens to be in front.
 
