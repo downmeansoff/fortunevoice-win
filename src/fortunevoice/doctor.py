@@ -78,7 +78,21 @@ def _check_audio() -> bool:
 
 
 def _check_model() -> bool:
+    from . import winapi
     from .transcriber import Transcriber, TranscriberError
+
+    # The app holds the model on the GPU, and a second process asking
+    # for it gets an out-of-memory error that has nothing to do with the
+    # machine being wrong. Said before the attempt, so the failure below
+    # reads as "of course" rather than "your setup is broken".
+    if not winapi.claim_single_instance():
+        _line(
+            WARN,
+            "FortuneVoice is already running",
+            "it is holding the model, so the check below competes with "
+            "it for video memory. Quit from the tray and run doctor "
+            "again for a true answer.",
+        )
 
     transcriber = Transcriber()
     started = time.monotonic()
@@ -92,6 +106,20 @@ def _check_model() -> bool:
         f"whisper model {transcriber.loaded_model} on {transcriber.device}/{transcriber.compute_type}",
         f"loaded in {time.monotonic() - started:.1f}s from {paths.models_dir()}",
     )
+    wanted = config.get_str("FVModel")
+    if wanted and transcriber.loaded_model != wanted:
+        # The ladder degrades on purpose — a dictation with the fallback
+        # beats no dictation — but silently accepting it here means the
+        # check that exists to say "your setup is wrong" says nothing.
+        # Seen live: the app was already holding the GPU, so a second
+        # process could not allocate and doctor reported a tick.
+        _line(
+            WARN,
+            f"{wanted} did not load — running on {transcriber.loaded_model}",
+            "usually the video memory is already taken: FortuneVoice "
+            "itself, another model, or a game. Quit them and run doctor "
+            "again.",
+        )
     if transcriber.device == "cpu":
         _line(
             WARN,
