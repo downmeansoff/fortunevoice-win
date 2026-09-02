@@ -29,6 +29,7 @@ from ctypes import wintypes
 from typing import Callable
 
 from .log import get as get_logger
+from . import winapi
 from .winapi import user32
 
 logger = get_logger("hotkey")
@@ -446,6 +447,9 @@ class HotkeyListener:
         self._hook = None
         self._held = False
         self._reinstall = False
+        # When the hook last saw ANY key. Compared against what Windows
+        # says the system saw, to notice a hook removed under us.
+        self._last_seen = time.monotonic()
         self._proc = _HOOKPROC(self._callback)  # keep a reference alive
         self._stop = threading.Event()
         # A modifier trigger fires from a timer thread, not from the hook —
@@ -491,6 +495,7 @@ class HotkeyListener:
                 break
             if message.message == WM_TIMER:
                 self._resync_held()
+                self._check_still_hooked()
             if message.message == WM_TIMER and self._reinstall:
                 self._reinstall = False
                 logger.warning("reinstalling the keyboard hook after a slow callback")
@@ -549,11 +554,40 @@ class HotkeyListener:
             user32.UnhookWindowsHookEx(self._hook)
             self._hook = None
 
+    # How far the hook may lag the system before it is presumed deaf. Long
+    # enough that a stall cannot trip it, short enough that the user is not
+    # left pressing a dead shortcut for a minute.
+    DEAF_AFTER_SECONDS = 20.0
+
+    def _check_still_hooked(self) -> None:
+        """Reinstall the hook if the system saw input that we did not.
+
+        Windows removes a low-level hook whose callback runs too long, and it
+        says nothing: no error, no final callback, and no API to ask whether a
+        hook is still installed. The only evidence available is negative —
+        input happened, and we were not told. Twice on this machine the app
+        was running, the log said "hotkey listening", and the shortcut did
+        nothing until it was restarted by hand.
+        """
+        idle_ms = winapi.milliseconds_since_last_input()
+        if idle_ms is None:
+            return
+        since_system_input = idle_ms / 1000.0
+        since_we_saw = time.monotonic() - self._last_seen
+        if since_system_input < 2.0 and since_we_saw > self.DEAF_AFTER_SECONDS:
+            logger.warning(
+                "the hook has seen no keys for %.0f s while the system saw "
+                "input %.1f s ago — reinstalling",
+                since_we_saw, since_system_input)
+            self._last_seen = time.monotonic()
+            self._reinstall = True
+
     def _callback(self, code: int, wparam: int, lparam: int) -> int:
         if code != HC_ACTION:
             return user32.CallNextHookEx(None, code, wparam, lparam)
         started = time.monotonic()
         swallow = False
+        self._last_seen = time.monotonic()
         try:
             swallow = self._handle(wparam, lparam)
         except Exception:  # noqa: BLE001 - never let an exception kill the hook
