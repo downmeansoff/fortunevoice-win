@@ -1081,11 +1081,19 @@ class MainWindow:
                                        ("auto", t("settings.lang_auto"))],
                          lambda: config.get_str("FVLanguage"),
                          self._set_language).pack()
-        row = widgets.SettingRow(card.body, "mic", TINT_PINK, t("settings.microphone"),
-                                 last=True)
+        row = widgets.SettingRow(card.body, "mic", TINT_PINK, t("settings.microphone"))
         widgets.Dropdown(row.control, _microphones(),
                          lambda: config.get_str("FVMicrophone"),
                          lambda v: config.set("FVMicrophone", v)).pack()
+        row = widgets.SettingRow(card.body, "clipboard", TINT_ORANGE,
+                                 t("settings.delivery"),
+                                 t("settings.delivery_hint"), last=True)
+        widgets.Dropdown(row.control,
+                         [("auto", t("settings.delivery_auto")),
+                          ("type", t("settings.delivery_type")),
+                          ("paste", t("settings.delivery_paste"))],
+                         lambda: config.get_str("FVDelivery"),
+                         lambda v: config.set("FVDelivery", v)).pack()
 
         # TEXT PROCESSING
         widgets.section_title(body, t("settings.group_text")).pack(

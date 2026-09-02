@@ -146,6 +146,26 @@ def _utf16_units(char: str) -> list[int]:
     return [int.from_bytes(encoded[i : i + 2], "little") for i in range(0, len(encoded), 2)]
 
 
+def wants_paste(text: str, app: str | None) -> bool:
+    """Should this text go through the clipboard rather than the keyboard?
+
+    Typing costs one keystroke per character and the receiving app pays it:
+    measured into a bare Tk text field, 732 characters take 1.9 s to arrive,
+    and an app that runs handlers per keystroke is far slower still. A paste
+    is one event whatever the length — so short text is typed, which leaves
+    the clipboard untouched, and long text is pasted, which is the difference
+    between instant and watching it spell itself out.
+    """
+    if profiles.get_bool("FVPasteViaClipboard", app):
+        return True                      # the old boolean still wins
+    mode = (profiles.get_str("FVDelivery", app) or "auto").lower()
+    if mode == "paste":
+        return True
+    if mode == "type":
+        return False
+    return len(text) > max(1, config.get_int("FVPasteOver"))
+
+
 def inject(text: str) -> bool:
     """Write `text` into the focused app. False when the write failed and the
     caller should fall back to the result panel."""
@@ -154,8 +174,8 @@ def inject(text: str) -> bool:
     # Resolved here rather than by the caller: this is the last moment the
     # window in front is still the one the text is going into, and the setting
     # is per-application (profiles.OVERRIDABLE) precisely because the apps that
-    # need the clipboard route are specific ones.
-    if profiles.get_bool("FVPasteViaClipboard", winapi.foreground_app_name()):
+    # want one route or the other are specific ones.
+    if wants_paste(text, winapi.foreground_app_name()):
         return paste_via_clipboard(text)
     return type_text(text)
 
