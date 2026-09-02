@@ -268,68 +268,104 @@ def _listener(monkeypatch, spec_text="ctrl+alt"):
     return H.HotkeyListener(H.parse(spec_text), lambda: None, lambda: None)
 
 
-def test_input_the_hook_did_not_see_means_the_hook_is_gone(monkeypatch):
+def test_a_hook_that_ignores_its_own_probe_is_reinstalled(monkeypatch):
     """Windows removes a low-level hook whose callback runs too long and says
-    nothing about it: no error, no final callback, no way to ask. Twice on
+    nothing about it: no error, no final callback, no API to ask. Twice on
     this machine the app was running, the log said "hotkey listening", and the
-    shortcut did nothing until it was restarted by hand. The only evidence
-    available is negative — the system had input and we were not told."""
+    shortcut did nothing until it was restarted by hand.
+
+    So the hook is asked rather than guessed about: a key nobody uses is
+    pressed, and a hook that does not report it is not listening.
+    """
     import time
 
     from fortunevoice import hotkey as H
 
     listener = _listener(monkeypatch)
-    # The system saw a key half a second ago; we have seen nothing for a
-    # minute.
-    monkeypatch.setattr(H.winapi, "milliseconds_since_last_input", lambda: 500.0)
+    probes = []
+    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
     listener._last_seen = time.monotonic() - 60
 
-    listener._check_still_hooked()
+    listener._check_still_hooked()          # asks
+    assert probes == [1], "the probe has to actually be sent"
+    assert listener._reinstall is False, "and the verdict waits for the answer"
 
+    listener._check_still_hooked()          # no answer came
     assert listener._reinstall is True
 
 
-def test_a_quiet_machine_is_not_a_dead_hook(monkeypatch):
-    """Nobody has touched the keyboard for an hour. Seeing nothing is exactly
-    right, and reinstalling on a schedule would drop the hook for a moment
-    every time — including mid-dictation."""
+def test_a_hook_that_answers_its_probe_is_left_alone(monkeypatch):
+    """The reply is an ordinary hook callback, which stamps `_last_seen`."""
     import time
 
     from fortunevoice import hotkey as H
 
     listener = _listener(monkeypatch)
-    monkeypatch.setattr(H.winapi, "milliseconds_since_last_input",
-                        lambda: 3_600_000.0)
-    listener._last_seen = time.monotonic() - 3600
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: setattr(listener, "_last_seen", time.monotonic()))
+    listener._last_seen = time.monotonic() - 60
 
+    listener._check_still_hooked()
     listener._check_still_hooked()
 
     assert listener._reinstall is False
 
 
-def test_a_hook_that_is_seeing_keys_is_left_alone(monkeypatch):
+def test_moving_the_mouse_is_not_a_dead_hook(monkeypatch):
+    """The first version of this compared `GetLastInputInfo` against what the
+    hook had seen — and that counts the MOUSE. Moving the pointer without
+    typing looked exactly like a dead hook, so it was reinstalled every twenty
+    seconds for as long as the machine was in use. The probe does not care what
+    the mouse is doing."""
     import time
 
     from fortunevoice import hotkey as H
 
     listener = _listener(monkeypatch)
-    monkeypatch.setattr(H.winapi, "milliseconds_since_last_input", lambda: 100.0)
-    listener._last_seen = time.monotonic() - 1
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: setattr(listener, "_last_seen", time.monotonic()))
+    listener._last_seen = time.monotonic() - 60
 
-    listener._check_still_hooked()
+    for _ in range(6):
+        listener._check_still_hooked()
 
     assert listener._reinstall is False
 
 
-def test_the_idle_reading_can_be_refused(monkeypatch):
-    """GetLastInputInfo can fail. A watchdog that treats "don't know" as
-    "broken" would reinstall the hook on a timer for ever."""
+def test_a_recently_used_hook_is_not_probed(monkeypatch):
+    """No question worth asking while keys are arriving — and the probe is a
+    synthetic keypress, which is not free."""
+    import time
+
     from fortunevoice import hotkey as H
 
     listener = _listener(monkeypatch)
-    monkeypatch.setattr(H.winapi, "milliseconds_since_last_input", lambda: None)
-    listener._last_seen = 0.0
+    probes = []
+    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    listener._last_seen = time.monotonic()
 
+    listener._check_still_hooked()
+
+    assert probes == []
+    assert listener._reinstall is False
+
+
+def test_a_probe_that_cannot_be_sent_proves_nothing(monkeypatch):
+    """SendInput can be refused — by UIPI, by a full input queue. Treating
+    "could not ask" as "broken" would reinstall the hook on a timer for ever."""
+    import time
+
+    from fortunevoice import hotkey as H
+
+    listener = _listener(monkeypatch)
+
+    def refuse():
+        raise OSError("SendInput refused")
+
+    monkeypatch.setattr(H.winapi, "tap_probe_key", refuse)
+    listener._last_seen = time.monotonic() - 60
+
+    listener._check_still_hooked()
     listener._check_still_hooked()
 
     assert listener._reinstall is False
