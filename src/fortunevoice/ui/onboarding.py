@@ -18,7 +18,7 @@ import threading
 from .. import audio, config, winapi
 from ..log import get as get_logger
 from ..strings import t
-from . import theme, ui
+from . import theme, ui, widgets
 
 logger = get_logger("ui.onboarding")
 
@@ -118,8 +118,20 @@ class Onboarding:
                 hotkey = parse_hotkey(raw).label
             except ValueError:
                 hotkey = raw
-        theme.label(inner, t("setup.hold_to_talk"), size=9, colour=theme.TEXT_MUTED).pack(anchor="w")
-        theme.label(inner, hotkey, size=18, weight="bold", colour=theme.ACCENT).pack(anchor="w")
+        theme.label(inner, t("setup.hold_to_talk"), size=9,
+                    colour=theme.TEXT_MUTED).pack(anchor="w")
+        # Recordable, not stated. This is the largest type on the screen and
+        # it was a Label — so the single most likely thing a new user needs to
+        # change on first run, because ctrl+alt+space collides with their IME
+        # or their launcher, was the one thing presented as immutable. They
+        # had to dismiss setup, find the tray, open the window and scroll to
+        # the second row.
+        recorder = widgets.ShortcutRecorder(
+            inner, lambda: config.get_str("FVHotkey"), self._save_hotkey,
+            capture=self._app.capture_chord if self._app is not None else None)
+        recorder.pack(anchor="w", pady=(theme.px(4), 0))
+        recorder.bind_clickable(inner)
+        self._recorder = recorder
         theme.label(
             inner, t("setup.how"),
             size=9, colour=theme.TEXT_MUTED,
@@ -136,6 +148,19 @@ class Onboarding:
         self._meter = tk.Canvas(body, height=theme.px(12), bg=theme.INK,
                                 highlightthickness=0, bd=0)
         self._meter.pack(fill="x", pady=(theme.px(8), 0))
+
+        # The answer for when the meter stays flat. This screen exists
+        # to prove the microphone works, and when it did not it had
+        # nothing to offer: no way to choose another device, and no
+        # hint that the tray has a submenu for it.
+        from .main_window import _microphones
+
+        picker = tk.Frame(body, bg=body["bg"])
+        picker.pack(fill="x", pady=(theme.px(10), 0))
+        widgets.Dropdown(picker, _microphones(),
+                         lambda: config.get_str("FVMicrophone"),
+                         self._pick_microphone,
+                         refresh=_microphones).pack(side="left")
         self._meter.bind("<Configure>", lambda _e: self._paint_meter())
         self._meter_level = 0.0
 
@@ -149,6 +174,39 @@ class Onboarding:
         self._window = window
 
     # ── live microphone meter ────────────────────────────────────────────
+
+    def _save_hotkey(self, value: str) -> bool:
+        """Store and rebind, exactly as the Settings row does.
+
+        Applying it live is the point on this screen above all others: the
+        user is about to try it for the first time, and a shortcut they cannot
+        test until after a restart is one they cannot tell is wrong.
+        """
+        from ..hotkey import parse as parse_hotkey
+
+        value = (value or "").strip()
+        if not value or value == config.get_str("FVHotkey"):
+            return False
+        try:
+            parse_hotkey(value)
+        except ValueError:
+            return False
+        config.set("FVHotkey", value)
+        if self._app is not None:
+            self._app.rebind_hotkey()
+        return True
+
+    def _pick_microphone(self, name: str) -> None:
+        """Switch device and prove the new one immediately.
+
+        The whole screen is built around "the microphone works, look at the
+        meter". When it did not, there was no way to choose another from here
+        at all — the user's only recourse was to already know the tray has a
+        Microphone submenu.
+        """
+        config.set("FVMicrophone", name)
+        self._stop_meter()
+        self._start_meter()
 
     def _start_meter(self) -> None:
         """Open a *separate* recorder for the meter.

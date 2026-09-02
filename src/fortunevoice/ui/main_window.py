@@ -130,11 +130,52 @@ class MainWindow:
                      padx=theme.px(56), pady=(theme.px(30), theme.px(34)))
         self._content = content
 
+        self._bind_keys(window)
+
         for name, _glyph in PAGES:
             page = tk.Frame(content, bg=theme.PAPER)
             self._pages[name] = page
             builder = getattr(self, f"_build_{name.lower()}")
             builder(page)
+
+    def _bind_keys(self, window) -> None:
+        """Every shortcut this window did not have.
+
+        There were three key bindings in the whole UI, all inside the inline
+        history editor. A window you open from a tray icon has to close on
+        Escape, and a list with a search field has to focus it on Ctrl+F —
+        those are not conveniences, they are what the OS taught everyone the
+        keyboard does. Ctrl+1..4 for the tabs because this window has exactly
+        four pages and they never change.
+        """
+        window.bind("<Escape>", lambda _e: self._on_close())
+        window.bind("<Control-w>", lambda _e: self._on_close())
+        window.bind("<Control-W>", lambda _e: self._on_close())
+        window.bind("<Control-f>", self._focus_search)
+        window.bind("<Control-F>", self._focus_search)
+        window.bind("<Control-z>", self._undo_delete)
+        window.bind("<Control-Z>", self._undo_delete)
+        window.bind("<Control-s>", lambda _e: self._save_dictionary_if_open())
+        window.bind("<Control-S>", lambda _e: self._save_dictionary_if_open())
+        for index, (name, _glyph) in enumerate(PAGES, start=1):
+            window.bind(f"<Control-Key-{index}>",
+                        lambda _e, page=name: self._select(page))
+
+    def _focus_search(self, _event=None) -> str:
+        """Ctrl+F goes to the search box, from any page."""
+        self._select("History")
+        entry = getattr(self, "_search_entry", None)
+        if entry is not None and entry.winfo_exists():
+            entry.focus_set()
+            entry.select_range(0, "end")
+        return "break"
+
+    def _save_dictionary_if_open(self) -> str:
+        """Ctrl+S is what anyone typing into a text box presses, and the
+        Dictionary page is the only thing here with a Save button."""
+        if self._page == "Dictionary":
+            self._save_dictionary()
+        return "break"
 
     def _repaint_hotkey_chip(self) -> None:
         """Keep the masthead's shortcut honest.
@@ -381,6 +422,18 @@ class MainWindow:
 
         search.bind("<FocusIn>", focused, add="+")
         search.bind("<FocusOut>", blurred, add="+")
+        self._search_entry = search
+
+        def clear(_event=None) -> str:
+            """Escape empties the field. There is no × in it, and hunting for
+            the end of a query to select-all-and-delete is not a search
+            experience."""
+            search.delete(0, "end")
+            self._refresh_history()
+            self._window.focus_set()
+            return "break"
+
+        search.bind("<Escape>", clear)
         # Debounced. Every keystroke tore down and rebuilt every card in the
         # list — canvas-backed, one per dictation — so typing into the search
         # box on a long history stuttered, and each character cost the same
@@ -410,9 +463,17 @@ class MainWindow:
         for child in body.winfo_children():
             child.destroy()
 
+        if getattr(self, "_undo", None) is not None:
+            self._undo_strip(body)
+
         query = "" if self._search_is_placeholder() else self._search_var.get().strip().lower()
+        # The application too. Every row shows one, the whole "where you
+        # dictate" card is built on it, and "that thing I dictated into
+        # Telegram" had no path but scrolling.
         records = [r for r in reversed(self._store.all())
-                   if not query or query in r.transcript.lower()]
+                   if not query
+                   or query in r.transcript.lower()
+                   or query in (r.app or "").lower()]
 
         if not records:
             theme.label(body,
@@ -533,7 +594,16 @@ class MainWindow:
         box.pack(fill="x")
         box.focus_set()
 
+        done = {"already": False}
+
         def finish(save: bool) -> str:
+            # Escape destroys the box, and a <FocusOut> queued behind it would
+            # then call box.get() on a widget that no longer exists — an
+            # exception inside a Tk callback, which surfaces to the user as a
+            # window that failed, for something they cannot see.
+            if done["already"]:
+                return "break"
+            done["already"] = True
             text = box.get("1.0", "end-1c")
             box.destroy()
             label.pack(fill="x")
@@ -581,11 +651,76 @@ class MainWindow:
         card.body.after(1100, remove)
 
     def _delete_record(self, record) -> str:
-        """Remove one dictation. No confirmation: it is one row, the action is
-        explicit, and a dialog for every deletion is worse than the mistake."""
+        """Remove one dictation, and keep it for a few seconds.
+
+        No confirmation: it is one row, and a dialog on every deletion is
+        worse than the mistake. But the argument for skipping the dialog only
+        holds if the mistake is recoverable, and it was not — the × is a 9 px
+        glyph on a row whose whole surface copies, and the rows shift under
+        the cursor whenever the list refreshes. History is called the vault
+        everywhere else in this codebase.
+        """
+        self._undo = record
         self._store.remove(record)
         self._refresh_history()
         return "break"  # don't let the click fall through to copy-the-card
+
+    def _undo_delete(self, _event=None) -> str:
+        """Put the last deleted dictation back. Ctrl+Z, or the undo strip."""
+        record, self._undo = getattr(self, "_undo", None), None
+        if record is None:
+            return "break"
+        self._store.add(record)
+        self._refresh_history()
+        return "break"
+
+    def _undo_strip(self, parent) -> None:
+        """A line at the top of the list offering the deletion back.
+
+        It clears itself after a few seconds: an undo that stays for ever is a
+        second copy of the record, which is the thing the user asked to be rid
+        of.
+        """
+        import tkinter as tk
+
+        strip = tk.Frame(parent, bg=theme.PAPER)
+        strip.pack(fill="x", pady=(0, theme.px(8)))
+        theme.label(strip, t("history.deleted"), size=9,
+                    colour=theme.TEXT_MUTED).pack(side="left")
+        theme.text_button(strip, t("history.undo"),
+                          self._undo_delete).pack(side="left", padx=(theme.px(10), 0))
+
+        def expire() -> None:
+            self._undo = None
+            try:
+                if strip.winfo_exists():
+                    strip.destroy()
+            except Exception:  # noqa: BLE001 - the list was rebuilt under us
+                pass
+
+        strip.after(6000, expire)
+
+    def _set_launch_at_login(self, want: bool) -> bool:
+        """Turn the Startup shortcut on or off, and admit it when it did not.
+
+        `set_launch_at_login` swallows every exception and returns the state
+        it actually reached, and the Switch repaints from the filesystem — so
+        a Startup folder that is redirected, locked, or watched by an
+        antivirus made the toggle flick on and snap straight back with no
+        message anywhere. The user tries it three times and concludes the app
+        is broken. This is the only setting in the window that writes outside
+        config.json, and the only one that can refuse.
+        """
+        from tkinter import messagebox
+
+        got = shortcut.set_launch_at_login(want)
+        if got != want:
+            messagebox.showwarning(
+                t("settings.launch_at_login"),
+                t("settings.launch_failed", folder=str(shortcut.startup())),
+                parent=self._window,
+            )
+        return got
 
     def _export_history(self) -> None:
         from tkinter import messagebox
@@ -988,7 +1123,7 @@ class MainWindow:
                                  t("settings.launch_at_login"))
         self._login_switch = widgets.Switch(
             row.control, shortcut.launches_at_login,
-            lambda v: shortcut.set_launch_at_login(v))
+            self._set_launch_at_login)
         self._login_switch.pack()
         self._switch_row(card.body, "speaker", TINT_BLUE, t("settings.sounds"), "",
                          "FVSounds")
