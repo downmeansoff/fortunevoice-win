@@ -171,6 +171,9 @@ class App:
         self._reported_ui_errors: set[str] = set()
         # When the microphone was opened for the pre-roll, 0.0 if it was not.
         self._armed = 0.0
+        # A press that arrived while the app was busy, waiting for the state
+        # to come back. Zero when there is none.
+        self._pending_press = 0.0
         # Counts dictations. A pipeline captures it at the start and only
         # touches shared state afterwards while it is still the current one —
         # checking the state alone is not enough, because a *second* dictation
@@ -628,6 +631,13 @@ class App:
             # IDLE during the 300 ms hold — a previous dictation still being
             # delivered, a model reload.
             self._on_disarm()
+            # Remembered, not discarded. Finishing a sentence and starting the
+            # next one straight away lands the press here, and dropping it in
+            # silence means the user presses again and wonders why the first
+            # one did nothing. Picked up by `_finish_pipeline` when the state
+            # comes back, provided the key is still down by then.
+            if state is State.PROCESSING:
+                self._pending_press = time.monotonic()
             return
         # Already open from the pre-roll, and holding the audio from before
         # the hold threshold elapsed — keep it, and date the recording from
@@ -953,6 +963,29 @@ class App:
         finally:
             self._finish_pipeline(generation)
 
+    # How long a press may wait for the app to become free. Past this the
+    # user has moved on, and starting a recording they no longer expect is
+    # worse than having dropped the press.
+    PENDING_PRESS_MAX_AGE = 4.0
+
+    def _resume_pending_press(self) -> None:
+        """Start the dictation whose press arrived while we were busy.
+
+        Only while the key is still down: a press-and-release during the wait
+        was a tap the user gave up on, and starting to record after they let
+        go would be the app talking to itself.
+        """
+        pending, self._pending_press = self._pending_press, 0.0
+        if not pending or self.state is not State.IDLE:
+            return
+        if time.monotonic() - pending > self.PENDING_PRESS_MAX_AGE:
+            return
+        listener = self._listener
+        if listener is None or not getattr(listener, "_held", False):
+            return
+        logger.info("resuming the press that arrived while we were busy")
+        self._start_dictation()
+
     def _finish_pipeline(self, generation: int = 0) -> None:
         """Hand the state machine back — but only if this pipeline still owns it.
 
@@ -969,6 +1002,9 @@ class App:
         self._cancel_watchdog()
         if self.state == State.PROCESSING:
             self._set_state(State.IDLE)
+            # The state is free again — so is the press that arrived
+            # while it was not.
+            self._resume_pending_press()
 
     def _handle_empty(
         self, samples, result, audio_level, audio_seconds, stt_ms, key_up,

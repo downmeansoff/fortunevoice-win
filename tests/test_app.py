@@ -825,3 +825,70 @@ def test_room_tone_does_not_keep_it_alive(app):
     app._on_level(0.004)         # the room with nobody speaking
 
     assert app._last_loud == 0.0
+
+
+# ── a press that lands while the app is busy ─────────────────────────────
+
+
+def test_a_press_during_processing_is_resumed_when_the_state_comes_back(app, monkeypatch):
+    """From a real session log, four dictations in:
+
+        21:24:41 hotkey DOWN (state = processing)
+        21:24:41 key-up -> typed 1562 ms (313 chars)
+        21:24:42 hotkey DOWN (state = idle)
+
+    A sentence finished, the next one started straight away, and that press
+    landed while the previous transcript was still being delivered. It was
+    dropped in silence, and the user had to press again."""
+    started: list[int] = []
+    app._set_state(State.PROCESSING)
+    app._start_dictation()                      # the press that lands too early
+    assert app._pending_press, "the press has to be remembered"
+
+    class Held:
+        _held = True
+
+    app._listener = Held()
+    monkeypatch.setattr(app, "_start_dictation", lambda: started.append(1))
+
+    app._finish_pipeline()
+
+    assert app.state is State.IDLE
+    assert started == [1], "and acted on once the state came back"
+
+
+def test_a_press_the_user_gave_up_on_is_not_resumed(app, monkeypatch):
+    """Pressed and released while waiting. Starting to record after they let
+    go would be the app talking to itself."""
+    started: list[int] = []
+    app._set_state(State.PROCESSING)
+    app._start_dictation()
+
+    class Released:
+        _held = False
+
+    app._listener = Released()
+    monkeypatch.setattr(app, "_start_dictation", lambda: started.append(1))
+
+    app._finish_pipeline()
+
+    assert started == []
+
+
+def test_a_stale_press_is_not_resumed(app, monkeypatch):
+    """Past a few seconds the user has moved on, and a recording they no
+    longer expect is worse than the press having been dropped."""
+    started: list[int] = []
+    app._set_state(State.PROCESSING)
+    app._start_dictation()
+    app._pending_press = app_module.time.monotonic() - 30
+
+    class Held:
+        _held = True
+
+    app._listener = Held()
+    monkeypatch.setattr(app, "_start_dictation", lambda: started.append(1))
+
+    app._finish_pipeline()
+
+    assert started == []
