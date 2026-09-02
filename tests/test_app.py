@@ -841,6 +841,11 @@ def test_a_press_during_processing_is_resumed_when_the_state_comes_back(app, mon
     landed while the previous transcript was still being delivered. It was
     dropped in silence, and the user had to press again."""
     started: list[int] = []
+    # The queue is the fallback for when overlapping is switched off;
+    # with it on the press starts a recording instead of waiting.
+    from fortunevoice import config
+
+    config.set("FVOverlapDictation", False)
     app._set_state(State.PROCESSING)
     app._start_dictation()                      # the press that lands too early
     assert app._pending_press, "the press has to be remembered"
@@ -861,6 +866,11 @@ def test_a_press_the_user_gave_up_on_is_not_resumed(app, monkeypatch):
     """Pressed and released while waiting. Starting to record after they let
     go would be the app talking to itself."""
     started: list[int] = []
+    # The queue is the fallback for when overlapping is switched off;
+    # with it on the press starts a recording instead of waiting.
+    from fortunevoice import config
+
+    config.set("FVOverlapDictation", False)
     app._set_state(State.PROCESSING)
     app._start_dictation()
 
@@ -879,6 +889,11 @@ def test_a_stale_press_is_not_resumed(app, monkeypatch):
     """Past a few seconds the user has moved on, and a recording they no
     longer expect is worse than the press having been dropped."""
     started: list[int] = []
+    # The queue is the fallback for when overlapping is switched off;
+    # with it on the press starts a recording instead of waiting.
+    from fortunevoice import config
+
+    config.set("FVOverlapDictation", False)
     app._set_state(State.PROCESSING)
     app._start_dictation()
     app._pending_press = app_module.time.monotonic() - 30
@@ -905,9 +920,87 @@ def test_the_pill_says_the_press_was_heard(app, monkeypatch):
         def show(self, mode):
             shown.append(mode)
 
+    from fortunevoice import config
+
+    # Same: the pill only announces a wait when there is one.
+    config.set("FVOverlapDictation", False)
     monkeypatch.setattr(app, "_pill", lambda: FakePill())
     app._set_state(State.PROCESSING)
 
     app._start_dictation()
 
     assert "queued" in shown, shown
+
+
+# ── the next sentence does not wait for the last one to land ─────────────
+
+
+def _ready_to_record(app, monkeypatch):
+    monkeypatch.setattr(app.recorder, "start", lambda device="": None)
+    monkeypatch.setattr(app.transcriber, "warmup", lambda: None)
+    monkeypatch.setattr(app.transcriber, "reset_session_language", lambda: None)
+    monkeypatch.setattr(app.cleaner, "warmup", lambda: None)
+    monkeypatch.setattr(app, "_arm_auto_stop", lambda: None)
+
+
+def test_a_dictation_can_start_while_the_last_one_is_still_decoding(app, monkeypatch):
+    """The recorder is free by then — `_finish_dictation` has already stopped
+    it and taken its samples, and the decode works on that copy. Waiting cost
+    a second or two of standing still between every pair of sentences."""
+    from fortunevoice import config
+
+    _ready_to_record(app, monkeypatch)
+    config.set("FVOverlapDictation", True)
+    app._set_state(State.PROCESSING)
+
+    app._start_dictation()
+
+    assert app.state is State.RECORDING
+
+
+def test_the_older_pipeline_does_not_take_the_state_back(app, monkeypatch):
+    """`_finish_pipeline` hands the state to IDLE only when the state is still
+    PROCESSING. With a newer dictation recording over it, taking the state
+    would stop a recording that is in progress."""
+    from fortunevoice import config
+
+    _ready_to_record(app, monkeypatch)
+    config.set("FVOverlapDictation", True)
+    app._set_state(State.PROCESSING)
+    app._start_dictation()
+    assert app.state is State.RECORDING
+
+    app._finish_pipeline()          # the earlier dictation lands
+
+    assert app.state is State.RECORDING, "the new recording must survive it"
+
+
+def test_overlap_can_be_switched_off(app, monkeypatch):
+    """Off means the press waits, exactly as it did before — remembered, not
+    dropped."""
+    from fortunevoice import config
+
+    _ready_to_record(app, monkeypatch)
+    config.set("FVOverlapDictation", False)
+    try:
+        app._set_state(State.PROCESSING)
+        app._start_dictation()
+        assert app.state is State.PROCESSING
+        assert app._pending_press, "and it is still remembered for later"
+    finally:
+        config.set("FVOverlapDictation", True)
+
+
+def test_overlap_does_not_apply_while_the_model_is_loading(app, monkeypatch):
+    """PROCESSING is the only state where the recorder is genuinely free.
+    LOADING has no model yet, and starting a recording that cannot be decoded
+    is a dictation lost twice."""
+    from fortunevoice import config
+
+    _ready_to_record(app, monkeypatch)
+    config.set("FVOverlapDictation", True)
+    app._set_state(State.LOADING)
+
+    app._start_dictation()
+
+    assert app.state is State.LOADING
