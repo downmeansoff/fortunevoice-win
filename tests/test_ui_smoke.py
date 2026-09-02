@@ -235,3 +235,111 @@ def test_closing_the_window_stops_a_shortcut_recording(root):
 
     assert stopped == [1], "the global hook must come down with the window"
     assert recorder._listening is False
+
+
+# ── the keyboard the window did not have ─────────────────────────────────
+
+
+@pytest.fixture
+def window(root, monkeypatch):
+    """A built MainWindow on the shared root."""
+    from fortunevoice.ui import main_window, ui
+
+    monkeypatch.setattr(ui, "_root", root, raising=False)
+    monkeypatch.setattr(type(ui), "root", property(lambda _self: root))
+    built = main_window.MainWindow()
+    built._build()
+    root.update_idletasks()
+    root.update()
+    return built
+
+
+def test_ctrl_f_goes_to_the_search_box_from_any_page(window, root):
+    """A list with a search field has to focus it on Ctrl+F. There were three
+    key bindings in the whole UI before this, all inside the inline editor."""
+    window._select("Settings")
+    root.update()
+
+    window._focus_search()
+    root.update()
+
+    assert window._page == "History", "and it switches to the page that has one"
+    # focus_lastfor, not focus_get: the window is not focused at the OS
+    # level in a test run, and focus_get then reports None no matter
+    # what Tk was told. focus_lastfor is the widget that takes focus
+    # when the toplevel gets it, which is the thing being asserted.
+    assert window._window.focus_lastfor() is window._search_entry
+
+
+def test_escape_closes_the_window(window, root):
+    """It is a tray app: the window is opened, glanced at, and dismissed."""
+    closed = []
+    window._on_close = lambda: closed.append(1)
+    window._bind_keys(window._window)
+    # A withdrawn window drops synthetic key events on the floor.
+    window._window.deiconify()
+    window._window.focus_force()
+    root.update()
+
+    window._window.event_generate("<Escape>", when="now")
+    root.update()
+
+    assert closed == [1]
+
+
+def test_the_window_has_the_shortcuts_a_window_is_expected_to_have(window):
+    """Checked as bindings, not as events: Tk will not deliver a synthesised
+    Control chord to a toplevel on this build, and asserting something the
+    harness cannot produce would be a test that fails for its own reasons.
+    Escape above proves the mechanism; this proves the rest are wired.
+
+    There were three key bindings in the whole UI before this, all inside the
+    inline history editor.
+    """
+    bound = set(window._window.bind())
+    for sequence in ("<Key-Escape>", "<Control-Key-w>", "<Control-Key-f>",
+                     "<Control-Key-z>", "<Control-Key-s>",
+                     "<Control-Key-1>", "<Control-Key-4>"):
+        assert sequence in bound, f"{sequence} is not bound"
+
+
+def test_a_deleted_dictation_can_be_taken_back(window, root):
+    """No confirmation on delete is the right call only if the mistake is
+    recoverable — and the × is a 9 px glyph on a row whose whole surface
+    copies, in a list that shifts under the cursor on every refresh."""
+    from fortunevoice import metrics
+    from fortunevoice.store import DictationRecord
+
+    record = DictationRecord(date=metrics.now(), words=2, duration=1.0,
+                             app="Code.exe", transcript="не удаляй меня")
+    window._store.add(record)
+    window._select("History")
+    root.update()
+
+    window._delete_record(window._store.all()[-1])
+    root.update()
+    assert not [r for r in window._store.all() if r.transcript == "не удаляй меня"]
+
+    window._undo_delete()
+    root.update()
+    assert [r for r in window._store.all() if r.transcript == "не удаляй меня"]
+
+
+def test_history_search_matches_the_application_too(window, root):
+    """Every row shows one, the whole "where you dictate" card is built on it,
+    and "that thing I dictated into Telegram" had no path but scrolling."""
+    from fortunevoice import metrics
+    from fortunevoice.store import DictationRecord
+
+    window._store.add(DictationRecord(
+        date=metrics.now(), words=3, duration=1.0, app="Telegram.exe",
+        transcript="совершенно другие слова"))
+    window._select("History")
+    root.update()
+
+    window._search_var.set("telegram")
+    window._refresh_history()
+    root.update()
+
+    shown = [w for w in window._history_body.winfo_children()]
+    assert shown, "the row was filtered out by its own application name"

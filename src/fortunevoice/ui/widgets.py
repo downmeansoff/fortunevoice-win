@@ -144,10 +144,24 @@ class Dropdown:
         self.paint()
 
     def _fill(self, options: list[tuple[str, str]]) -> None:
+        """Radio items, so the open menu says which one you are on.
+
+        With plain commands the list gave no indication at all — you opened
+        "Язык речи", saw four languages, and had to close the menu and read
+        the row behind it to find out which was selected. The tray menu has
+        always done this correctly; the window did not.
+        """
+        import tkinter as tk
+
         self._options = options
         self._menu.delete(0, "end")
+        if not hasattr(self, "_var"):
+            self._var = tk.StringVar()
+        self._var.set(self._get())
         for value, title in options:
-            self._menu.add_command(label=title, command=lambda v=value: self._choose(v))
+            self._menu.add_radiobutton(label=title, value=value,
+                                       variable=self._var,
+                                       command=lambda v=value: self._choose(v))
 
     def pack(self, **kwargs):
         self.frame.pack(**kwargs)
@@ -176,6 +190,8 @@ class Dropdown:
 
     def paint(self) -> None:
         text = self._title()
+        if hasattr(self, "_var"):
+            self._var.set(self._get())
         # Measured, not estimated. The old "7 px per character" guess was
         # calibrated at 100% scaling; on a 125% display the same string needs
         # ~9 px per character, so every chip came out too narrow and the

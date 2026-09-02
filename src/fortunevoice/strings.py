@@ -69,12 +69,14 @@ CATALOGUE: dict[str, dict[str, str]] = {
 
     # ── recording pill ──────────────────────────────────────────────────
     "pill.listening": {"en": "Listening", "ru": "Слушаю"},
+    "pill.cleaning": {"en": "Cleaning up", "ru": "Вычитка"},
     "pill.transcribing": {"en": "Transcribing", "ru": "Расшифровка"},
     "pill.failed": {"en": "Failed", "ru": "Ошибка"},
     "pill.no_signal": {"en": "No mic signal", "ru": "Нет сигнала"},
     "pill.cancelled": {"en": "Cancelled", "ru": "Отменено"},
 
     # ── result panel ────────────────────────────────────────────────────
+    "result.type_here": {"en": "Type it here", "ru": "Напечатать сюда"},
     "result.copy": {"en": "Copy", "ru": "Копировать"},
     "result.copied": {"en": "Copied", "ru": "Скопировано"},
     "result.failed": {"en": "Failed", "ru": "Не вышло"},
@@ -95,6 +97,8 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "history.delete_tip": {"en": "Delete all history", "ru": "Удалить всю историю"},
     "history.export_action": {"en": "Export", "ru": "Экспорт"},
     "history.delete_action": {"en": "Clear", "ru": "Очистить"},
+    "history.deleted": {"en": "Deleted", "ru": "Удалено"},
+    "history.undo": {"en": "Undo", "ru": "Вернуть"},
     "history.copied": {"en": "Copied", "ru": "Скопировано"},
     "history.export_empty": {"en": "Nothing to export",
                              "ru": "Выгружать нечего"},
@@ -250,6 +254,9 @@ CATALOGUE: dict[str, dict[str, str]] = {
         "ru": "Вычитка переписывает ваши слова локальной моделью. Исходный текст "
               "всегда лежит в истории рядом с обработанным.",
     },
+    "settings.launch_failed": {
+        "en": "Windows would not let FortuneVoice write to the Startup folder:\n{folder}\n\nYou can put a shortcut there by hand.",
+        "ru": "Windows не дал записать ярлык в папку автозагрузки:\n{folder}\n\nМожно положить ярлык туда вручную."},
     "settings.launch_at_login": {"en": "Launch at login", "ru": "Запускать при входе"},
     "settings.sounds": {"en": "Sound feedback", "ru": "Звуковые сигналы"},
     "settings.overlay": {"en": "Recording overlay", "ru": "Плашка записи"},

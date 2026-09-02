@@ -1018,6 +1018,13 @@ class App:
         a cold Ollama load stalling this for ~16 s — raw Whisper text NOW beats
         perfect text later, so past the deadline we type raw and let the LLM
         finish unused."""
+        # Its own state on the pill. The decode and a cold Ollama load were
+        # one undifferentiated "Transcribing", and the second of those costs
+        # about nine seconds — long enough, with nothing changing on screen,
+        # to read as a hang.
+        pill = self._pill()
+        if pill is not None:
+            pill.show("cleaning")
         self.cleaner.note_cold()
         # Whatever is in front decides. Cleanup punctuating a chat message is
         # right; cleanup punctuating `git rebase -i HEAD~3` into a sentence is
@@ -1197,7 +1204,7 @@ class App:
         if self.ui_available:
             from .ui.result import panel
 
-            panel.show(text, reason)
+            panel.show(text, reason, app=self)
             return
         preview = text if len(text) <= 120 else text[:117] + "…"
         self._notify(reason, preview)
