@@ -139,7 +139,7 @@ class HotkeySpec:
             keys = MODIFIER_KEYS[name]
             if arriving is not None and arriving in keys:
                 continue
-            if not any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in keys):
+            if not any(_key_is_down(vk) for vk in keys):
                 return False
         return True
 
@@ -217,6 +217,18 @@ _VK_TO_NAME: dict[int, str] = {}
 for _name, _vk in KEY_NAMES.items():
     if _vk not in _VK_TO_NAME or len(_name) < len(_VK_TO_NAME[_vk]):
         _VK_TO_NAME[_vk] = _name
+
+
+def _key_is_down(vk: int) -> bool:
+    """Is this key physically held right now?
+
+    A named function rather than the raw call, so a test can replace THIS and
+    leave the ctypes declaration alone: monkeypatching an attribute on the
+    shared `user32` object and restoring it drops the argtypes and restype
+    that were declared at import, and the next caller gets a value of the
+    wrong width. See test_the_monitor_handle_is_not_truncated.
+    """
+    return bool(user32.GetAsyncKeyState(vk) & 0x8000)
 
 
 class ChordCapture:
@@ -504,7 +516,7 @@ class HotkeyListener:
         """
         if not self._held:
             return
-        if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in self._spec.keys):
+        if any(_key_is_down(vk) for vk in self._spec.keys):
             return
         logger.info("the hotkey release was never delivered — resyncing")
         self._held = False
