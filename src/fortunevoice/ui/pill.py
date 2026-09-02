@@ -65,6 +65,9 @@ _MODE_COLOUR = {
     "recording": theme.RECORDING,
     "processing": theme.PROCESSING,
     "cleaning": theme.PROCESSING,
+    # The press was heard; the app is finishing the previous dictation before
+    # it can act on it. Same colour as the wait it is waiting for.
+    "queued": theme.PROCESSING,
     "error": theme.ERROR,
     "no-signal": theme.TEXT_FAINT,
     "cancelled": theme.TEXT_MUTED,
@@ -77,6 +80,7 @@ _MODE_TEXT = {
     # seconds of an identical animation after you have let go is exactly
     # where a user decides the thing has hung.
     "cleaning": t("pill.cleaning"),
+    "queued": t("pill.queued"),
     "error": t("pill.failed"),
     "no-signal": t("pill.no_signal"),
     "cancelled": t("pill.cancelled"),
