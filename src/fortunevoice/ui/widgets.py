@@ -662,5 +662,9 @@ class ShortcutRecorder:
         self.canvas.create_rectangle(0, theme.px(3), width - 1,
                                      height - theme.px(3),
                                      outline=theme.STROKE, width=max(1, theme.px(1)))
-        self.canvas.create_text(width / 2, height / 2, text=self._get() or "—",
+        # `label`, not `self._get()`: the raw config string is lowercase,
+        # and the masthead shows the parsed one. Two spellings of the
+        # same chord, and the lowercase one sat in the row you go to in
+        # order to change it.
+        self.canvas.create_text(width / 2, height / 2, text=label,
                                 fill=theme.TEXT, font=chord_font)
