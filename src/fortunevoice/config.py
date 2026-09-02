@@ -107,6 +107,13 @@ DEFAULTS: dict[str, Any] = {
     # left running all day, not worth it otherwise.
     "FVUnloadModelAfter": 0,
     # Transcribe while the user is still talking.
+    # Start the next dictation while the previous one is still being decoded
+    # and delivered. The recorder is free by then — the decode works on a copy
+    # of the samples — and the decoder serialises itself, so the second
+    # dictation queues behind the first rather than fighting it. Off means the
+    # press waits for the app to become idle, which is a second or two of
+    # standing still between sentences.
+    "FVOverlapDictation": True,
     "FVStreaming": True,
     # Paste the stitched streaming result (vs. a full batch re-decode).
     "FVStreamingV2": True,

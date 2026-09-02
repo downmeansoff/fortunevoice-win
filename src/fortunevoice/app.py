@@ -624,7 +624,14 @@ class App:
     def _start_dictation(self) -> None:
         state = self.state
         logger.info("hotkey DOWN (state = %s)", state.value)
-        if state != State.IDLE:
+        # The previous dictation is decoding, not recording — the microphone
+        # and the samples it holds are already someone else's copy, and
+        # `_finish_pipeline` was written to notice it is no longer the current
+        # generation. So the next sentence can start now instead of waiting
+        # for the last one to land.
+        overlapping = (state is State.PROCESSING
+                       and config.get_bool("FVOverlapDictation"))
+        if state != State.IDLE and not overlapping:
             # An arm that never became a dictation has to be undone here, or
             # the microphone opened at key-down stays open with nothing left
             # to close it. Reachable whenever something moved the app out of

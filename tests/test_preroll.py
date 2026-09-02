@@ -150,7 +150,11 @@ def test_an_arm_that_never_becomes_a_dictation_closes_the_microphone(app, monkey
     app._on_arm()
     assert app.recorder.is_recording
 
-    app._set_state(State.PROCESSING)   # busy by the time the hold completes
+    # LOADING, not PROCESSING: a dictation now starts over a decode on
+    # purpose (FVOverlapDictation), so PROCESSING no longer leaves an
+    # arm stranded. LOADING still does — there is no model to decode
+    # with, and the leak this test guards is unchanged.
+    app._set_state(State.LOADING)   # busy by the time the hold completes
     app._start_dictation()
 
     assert not app._armed
