@@ -27,7 +27,12 @@ SAMPLE_RATE = 16_000
 BLOCK_SIZE = 1024
 # 5 minutes without a reallocation, matching the macOS reservation and the
 # hard recording cap in app.py.
-_INITIAL_CAPACITY = SAMPLE_RATE * 300
+# Fifteen seconds, not the 300-second cap. The buffer doubles when a
+# dictation outgrows it (see `_append`), so reserving the maximum up
+# front only ever cost memory: 18.3 MiB per recorder, allocated before
+# the first word and held whether or not one was ever spoken. A typical
+# dictation is a few seconds; the doubling covers the rest.
+_INITIAL_CAPACITY = SAMPLE_RATE * 15
 
 
 class AudioError(RuntimeError):
