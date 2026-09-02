@@ -450,6 +450,8 @@ class HotkeyListener:
         # When the hook last saw ANY key. Compared against what Windows
         # says the system saw, to notice a hook removed under us.
         self._last_seen = time.monotonic()
+        # When a liveness probe was sent, 0 when none is outstanding.
+        self._probe_at = 0.0
         self._proc = _HOOKPROC(self._callback)  # keep a reference alive
         self._stop = threading.Event()
         # A modifier trigger fires from a timer thread, not from the hook —
@@ -560,27 +562,44 @@ class HotkeyListener:
     DEAF_AFTER_SECONDS = 20.0
 
     def _check_still_hooked(self) -> None:
-        """Reinstall the hook if the system saw input that we did not.
+        """Ask the hook whether it is still listening, and reinstall if not.
 
         Windows removes a low-level hook whose callback runs too long, and it
         says nothing: no error, no final callback, and no API to ask whether a
-        hook is still installed. The only evidence available is negative —
-        input happened, and we were not told. Twice on this machine the app
-        was running, the log said "hotkey listening", and the shortcut did
-        nothing until it was restarted by hand.
+        hook is still installed. Twice on this machine the app was running,
+        the log said "hotkey listening", and the shortcut did nothing until it
+        was restarted by hand.
+
+        The first attempt at this compared `GetLastInputInfo` against what the
+        hook had seen — and GetLastInputInfo counts the MOUSE. Moving the
+        pointer without typing looked exactly like a dead hook, so it was
+        reinstalled every twenty seconds for as long as the machine was in
+        use. Guessing replaced by asking: press a key nobody uses and see
+        whether our own hook reports it.
         """
-        idle_ms = winapi.milliseconds_since_last_input()
-        if idle_ms is None:
+        now = time.monotonic()
+        if now - self._last_seen < self.DEAF_AFTER_SECONDS:
+            self._probe_at = 0.0
             return
-        since_system_input = idle_ms / 1000.0
-        since_we_saw = time.monotonic() - self._last_seen
-        if since_system_input < 2.0 and since_we_saw > self.DEAF_AFTER_SECONDS:
-            logger.warning(
-                "the hook has seen no keys for %.0f s while the system saw "
-                "input %.1f s ago — reinstalling",
-                since_we_saw, since_system_input)
-            self._last_seen = time.monotonic()
+
+        if self._probe_at:
+            if self._last_seen >= self._probe_at:
+                self._probe_at = 0.0      # it answered; the hook is alive
+                return
+            logger.warning("the hook did not see its own probe — reinstalling")
+            self._probe_at = 0.0
+            self._last_seen = now
             self._reinstall = True
+            return
+
+        # Quiet for a while. That is normal on an idle machine, so this is a
+        # question rather than a verdict; the answer arrives on the next tick.
+        self._probe_at = now
+        try:
+            winapi.tap_probe_key()
+        except Exception:  # noqa: BLE001 - a probe that cannot be sent proves nothing
+            logger.debug("could not send the hook probe", exc_info=True)
+            self._probe_at = 0.0
 
     def _callback(self, code: int, wparam: int, lparam: int) -> int:
         if code != HC_ACTION:
