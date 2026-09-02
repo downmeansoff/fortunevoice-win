@@ -328,6 +328,33 @@ def foreground_app_name() -> str | None:
 VK_NONAME = 0xFC
 
 
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
+user32.GetLastInputInfo.restype = wintypes.BOOL
+kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+
+
+def milliseconds_since_last_input() -> float | None:
+    """How long ago the SYSTEM last saw a keystroke or a mouse move.
+
+    Used to decide whether a liveness probe is worth sending at all: the probe
+    is real injected input, and injecting it on an idle machine stops the
+    screen blanking, the screensaver starting, the lock firing and the machine
+    sleeping. None when Windows declines to answer.
+    """
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return None
+    # dwTime is a 32-bit tick count and wraps every 49 days; the low 32 bits
+    # of the 64-bit counter are the same clock.
+    now = kernel32.GetTickCount64() & 0xFFFFFFFF
+    return float((now - info.dwTime) & 0xFFFFFFFF)
+
+
 def tap_probe_key() -> None:
     """Press and release a key that does nothing, so a hook can prove it is
     alive by noticing."""
