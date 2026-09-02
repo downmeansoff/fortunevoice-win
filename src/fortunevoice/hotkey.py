@@ -452,6 +452,9 @@ class HotkeyListener:
         self._last_seen = time.monotonic()
         # When a liveness probe was sent, 0 when none is outstanding.
         self._probe_at = 0.0
+        # When we last injected one, so its echo in GetLastInputInfo is
+        # not mistaken for the user being at the desk.
+        self._probe_sent_at = 0.0
         self._proc = _HOOKPROC(self._callback)  # keep a reference alive
         self._stop = threading.Event()
         # A modifier trigger fires from a timer thread, not from the hook —
@@ -560,6 +563,12 @@ class HotkeyListener:
     # enough that a stall cannot trip it, short enough that the user is not
     # left pressing a dead shortcut for a minute.
     DEAF_AFTER_SECONDS = 20.0
+    # How recently the SYSTEM must have seen input for a probe to be
+    # worth sending. Below this somebody is at the keyboard or the
+    # mouse, so a hook that has noticed nothing is worth questioning.
+    SYSTEM_ACTIVE_WITHIN = 2.0
+    # And how long our own probe keeps counting as recent input.
+    PROBE_ECHO_SECONDS = 5.0
 
     def _check_still_hooked(self) -> None:
         """Ask the hook whether it is still listening, and reinstall if not.
@@ -594,7 +603,28 @@ class HotkeyListener:
 
         # Quiet for a while. That is normal on an idle machine, so this is a
         # question rather than a verdict; the answer arrives on the next tick.
+        # The probe is REAL injected input, and Windows counts it as
+        # somebody being at the desk. Sending one every twenty seconds
+        # of quiet meant the idle timer never advanced: no screen
+        # blank, no screensaver, no lock, no sleep, and a laptop that
+        # ran the night out — a mouse jiggler nobody asked for.
+        #
+        # So ask only when there is something to be suspicious about:
+        # the system has seen input that our hook did not. A hook that
+        # died while the desk was empty is found on the first tick
+        # after the user comes back, and nothing was lost meanwhile.
+        idle_ms = winapi.milliseconds_since_last_input()
+        if idle_ms is None:
+            return
+        if idle_ms / 1000.0 > self.SYSTEM_ACTIVE_WITHIN:
+            return                    # nobody is here; nothing to prove
+        if now - self._probe_sent_at < self.PROBE_ECHO_SECONDS:
+            # That input was our own last probe coming back. Probing on
+            # the strength of it would keep the machine awake by itself.
+            return
+
         self._probe_at = now
+        self._probe_sent_at = now
         try:
             winapi.tap_probe_key()
         except Exception:  # noqa: BLE001 - a probe that cannot be sent proves nothing
