@@ -146,6 +146,26 @@ def _utf16_units(char: str) -> list[int]:
     return [int.from_bytes(encoded[i : i + 2], "little") for i in range(0, len(encoded), 2)]
 
 
+# Consoles that do not take Ctrl+V. Windows terminals bind paste to
+# Ctrl+Shift+V, or to right-click, or to nothing at all — and a paste they
+# ignore is a dictation that goes nowhere, which is the one failure this app
+# is built never to produce. Typing is slower and always works.
+#
+# Matched on the executable, lowercased, so "WindowsTerminal.exe" and
+# "windowsterminal.exe" are the same thing.
+_CONSOLES = frozenset({
+    "windowsterminal.exe", "wt.exe", "conhost.exe", "cmd.exe",
+    "powershell.exe", "pwsh.exe", "mintty.exe", "bash.exe",
+    "alacritty.exe", "wezterm-gui.exe", "kitty.exe", "putty.exe",
+    "conemu.exe", "conemu64.exe", "hyper.exe", "tabby.exe",
+    "far.exe", "cmder.exe",
+})
+
+
+def is_console(app: str | None) -> bool:
+    return bool(app) and app.lower() in _CONSOLES
+
+
 def wants_paste(text: str, app: str | None) -> bool:
     """Should this text go through the clipboard rather than the keyboard?
 
@@ -162,6 +182,10 @@ def wants_paste(text: str, app: str | None) -> bool:
     if mode == "paste":
         return True
     if mode == "type":
+        return False
+    # "auto" only. An explicit "paste" above still wins, because a user who
+    # asked for it in a terminal knows something we do not.
+    if is_console(app):
         return False
     return len(text) > max(1, config.get_int("FVPasteOver"))
 
@@ -213,6 +237,17 @@ def paste_via_clipboard(text: str) -> bool:
             return  # someone else wrote to the clipboard; leave it alone
         if previous is not None:
             set_clipboard_text(previous)
+            return
+        # Nothing to put back — the clipboard was empty, or held an image or
+        # files, which this code cannot reproduce. Leaving it as it is means
+        # leaving the dictation there: every Ctrl+V for the rest of the day,
+        # and every clipboard-history tool, holding something the user said
+        # out loud. Clearing loses nothing that was recoverable anyway.
+        if user32.OpenClipboard(None):
+            try:
+                user32.EmptyClipboard()
+            finally:
+                user32.CloseClipboard()
 
     import threading
 
