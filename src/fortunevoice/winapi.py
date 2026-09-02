@@ -322,85 +322,24 @@ def foreground_app_name() -> str | None:
     return process_name(hwnd) or window_title(hwnd) or None
 
 
-class LASTINPUTINFO(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+# A key that exists so it can be pressed without consequence: reserved by
+# Windows, bound by nothing, ignored by every application. Sent to ask our own
+# keyboard hook whether it is still listening.
+VK_NONAME = 0xFC
 
 
-user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
-user32.GetLastInputInfo.restype = wintypes.BOOL
-kernel32.GetTickCount64.restype = ctypes.c_ulonglong
-
-
-def milliseconds_since_last_input() -> float | None:
-    """How long ago the SYSTEM last saw a keystroke or a mouse move.
-
-    The one thing a process can ask about input it did not receive itself,
-    which is what makes it useful for noticing a keyboard hook that Windows
-    has quietly removed. None when Windows declines to say.
-    """
-    info = LASTINPUTINFO()
-    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if not user32.GetLastInputInfo(ctypes.byref(info)):
-        return None
-    # dwTime is a 32-bit tick count and wraps every 49 days; the 64-bit
-    # counter does not, and the low 32 bits of one are the other.
-    now = kernel32.GetTickCount64() & 0xFFFFFFFF
-    delta = (now - info.dwTime) & 0xFFFFFFFF
-    return float(delta)
-
-
-class LASTINPUTINFO(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
-
-
-user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
-user32.GetLastInputInfo.restype = wintypes.BOOL
-kernel32.GetTickCount64.restype = ctypes.c_ulonglong
-
-
-def milliseconds_since_last_input() -> float | None:
-    """How long ago the SYSTEM last saw a keystroke or a mouse move.
-
-    The one thing a process can ask about input it did not receive itself,
-    which is what makes it useful for noticing a keyboard hook that Windows
-    has quietly removed. None when Windows declines to say.
-    """
-    info = LASTINPUTINFO()
-    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if not user32.GetLastInputInfo(ctypes.byref(info)):
-        return None
-    # dwTime is a 32-bit tick count and wraps every 49 days; the 64-bit
-    # counter does not, and the low 32 bits of one are the other.
-    now = kernel32.GetTickCount64() & 0xFFFFFFFF
-    delta = (now - info.dwTime) & 0xFFFFFFFF
-    return float(delta)
-
-
-class LASTINPUTINFO(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
-
-
-user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
-user32.GetLastInputInfo.restype = wintypes.BOOL
-kernel32.GetTickCount64.restype = ctypes.c_ulonglong
-
-
-def milliseconds_since_last_input() -> float | None:
-    """How long ago the SYSTEM last saw a keystroke or a mouse move.
-
-    The one thing a process can ask about input it did not receive itself,
-    which is what makes it useful for noticing a keyboard hook that Windows
-    has quietly removed. None when Windows declines to say.
-    """
-    info = LASTINPUTINFO()
-    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if not user32.GetLastInputInfo(ctypes.byref(info)):
-        return None
-    # dwTime is a 32-bit tick count and wraps every 49 days; the 64-bit
-    # counter does not, and the low 32 bits of one are the other.
-    now = kernel32.GetTickCount64() & 0xFFFFFFFF
-    delta = (now - info.dwTime) & 0xFFFFFFFF
-    return float(delta)
+def tap_probe_key() -> None:
+    """Press and release a key that does nothing, so a hook can prove it is
+    alive by noticing."""
+    events = (INPUT * 2)()
+    for index, flags in enumerate((0, KEYEVENTF_KEYUP)):
+        events[index].type = INPUT_KEYBOARD
+        events[index].ki.wVk = VK_NONAME
+        events[index].ki.wScan = 0
+        events[index].ki.dwFlags = flags
+        events[index].ki.time = 0
+        events[index].ki.dwExtraInfo = 0
+    user32.SendInput(2, events, ctypes.sizeof(INPUT))
 
 
 # ── single instance ──────────────────────────────────────────────────────
