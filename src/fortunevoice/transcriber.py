@@ -247,6 +247,13 @@ class Transcriber:
                         # One worker: the gate already serialises us, and a
                         # second CTranslate2 worker doubles VRAM for nothing.
                         num_workers=1,
+                        # And a cap on the CPU side. CTranslate2 defaults to
+                        # one intra-op thread per core and spawns them at
+                        # construction, on the GPU path too — threads that
+                        # exist for the life of the app to serve a decode
+                        # that is not happening. Four is enough for the CPU
+                        # fallback, where they are the only thing working.
+                        cpu_threads=min(4, os.cpu_count() or 4),
                     )
                 except Exception as exc:  # noqa: BLE001 - try the next backend
                     errors.append(f"{name}/{device}/{compute_type}: {exc}")
@@ -277,7 +284,38 @@ class Transcriber:
 
     # ── transcription ────────────────────────────────────────────────────
 
+    # What a broken CUDA context says on the way out. cuBLAS and cuDNN report
+    # their own internal errors, and the driver reports "out of memory" for a
+    # context it can no longer allocate in — none of which is fixed by trying
+    # the same model object again.
+    _CONTEXT_IS_GONE = ("cublas", "cudnn", "cuda failed", "out of memory",
+                        "invalid resource handle", "device-side assert")
+
+    @classmethod
+    def _is_context_failure(cls, exc: BaseException) -> bool:
+        message = str(exc).lower()
+        return any(marker in message for marker in cls._CONTEXT_IS_GONE)
+
     def transcribe(self, samples: np.ndarray) -> Result:
+        """Decode, and rebuild the model if the GPU context has died.
+
+        A wedged context does not heal: the model object is still loaded, so
+        nothing reloads it, and every dictation from then on is lost. Observed
+        here as cuBLAS_STATUS_INTERNAL_ERROR three times running, with 3 GB of
+        the card free — and the only cure was quitting from the tray. Rebuilt
+        once, in place, so the dictation the user just spoke survives it.
+        """
+        try:
+            return self._transcribe_once(samples)
+        except Exception as exc:  # noqa: BLE001 - re-raised below if not ours
+            if not self._is_context_failure(exc):
+                raise
+            logger.warning("the GPU context died (%s) — rebuilding the model", exc)
+        self.unload(force=True)
+        self.load()
+        return self._transcribe_once(samples)
+
+    def _transcribe_once(self, samples: np.ndarray) -> Result:
         model = self._model
         if model is None:
             raise TranscriberError("Whisper model not loaded yet")
@@ -352,7 +390,7 @@ class Transcriber:
         return Result(text=text, avg_logprob=avg_logprob, no_speech_prob=no_speech,
                       segments=segments)
 
-    def unload(self) -> bool:
+    def unload(self, force: bool = False) -> bool:
         """Drop the model and give its video memory back.
 
         Measured here: the app holds 3180 MiB at idle against 1088 with it
@@ -365,9 +403,16 @@ class Transcriber:
         """
         if self._model is None:
             return False
-        if not self._gate.acquire(0.5):
-            logger.debug("not unloading — a decode is in progress")
-            return False
+        held = self._gate.acquire(0.5)
+        if not held:
+            if not force:
+                logger.debug("not unloading — a decode is in progress")
+                return False
+            # A rebuild after a dead context is not an optional tidy-up: the
+            # decode "in progress" is the one that just failed, and refusing
+            # here would leave the broken model in place for every dictation
+            # that follows.
+            logger.warning("forcing the unload — the model is unusable")
         try:
             with self._lock:
                 self._model = None
@@ -377,7 +422,10 @@ class Transcriber:
                 self._last_decode_at = None
             logger.info("model unloaded to free video memory")
         finally:
-            self._gate.release()
+            # Only what we took. Releasing a permit we never acquired
+            # would let two decodes into a section built to hold one.
+            if held:
+                self._gate.release()
         return True
 
     @property

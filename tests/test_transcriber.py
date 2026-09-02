@@ -57,11 +57,15 @@ def fake_whisper(monkeypatch):
     fails: set[str] = set()
 
     class WhisperModel:
-        def __init__(self, name, device, compute_type, download_root, num_workers):
+        def __init__(self, name, device, compute_type, download_root,
+                     num_workers, **options):
+            # **options, so a new engine parameter is a change in one
+            # place rather than seven red tests about a keyword the fake
+            # does not know.
             key = f"{device}/{compute_type}"
             built.append({"name": name, "device": device,
                           "compute_type": compute_type, "root": download_root,
-                          "workers": num_workers})
+                          "workers": num_workers, **options})
             if key in fails or name in fails:
                 raise RuntimeError(f"{key} unavailable")
             self.name = name
@@ -298,16 +302,42 @@ def test_the_decoding_options_that_were_paid_for_with_bugs(loaded):
 
 def test_the_gate_is_released_even_when_the_decode_raises():
     """Otherwise one failed decode wedges every dictation after it — the app
-    would look alive and never transcribe again."""
+    would look alive and never transcribe again.
+
+    A plain error, deliberately: "CUDA out of memory" is now the signal to
+    rebuild the model, and this test is about the gate, not about the GPU.
+    """
     engine = Transcriber()
 
     class Exploding:
         def transcribe(self, audio, **options):
-            raise RuntimeError("CUDA out of memory")
+            raise RuntimeError("the decoder gave up")
 
     engine._model = Exploding()
     with pytest.raises(RuntimeError):
         engine.transcribe(np.zeros(1600, dtype=np.float32))
+    assert engine._gate.acquire(1.0), "the gate must not be left held"
+    engine._gate.release()
+
+
+def test_the_gate_survives_a_rebuild_after_a_dead_context(monkeypatch):
+    """The rebuild path acquires and releases the gate twice — once for the
+    decode that died, once for the retry. Getting that wrong wedges the app in
+    exactly the situation it exists to rescue."""
+    engine = Transcriber()
+
+    class Exploding:
+        def transcribe(self, audio, **options):
+            raise RuntimeError("cuBLAS failed with status CUBLAS_STATUS_INTERNAL_ERROR")
+
+    engine._model = Exploding()
+    # No real load: this module is exempt from the no-network guard, and a
+    # rebuild here would fetch Whisper from Hugging Face.
+    monkeypatch.setattr(engine, "load", lambda: None)
+
+    with pytest.raises(RuntimeError):
+        engine.transcribe(np.zeros(1600, dtype=np.float32))
+
     assert engine._gate.acquire(1.0), "the gate must not be left held"
     engine._gate.release()
 
@@ -473,3 +503,89 @@ def test_loading_an_already_loaded_model_is_a_no_op(fake_whisper, loaded):
     engine, _ = loaded
     engine.load()
     assert fake_whisper.built == [], "nothing was built"
+
+
+# ── a dead GPU context is a broken model, not a lost dictation ───────────
+
+
+def test_a_cublas_failure_rebuilds_the_model_and_retries(monkeypatch):
+    """Seen live: cuBLAS_STATUS_INTERNAL_ERROR inside model.encode, three
+    dictations in a row, with 3 GB of the card free. The context does not
+    heal, the model object is still "loaded" so nothing reloads it, and every
+    dictation after it is lost to "FortuneVoice couldn't transcribe that". The
+    only cure was quitting from the tray."""
+    import numpy as np
+
+    from fortunevoice.transcriber import Result, Transcriber
+
+    transcriber = Transcriber()
+    transcriber._model = object()
+    attempts = []
+    loads = []
+
+    def flaky(samples):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("cuBLAS failed with status CUBLAS_STATUS_INTERNAL_ERROR")
+        return Result(text="дошло со второго раза")
+
+    monkeypatch.setattr(transcriber, "_transcribe_once", flaky)
+    monkeypatch.setattr(transcriber, "unload",
+                        lambda force=False: loads.append(("unload", force)) or True)
+    monkeypatch.setattr(transcriber, "load", lambda: loads.append(("load", None)))
+
+    result = transcriber.transcribe(np.zeros(16_000, dtype=np.float32))
+
+    assert result.text == "дошло со второго раза"
+    assert len(attempts) == 2, "it has to try again after rebuilding"
+    assert loads == [("unload", True), ("load", None)], loads
+
+
+def test_an_ordinary_failure_is_not_retried(monkeypatch):
+    """Only a dead context earns a rebuild. Retrying everything would decode
+    twice on every real error and double the wait before the user is told."""
+    import numpy as np
+    import pytest as _pytest
+
+    from fortunevoice.transcriber import Transcriber
+
+    transcriber = Transcriber()
+    transcriber._model = object()
+    attempts = []
+
+    def broken(samples):
+        attempts.append(1)
+        raise ValueError("the audio made no sense")
+
+    monkeypatch.setattr(transcriber, "_transcribe_once", broken)
+    monkeypatch.setattr(transcriber, "unload",
+                        lambda force=False: _pytest.fail("nothing to rebuild"))
+
+    with _pytest.raises(ValueError):
+        transcriber.transcribe(np.zeros(16_000, dtype=np.float32))
+    assert len(attempts) == 1
+
+
+def test_the_second_failure_is_reported_rather_than_looped(monkeypatch):
+    """A card that is genuinely out of memory fails the rebuild too. One
+    retry, then the truth — the audio is kept either way."""
+    import numpy as np
+    import pytest as _pytest
+
+    from fortunevoice.transcriber import Transcriber
+
+    transcriber = Transcriber()
+    transcriber._model = object()
+    attempts = []
+
+    def always_dead(samples):
+        attempts.append(1)
+        raise RuntimeError("CUDA failed with error out of memory")
+
+    monkeypatch.setattr(transcriber, "_transcribe_once", always_dead)
+    monkeypatch.setattr(transcriber, "unload", lambda force=False: True)
+    monkeypatch.setattr(transcriber, "load", lambda: None)
+
+    with _pytest.raises(RuntimeError):
+        transcriber.transcribe(np.zeros(16_000, dtype=np.float32))
+    assert len(attempts) == 2, "exactly one retry"
