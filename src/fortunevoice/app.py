@@ -638,6 +638,13 @@ class App:
             # comes back, provided the key is still down by then.
             if state is State.PROCESSING:
                 self._pending_press = time.monotonic()
+                # Otherwise the pill still reads "Расшифровка" from the
+                # dictation before, which looks exactly like the press having
+                # been lost — the behaviour that taught the user to press
+                # twice.
+                pill = self._pill()
+                if pill is not None:
+                    pill.show("queued")
             return
         # Already open from the pre-roll, and holding the audio from before
         # the hold threshold elapsed — keep it, and date the recording from

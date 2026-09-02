@@ -74,6 +74,7 @@ CATALOGUE: dict[str, dict[str, str]] = {
     "pill.failed": {"en": "Failed", "ru": "Ошибка"},
     "pill.no_signal": {"en": "No mic signal", "ru": "Нет сигнала"},
     "pill.cancelled": {"en": "Cancelled", "ru": "Отменено"},
+    "pill.queued": {"en": "One moment", "ru": "Сейчас начну"},
 
     # ── result panel ────────────────────────────────────────────────────
     "result.type_here": {"en": "Type it here", "ru": "Напечатать сюда"},

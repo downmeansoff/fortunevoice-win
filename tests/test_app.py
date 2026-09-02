@@ -892,3 +892,22 @@ def test_a_stale_press_is_not_resumed(app, monkeypatch):
     app._finish_pipeline()
 
     assert started == []
+
+
+def test_the_pill_says_the_press_was_heard(app, monkeypatch):
+    """A remembered press is invisible otherwise: the pill still reads
+    "Расшифровка" from the dictation before, which looks exactly like the
+    press having been lost — the behaviour that taught the user to press
+    twice."""
+    shown: list[str] = []
+
+    class FakePill:
+        def show(self, mode):
+            shown.append(mode)
+
+    monkeypatch.setattr(app, "_pill", lambda: FakePill())
+    app._set_state(State.PROCESSING)
+
+    app._start_dictation()
+
+    assert "queued" in shown, shown
