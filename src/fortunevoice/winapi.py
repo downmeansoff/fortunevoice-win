@@ -322,6 +322,87 @@ def foreground_app_name() -> str | None:
     return process_name(hwnd) or window_title(hwnd) or None
 
 
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
+user32.GetLastInputInfo.restype = wintypes.BOOL
+kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+
+
+def milliseconds_since_last_input() -> float | None:
+    """How long ago the SYSTEM last saw a keystroke or a mouse move.
+
+    The one thing a process can ask about input it did not receive itself,
+    which is what makes it useful for noticing a keyboard hook that Windows
+    has quietly removed. None when Windows declines to say.
+    """
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return None
+    # dwTime is a 32-bit tick count and wraps every 49 days; the 64-bit
+    # counter does not, and the low 32 bits of one are the other.
+    now = kernel32.GetTickCount64() & 0xFFFFFFFF
+    delta = (now - info.dwTime) & 0xFFFFFFFF
+    return float(delta)
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
+user32.GetLastInputInfo.restype = wintypes.BOOL
+kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+
+
+def milliseconds_since_last_input() -> float | None:
+    """How long ago the SYSTEM last saw a keystroke or a mouse move.
+
+    The one thing a process can ask about input it did not receive itself,
+    which is what makes it useful for noticing a keyboard hook that Windows
+    has quietly removed. None when Windows declines to say.
+    """
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return None
+    # dwTime is a 32-bit tick count and wraps every 49 days; the 64-bit
+    # counter does not, and the low 32 bits of one are the other.
+    now = kernel32.GetTickCount64() & 0xFFFFFFFF
+    delta = (now - info.dwTime) & 0xFFFFFFFF
+    return float(delta)
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+user32.GetLastInputInfo.argtypes = (ctypes.POINTER(LASTINPUTINFO),)
+user32.GetLastInputInfo.restype = wintypes.BOOL
+kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+
+
+def milliseconds_since_last_input() -> float | None:
+    """How long ago the SYSTEM last saw a keystroke or a mouse move.
+
+    The one thing a process can ask about input it did not receive itself,
+    which is what makes it useful for noticing a keyboard hook that Windows
+    has quietly removed. None when Windows declines to say.
+    """
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return None
+    # dwTime is a 32-bit tick count and wraps every 49 days; the 64-bit
+    # counter does not, and the low 32 bits of one are the other.
+    now = kernel32.GetTickCount64() & 0xFFFFFFFF
+    delta = (now - info.dwTime) & 0xFFFFFFFF
+    return float(delta)
+
+
 # ── single instance ──────────────────────────────────────────────────────
 
 ERROR_ALREADY_EXISTS = 183
