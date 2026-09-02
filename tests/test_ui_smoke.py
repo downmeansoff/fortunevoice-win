@@ -374,3 +374,24 @@ def test_typing_replaces_the_dictionary_example(window, root):
     root.update()
 
     assert window._dictionary_contents() == "Фортуна"
+
+
+def test_the_shortcut_row_shows_the_same_spelling_as_the_masthead(root):
+    """The masthead renders the parsed label, "Ctrl+Alt+Space". The Settings
+    row rendered the raw config string — so the one place you go to CHANGE the
+    shortcut was the one place that spelled it differently, and lowercase,
+    next to the words "Сочетание клавиш", reads like literal text to type."""
+    from fortunevoice.hotkey import parse
+    from fortunevoice.ui import widgets
+
+    recorder = widgets.ShortcutRecorder(root, lambda: "ctrl+alt+space",
+                                        lambda value: True)
+    recorder.paint()
+    root.update_idletasks()
+
+    canvas = recorder.canvas
+    drawn = [canvas.itemcget(item, "text") for item in canvas.find_all()
+             if canvas.type(item) == "text"]
+
+    assert parse("ctrl+alt+space").label in drawn, drawn
+    assert "ctrl+alt+space" not in drawn, "the raw config string is not a label"
