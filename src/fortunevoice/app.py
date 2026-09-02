@@ -179,6 +179,12 @@ class App:
         # checking the state alone is not enough, because a *second* dictation
         # can already be in PROCESSING when the first pipeline finishes.
         self._generation = 0
+        # One event per dictation, set when its pipeline is done with the
+        # target window. A pipeline waits on its predecessor's before typing,
+        # so overlapping dictations still arrive in the order they were
+        # spoken. Keyed by generation; each entry is dropped by the pipeline
+        # that set it.
+        self._delivered: dict[int, threading.Event] = {}
         # Set on stop(), so the idle watcher ends with the app.
         self._stopping = threading.Event()
         # Last time a dictation finished, for FVUnloadModelAfter.
@@ -843,6 +849,7 @@ class App:
             return
 
         self._generation += 1
+        self._delivered[self._generation] = threading.Event()
         # Dictating counts as activity even when the delivery later fails
         # or the transcript is empty. Advancing this only on success let
         # the idle watcher unload the model in the middle of a working
@@ -919,6 +926,7 @@ class App:
                 self._handle_empty(
                     samples, result, audio_level, audio_seconds, stt_ms, key_up,
                     stream_passes, decode_timeout, target_window, started,
+                    generation,
                 )
                 return
 
@@ -952,7 +960,7 @@ class App:
                 text, raw_text, samples, result, key_up, started, stt_ms, cleanup_ms,
                 target_window, retried=False, stream_passes=stream_passes,
                 shadow=session.last_shadow if session else None,
-                pre_cleaned_words=pre_cleaned_words,
+                pre_cleaned_words=pre_cleaned_words, generation=generation,
             )
         except Exception as exc:  # noqa: BLE001 - the words are not lost, see below
             logger.error("transcription failed: %s", exc, exc_info=True)
@@ -975,6 +983,13 @@ class App:
                 )
             )
         finally:
+            # In `finally`, not after a successful delivery: this pipeline can
+            # return early on empty text, on hallucinated silence, on a decode
+            # that raised or lost the gate. An event set only on success would
+            # leave every later dictation waiting on one that never arrives.
+            done = self._delivered.pop(generation, None)
+            if done is not None:
+                done.set()
             self._finish_pipeline(generation)
 
     # How long a press may wait for the app to become free. Past this the
@@ -998,7 +1013,17 @@ class App:
         if listener is None or not getattr(listener, "_held", False):
             return
         logger.info("resuming the press that arrived while we were busy")
-        self._start_dictation()
+        # Through the queue, not straight into `_start_dictation`. This
+        # runs on the PIPELINE thread, and starting the recording here
+        # races the controller: `_start_dictation` blocks for about a
+        # second inside the cleanup warmup, and a key-up arriving in
+        # that window is handled by `_stop_dictation`, which returns at
+        # once because the state is still IDLE. RECORDING is then set
+        # with the key already up and no release left to come, so the
+        # microphone runs to the 300 s cap and types minutes of room
+        # noise. Queued, the press keeps its FIFO order against the
+        # release, which is the whole reason the controller exists.
+        self._events.put(("press", time.monotonic()))
 
     def _finish_pipeline(self, generation: int = 0) -> None:
         """Hand the state machine back — but only if this pipeline still owns it.
@@ -1023,6 +1048,7 @@ class App:
     def _handle_empty(
         self, samples, result, audio_level, audio_seconds, stt_ms, key_up,
         stream_passes, decode_timeout, target_window, started,
+        generation: int = 0,
     ) -> None:
         """Empty transcript. If the audio was actually loud, the decoder failed
         on real speech — retry once (timed) before giving up."""
@@ -1038,6 +1064,7 @@ class App:
                 self._deliver(
                     retry.text, retry.text, samples, retry, key_up, started, stt_ms, 0.0,
                     target_window, retried=True, stream_passes=stream_passes,
+                    generation=generation,
                 )
                 return
 
@@ -1147,11 +1174,35 @@ class App:
 
     # ── delivery ─────────────────────────────────────────────────────────
 
+    # How long a dictation waits for the one before it to land. Bounded,
+    # because head-of-line blocking is the thing overlapping was added to
+    # remove: past this the text goes out of order rather than not at all.
+    DELIVERY_ORDER_WAIT = 20.0
+
+    def _await_predecessor(self, generation: int) -> None:
+        """Let the dictation before this one finish typing first.
+
+        Two dictations can be in flight at once, and a short second one
+        decodes faster than a long first: without this a two-word correction
+        is typed BEFORE the paragraph it corrects, in the target window and in
+        History both.
+        """
+        if not generation:
+            return
+        earlier = self._delivered.get(generation - 1)
+        if earlier is None:
+            return
+        if not earlier.wait(self.DELIVERY_ORDER_WAIT):
+            # Its pipeline is wedged. The watchdog owns that problem; this one
+            # is not going to hold a finished transcript hostage to it.
+            logger.warning("dictation %d gave up waiting for %d — delivering "
+                           "out of order", generation, generation - 1)
+
     def _deliver(
         self, text: str, raw: str, samples: np.ndarray, result: Result, key_up: float,
         started: float, stt_ms: float, cleanup_ms: float, target_window: int,
         retried: bool = False, stream_passes: int = 0, shadow=None,
-        pre_cleaned_words: int | None = None,
+        pre_cleaned_words: int | None = None, generation: int = 0,
     ) -> None:
         """Deliver the final transcript.
 
@@ -1162,6 +1213,7 @@ class App:
         """
         if not text:
             return
+        self._await_predecessor(generation)
         # Before anything else sees the text, so History, the result panel and
         # the typed output all agree on what was said.
         if profiles.get_bool("FVVoiceCommands", winapi.foreground_app_name()):

@@ -854,12 +854,16 @@ def test_a_press_during_processing_is_resumed_when_the_state_comes_back(app, mon
         _held = True
 
     app._listener = Held()
-    monkeypatch.setattr(app, "_start_dictation", lambda: started.append(1))
 
     app._finish_pipeline()
 
     assert app.state is State.IDLE
-    assert started == [1], "and acted on once the state came back"
+    # Queued, not called: this runs on the pipeline thread, and
+    # starting the recording here races the key-up that the controller
+    # is about to deliver. Through the queue the press keeps its FIFO
+    # order against the release.
+    queued = [app._events.get_nowait() for _ in range(app._events.qsize())]
+    assert [kind for kind, _stamp in queued] == ["press"], queued
 
 
 def test_a_press_the_user_gave_up_on_is_not_resumed(app, monkeypatch):
@@ -1004,3 +1008,68 @@ def test_overlap_does_not_apply_while_the_model_is_loading(app, monkeypatch):
     app._start_dictation()
 
     assert app.state is State.LOADING
+
+
+# -- two dictations at once still arrive in the order they were spoken ----
+
+
+def test_a_short_second_dictation_waits_for_the_long_first_one(app, monkeypatch):
+    """Dictations may overlap now, and a two-word correction decodes far
+    faster than the paragraph it corrects. Without ordering it is typed
+    first -- in the target window and in History both -- and the tray's
+    "type last dictation" then holds the older text."""
+    import threading
+
+    app._delivered[1] = threading.Event()
+    app._delivered[2] = threading.Event()
+
+    order = []
+    monkeypatch.setattr(app_module.injector, "inject",
+                        lambda text: order.append(text) or True)
+
+    def deliver_second():
+        deliver(app, "нет, запятая", generation=2)
+
+    second = threading.Thread(target=deliver_second, daemon=True)
+    second.start()
+    # The second one is blocked on the first; give it a moment to prove it.
+    second.join(0.4)
+    assert order == [], "it must not type before its predecessor"
+
+    app._delivered[1].set()
+    second.join(3)
+
+    assert order == ["нет, запятая"]
+
+
+def test_a_pipeline_that_never_delivers_does_not_block_the_next(app, monkeypatch):
+    """The first dictation raises, returns empty, or loses the decoder gate --
+    none of which reaches `_deliver`. An event set only on success would leave
+    every later dictation waiting for one that never arrives."""
+    import threading
+
+    monkeypatch.setattr(app.transcriber, "cancel_warmup", lambda: None)
+    monkeypatch.setattr(app.transcriber, "transcribe",
+                        lambda samples: (_ for _ in ()).throw(RuntimeError("boom")))
+    app._delivered[7] = threading.Event()
+
+    app._pipeline(np.full(16_000, 0.3, dtype=np.float32), None,
+                  app_module.time.monotonic(), 42, 5.0, 7)
+
+    assert 7 not in app._delivered, "the register must not grow"
+
+
+def test_the_wait_is_bounded(app, monkeypatch):
+    """Head-of-line blocking is the thing overlapping was added to remove: a
+    wedged predecessor must not hold a finished transcript for ever."""
+    import threading
+    import time as real_time
+
+    app._delivered[4] = threading.Event()      # never set
+    monkeypatch.setattr(app, "DELIVERY_ORDER_WAIT", 0.2)
+
+    started = real_time.monotonic()
+    app._await_predecessor(5)
+    waited = real_time.monotonic() - started
+
+    assert 0.15 < waited < 2.0, waited
