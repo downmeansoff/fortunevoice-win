@@ -103,6 +103,10 @@ class App:
     # output discarded — 3 s of waiting for the raw transcript the user would
     # have got anyway.
     CLEANUP_BUDGET = 1.5
+    # For FVCleanupDevice="cpu". Measured here: 10.5 s cold, 4.2 s warm on
+    # qwen2.5:3b. Eight seconds covers a warm run of an ordinary dictation and
+    # still refuses to wait out a cold start.
+    CPU_CLEANUP_BUDGET = 8.0
     # Garbled (low-confidence) transcripts get more. Polishing punctuation on a
     # confident decode is worth ~1.5 s at most; reconstructing text the user
     # otherwise cannot read is worth the wait.
@@ -1046,6 +1050,13 @@ class App:
             pre_cleaned = None
         to_clean = pre_cleaned[1] if pre_cleaned else raw_text
         budget = self.SMART_FIX_BUDGET if low_confidence else self.CLEANUP_BUDGET
+        if config.get_str("FVCleanupDevice").lower() == "cpu":
+            # A CPU run is 4-10 s where a GPU one is under one, so the GPU
+            # budget rejects every single one — and a cleanup that always
+            # misses its deadline is no cleanup at all, except the user waited
+            # for it. This is the cost of the trade, and it is the reason the
+            # setting is a choice rather than a fallback.
+            budget = self.CPU_CLEANUP_BUDGET
 
         try:
             cleaned_part = run_with_timeout(
