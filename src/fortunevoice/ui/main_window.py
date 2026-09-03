@@ -454,12 +454,37 @@ class MainWindow:
 
         self._history_body = self._scroll_area(page)
 
-    def _refresh_history(self) -> None:
+    def _history_signature(self):
+        """Everything the drawn list depends on.
+
+        Cheap on purpose: a count, the newest row and the query. Comparing the
+        rows themselves would cost more than the redraw it saves.
+        """
+        rows = self._store.all()
+        newest = rows[-1] if rows else None
+        query = ("" if self._search_is_placeholder()
+                 else self._search_var.get().strip().lower())
+        return (len(rows),
+                (newest.date, newest.transcript) if newest else None,
+                query,
+                getattr(self, "_undo", None) is not None)
+
+    def _refresh_history(self, force: bool = False) -> None:
         import tkinter as tk
 
         body = self._history_body
         if body is None:
             return
+        # Switching tabs called this every time, and it destroys every card in
+        # the list and builds them all again — one canvas-backed row per
+        # dictation. The usual case is that nothing changed since it was last
+        # drawn: the user is moving between tabs, not dictating. A new
+        # dictation, a deletion, an edit, a search term or an undo strip all
+        # change the signature and still redraw.
+        signature = self._history_signature()
+        if not force and signature == getattr(self, "_history_drawn", None):
+            return
+        self._history_drawn = signature
         for child in body.winfo_children():
             child.destroy()
 
@@ -616,7 +641,7 @@ class MainWindow:
                     # proper nouns and jargon the user just typed, and the log
                     # is the file they hand over when something breaks.
                     logger.info("learned %d word(s) from a correction", len(learned))
-                self._refresh_history()
+                self._refresh_history(force=True)
             return "break"
 
         # Enter saves, Shift+Enter makes a line break, Escape abandons. A
