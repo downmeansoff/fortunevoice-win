@@ -1114,3 +1114,16 @@ def test_a_different_window_starts_afresh(app):
     assert app._separated("в первом окне", 1) == "в первом окне"
     assert app._separated("во втором окне", 2) == "во втором окне"
     assert app._separated("и ещё раз", 2) == " и ещё раз"
+
+
+def test_a_press_while_the_model_loads_is_remembered(app):
+    """The case that survives the shipped default. PROCESSING is handled by
+    overlapping, which is on by default -- so the queued-press feature only
+    ever ran when overlap was switched off, i.e. never. LOADING is the state
+    that still queues, and it is the one that hurts: the idle watcher dropped
+    the model and the user is pressing while it comes back."""
+    app._set_state(State.LOADING)
+
+    app._start_dictation()
+
+    assert app._pending_press, "the press has to survive the wait"

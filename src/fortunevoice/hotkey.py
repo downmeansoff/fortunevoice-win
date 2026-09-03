@@ -638,13 +638,17 @@ class HotkeyListener:
             # the strength of it would keep the machine awake by itself.
             return
 
-        self._probe_at = now
         self._probe_sent_at = now
         try:
-            winapi.tap_probe_key()
+            sent = winapi.tap_probe_key()
         except Exception:  # noqa: BLE001 - a probe that cannot be sent proves nothing
             logger.debug("could not send the hook probe", exc_info=True)
-            self._probe_at = 0.0
+            sent = False
+        # Only a probe that actually went out is worth waiting on an answer
+        # for. Windows refuses SendInput while a UAC prompt or a game with
+        # input blocked is up, and treating that as evidence would reinstall
+        # the hook every twenty seconds for as long as it lasts.
+        self._probe_at = now if sent else 0.0
 
     def _callback(self, code: int, wparam: int, lparam: int) -> int:
         if code != HC_ACTION:
