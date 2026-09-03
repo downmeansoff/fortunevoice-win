@@ -528,6 +528,17 @@ class HotkeyListener:
             return
         if any(_key_is_down(vk) for vk in self._spec.keys):
             return
+        # The keyboard says up — but WE may have said that. Before
+        # typing, `injector.release_held_modifiers` synthesizes key-ups
+        # for whatever is held, so the transcript does not arrive as a
+        # string of shortcuts. While dictations overlap, that happens
+        # WHILE the user is holding the key for the next one: Windows
+        # then reports Ctrl and Alt as up, and this check cut the
+        # dictation off a second later, mid-sentence, over and over.
+        from . import injector
+
+        if injector.faked_release_age() < self.FAKED_RELEASE_GRACE:
+            return
         logger.info("the hotkey release was never delivered — resyncing")
         self._held = False
         self._end_press()
@@ -562,6 +573,10 @@ class HotkeyListener:
     # How far the hook may lag the system before it is presumed deaf. Long
     # enough that a stall cannot trip it, short enough that the user is not
     # left pressing a dead shortcut for a minute.
+    # How long after we synthesized a modifier release the physical
+    # keyboard is not to be trusted about it. The user's real key-up
+    # arrives through the hook and clears the latch properly.
+    FAKED_RELEASE_GRACE = 3.0
     DEAF_AFTER_SECONDS = 20.0
     # How recently the SYSTEM must have seen input for a probe to be
     # worth sending. Below this somebody is at the keyboard or the
