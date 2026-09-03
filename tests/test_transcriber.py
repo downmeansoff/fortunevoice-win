@@ -88,7 +88,7 @@ def fake_whisper(monkeypatch):
 def test_auto_prefers_cuda_then_falls_back_to_cpu():
     config.set("FVDevice", "auto")
     assert Transcriber()._backends() == [
-        ("cuda", "float16"), ("cuda", "int8_float16"), ("cpu", "int8")]
+        ("cuda", "int8_float16"), ("cuda", "float16"), ("cpu", "int8")]
 
 
 def test_cpu_is_taken_literally():
@@ -106,7 +106,7 @@ def test_cuda_still_falls_back_to_cpu():
 
 def test_an_unknown_device_behaves_like_auto():
     config.set("FVDevice", "quantum")
-    assert Transcriber()._backends()[0] == ("cuda", "float16")
+    assert Transcriber()._backends()[0] == ("cuda", "int8_float16")
 
 
 # ── loading ──────────────────────────────────────────────────────────────
@@ -117,14 +117,14 @@ def test_the_first_working_backend_wins(fake_whisper):
     engine = Transcriber()
     engine.load()
     assert engine.device == "cuda"
-    assert engine.compute_type == "float16"
+    assert engine.compute_type == "int8_float16"
     assert len(fake_whisper.built) == 1, "no backend should be tried after one works"
 
 
 def test_a_refused_backend_moves_on_to_the_next(fake_whisper):
     """What a machine with no CUDA actually does."""
     config.set("FVDevice", "auto")
-    fake_whisper.fails.update({"cuda/float16", "cuda/int8_float16"})
+    fake_whisper.fails.update({"cuda/int8_float16", "cuda/float16"})
     engine = Transcriber()
     engine.load()
     assert (engine.device, engine.compute_type) == ("cpu", "int8")
@@ -170,7 +170,7 @@ def test_nothing_loading_raises_with_every_reason(fake_whisper):
         Transcriber().load()
     message = str(caught.value)
     assert "large-v3-turbo" in message and "small" in message
-    assert "cuda/float16" in message and "cpu/int8" in message
+    assert "cuda/int8_float16" in message and "cpu/int8" in message
 
 
 def test_a_missing_faster_whisper_says_how_to_fix_it(monkeypatch):

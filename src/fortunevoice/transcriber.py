@@ -7,9 +7,9 @@ before the user needs it, and degrade instead of failing.
 
 What is genuinely different on Windows:
 
-* **Backend selection.** There is no ANE. We try CUDA float16, then CUDA
-  int8_float16 (half the VRAM, for a 6 GB laptop card that is already holding
-  a browser's compositor), then CPU int8. A machine with no working CUDA
+* **Backend selection.** There is no ANE. We try CUDA int8_float16 (half the
+  VRAM, which is what a 6 GB laptop card holding a browser's compositor
+  actually has), then CUDA float16, then CPU int8. A machine with no working CUDA
   runtime still dictates, just slower — that is the whole point of the ladder.
 * **The gate is a real lock.** WhisperKit was a class with one decoder cache;
   CTranslate2 models are likewise not safe to enter twice concurrently.
@@ -275,7 +275,15 @@ class Transcriber:
         """Backends to try, best first."""
         wanted = config.get_str("FVDevice").lower()
         cpu = [("cpu", "int8")]
-        cuda = [("cuda", "float16"), ("cuda", "int8_float16")]
+        # int8_float16 first. Measured on this machine (RTX 3060 Laptop, 6 GB)
+        # over 20.7 s of speech, it wins on every axis that matters here:
+        # 1077 MiB of VRAM against 2219, 4.9 s to load against 7.3, 0.83 s for
+        # the first decode against 1.33. Warm decodes tie at ~0.5 s and the
+        # text came back identical. The VRAM is the real prize: float16 plus a
+        # resident cleanup model fills the card, and a full card is what turns
+        # a 0.5 s decode into a 5 s one. float16 stays as the fallback for a
+        # driver that refuses the quantised kernels.
+        cuda = [("cuda", "int8_float16"), ("cuda", "float16")]
         if wanted == "cpu":
             return cpu
         if wanted == "cuda":
