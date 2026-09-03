@@ -272,3 +272,17 @@ def test_every_clipboard_handle_call_declares_its_signature():
         function = getattr(kernel32, name)
         assert function.argtypes is not None, f"{name} has no argtypes"
         assert function.restype is not None, f"{name} has no restype"
+
+
+def test_a_probe_windows_would_not_send_reports_failure(monkeypatch):
+    """Windows refuses SendInput while a UAC prompt is up or a full-screen
+    game has input blocked. The caller reinstalls the keyboard hook when a
+    probe goes unanswered, so "I could not send it" and "nobody answered"
+    must not look the same."""
+    from fortunevoice import winapi
+
+    monkeypatch.setattr(winapi.user32, "SendInput", lambda count, array, size: 0)
+    assert winapi.tap_probe_key() is False
+
+    monkeypatch.setattr(winapi.user32, "SendInput", lambda count, array, size: 2)
+    assert winapi.tap_probe_key() is True

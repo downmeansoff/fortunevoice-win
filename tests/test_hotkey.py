@@ -283,7 +283,8 @@ def test_a_hook_that_ignores_its_own_probe_is_reinstalled(monkeypatch):
 
     listener = _listener(monkeypatch)
     probes = []
-    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: bool(probes.append(1)) or True)
     # Somebody is at the machine: the probe is real input, and it is
     # only sent when the system has seen activity our hook did not.
     # Without this the test asks the real desktop and passes or fails
@@ -346,7 +347,8 @@ def test_a_recently_used_hook_is_not_probed(monkeypatch):
 
     listener = _listener(monkeypatch)
     probes = []
-    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: bool(probes.append(1)) or True)
     listener._last_seen = time.monotonic()
 
     listener._check_still_hooked()
@@ -402,7 +404,8 @@ def test_an_idle_machine_is_never_probed(monkeypatch):
     from fortunevoice import hotkey as H
 
     probes = []
-    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: bool(probes.append(1)) or True)
     listener = _deaf_listener(monkeypatch, idle_ms=600_000.0)
 
     listener._check_still_hooked()
@@ -417,7 +420,8 @@ def test_a_machine_in_use_is_probed(monkeypatch):
     from fortunevoice import hotkey as H
 
     probes = []
-    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: bool(probes.append(1)) or True)
     listener = _deaf_listener(monkeypatch, idle_ms=300.0)
 
     listener._check_still_hooked()
@@ -433,7 +437,8 @@ def test_the_probe_does_not_answer_its_own_question(monkeypatch):
     from fortunevoice import hotkey as H
 
     probes = []
-    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: probes.append(1))
+    monkeypatch.setattr(H.winapi, "tap_probe_key",
+                        lambda: bool(probes.append(1)) or True)
     listener = _deaf_listener(monkeypatch, idle_ms=300.0, sent_ago=1.0)
 
     listener._check_still_hooked()
@@ -493,3 +498,22 @@ def test_a_genuinely_lost_release_is_still_recovered(monkeypatch):
 
     assert released == [1]
     assert listener._held is False
+
+
+def test_a_probe_windows_refused_is_not_evidence(monkeypatch):
+    """Windows refuses SendInput while a UAC prompt is up, or a full-screen
+    game has input blocked. A probe that never went out cannot be answered,
+    and reading that silence as a dead hook reinstalls it every twenty seconds
+    for as long as the refusal lasts."""
+    from fortunevoice import hotkey as H
+
+    listener = _deaf_listener(monkeypatch, idle_ms=300.0)
+    monkeypatch.setattr(H.winapi, "tap_probe_key", lambda: False)
+
+    listener._check_still_hooked()
+
+    assert listener._probe_at == 0.0, "nothing to wait for an answer to"
+
+    # And the next tick must not read the absent answer as a dead hook.
+    listener._check_still_hooked()
+    assert listener._reinstall is False

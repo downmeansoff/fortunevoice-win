@@ -466,6 +466,21 @@ def _is_safe(before: str, after: str) -> bool:
     return True
 
 
+def _device_options(options: dict) -> dict:
+    """`options` with the chosen device applied.
+
+    Every request has to carry it, warmup included: priming loads the
+    model, and priming without this pulled 1.9 GB onto the card the user
+    had just told the app to leave alone — the setting appeared to work
+    while the memory went exactly where it was not wanted.
+    """
+    if config.get_str("FVCleanupDevice").lower() == "cpu":
+        # Ollama reads num_gpu as "layers to offload"; zero keeps the
+        # whole model in system memory and leaves the card to Whisper.
+        return {**options, "num_gpu": 0}
+    return options
+
+
 class OllamaCleaner:
     def __init__(self) -> None:
         # Stats of the most recent clean() call, for metrics.
@@ -758,12 +773,8 @@ class OllamaCleaner:
             # num_predict -1 = generate until the model naturally stops. A fixed
             # cap here silently TRUNCATED the cleanup of long dictations — the
             # exact "the end is missing" bug. Never cap real output.
-            "options": {"temperature": 0.2, "num_predict": -1},
+            "options": _device_options({"temperature": 0.2, "num_predict": -1}),
         }
-        if config.get_str("FVCleanupDevice").lower() == "cpu":
-            # Ollama reads num_gpu as "layers to offload"; zero keeps the whole
-            # model in system memory and leaves the card to Whisper.
-            body["options"]["num_gpu"] = 0
         try:
             payload = self._post(body, timeout=20)
         except Exception as exc:  # noqa: BLE001 - any failure degrades to raw
@@ -785,7 +796,7 @@ class OllamaCleaner:
             "stream": False,
             "keep_alive": keep_alive(),
             # num_predict 0: evaluate (and cache) the prompt, generate nothing.
-            "options": {"temperature": 0, "num_predict": 0},
+            "options": _device_options({"temperature": 0, "num_predict": 0}),
         }
         try:
             return self._post(body, timeout=60) is not None
