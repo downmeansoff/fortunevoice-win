@@ -478,6 +478,12 @@ class App:
             return
         if self.state in (State.LOADING, State.ERROR):
             self._set_state(State.IDLE)
+            # A press made while this load was running is waiting. Startup is
+            # exactly when it happens: autostart puts the app in LOADING at
+            # login, and a user who reaches for the hotkey in that window got
+            # silence — no recording, no error, nothing in the log after
+            # "hotkey DOWN (state = loading)".
+            self._resume_pending_press(self.PENDING_LOAD_PRESS_MAX_AGE)
 
     def reload_model(self) -> None:
         """Drop the model, then load whatever the settings now name.
@@ -1022,7 +1028,13 @@ class App:
     # worse than having dropped the press.
     PENDING_PRESS_MAX_AGE = 4.0
 
-    def _resume_pending_press(self) -> None:
+    # The same for a press that was waiting on a model load, where the wait is
+    # not a hiccup but a known cost: 8.5 s cold and ~5 s warm on this machine.
+    # Four seconds would throw away every press made during startup, which is
+    # the one moment the app is guaranteed to be loading.
+    PENDING_LOAD_PRESS_MAX_AGE = 15.0
+
+    def _resume_pending_press(self, max_age: float | None = None) -> None:
         """Start the dictation whose press arrived while we were busy.
 
         Only while the key is still down: a press-and-release during the wait
@@ -1032,7 +1044,7 @@ class App:
         pending, self._pending_press = self._pending_press, 0.0
         if not pending or self.state is not State.IDLE:
             return
-        if time.monotonic() - pending > self.PENDING_PRESS_MAX_AGE:
+        if time.monotonic() - pending > (max_age or self.PENDING_PRESS_MAX_AGE):
             return
         listener = self._listener
         if listener is None or not getattr(listener, "_held", False):

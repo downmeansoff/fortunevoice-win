@@ -724,6 +724,53 @@ def test_the_key_down_reload_does_not_announce_over_the_recording(app, monkeypat
     assert app.state is State.RECORDING, "the reload must run underneath the recording"
 
 
+def test_a_press_made_while_the_model_loads_is_not_lost(app, monkeypatch):
+    """From the real log, one login on 2026-09-04:
+
+        00:38:17 hotkey DOWN (state = loading)
+        00:38:24 loaded large-v3-turbo on cuda/int8_float16 in 8.0s
+        00:38:25 press ended by key-up
+
+    Nothing between them: no recording, no transcript, no error. The press was
+    remembered but only `_finish_pipeline` ever looked, and that runs for
+    PROCESSING, never for a load. Startup is precisely when a user presses
+    into a loading app, so this was the lost first dictation after a reboot."""
+    monkeypatch.setattr(app.transcriber, "load",
+                        lambda: setattr(app.transcriber, "_model", object()))
+    app._set_state(State.LOADING)
+    app._pending_press = app_module.time.monotonic() - 8  # past the 4 s cap
+
+    class Held:
+        _held = True
+
+    app._listener = Held()
+
+    app._load_model(announce=False)
+
+    assert app.state is State.IDLE
+    queued = [app._events.get_nowait() for _ in range(app._events.qsize())]
+    assert [kind for kind, _stamp in queued] == ["press"], queued
+
+
+def test_a_press_abandoned_during_a_load_is_still_dropped(app, monkeypatch):
+    """The longer wait is for a key still held, not a licence to start
+    recording minutes later."""
+    monkeypatch.setattr(app.transcriber, "load",
+                        lambda: setattr(app.transcriber, "_model", object()))
+    app._set_state(State.LOADING)
+    app._pending_press = app_module.time.monotonic() - 60
+
+    class Held:
+        _held = True
+
+    app._listener = Held()
+
+    app._load_model(announce=False)
+
+    queued = [app._events.get_nowait() for _ in range(app._events.qsize())]
+    assert queued == []
+
+
 def test_a_successful_retry_leaves_the_error_state(app, monkeypatch):
     """The tray's "Retry model" loaded the model and then left the app in
     ERROR — where the hotkey is gated — so the only real fix was a restart."""
