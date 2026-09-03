@@ -395,3 +395,49 @@ def test_the_shortcut_row_shows_the_same_spelling_as_the_masthead(root):
 
     assert parse("ctrl+alt+space").label in drawn, drawn
     assert "ctrl+alt+space" not in drawn, "the raw config string is not a label"
+
+
+# -- switching tabs must not rebuild a list that has not changed ---------
+
+
+def test_switching_back_to_history_does_not_rebuild_it(window, root):
+    """`_select` calls the page refresh every time, and the history refresh
+    destroys every card and builds them all again -- one canvas-backed row per
+    dictation. The usual case is that nothing changed: the user is moving
+    between tabs, not dictating."""
+    from fortunevoice import metrics
+    from fortunevoice.store import DictationRecord
+
+    for index in range(5):
+        window._store.add(DictationRecord(
+            date=metrics.now(), words=3, duration=1.0, app="Code.exe",
+            transcript=f"строка номер {index}"))
+    window._select("History")
+    root.update()
+    drawn = window._history_body.winfo_children()
+    assert drawn, "precondition: the list has rows"
+
+    window._select("Settings")
+    root.update()
+    window._select("History")
+    root.update()
+
+    # The same widget objects, not rebuilt ones.
+    assert window._history_body.winfo_children() == drawn
+
+
+def test_a_new_dictation_still_redraws_the_list(window, root):
+    from fortunevoice import metrics
+    from fortunevoice.store import DictationRecord
+
+    window._select("History")
+    root.update()
+    before = window._history_body.winfo_children()
+
+    window._store.add(DictationRecord(
+        date=metrics.now(), words=2, duration=1.0, app="Code.exe",
+        transcript="совершенно новая запись"))
+    window._refresh_history()
+    root.update()
+
+    assert window._history_body.winfo_children() != before
