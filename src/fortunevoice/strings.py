@@ -355,6 +355,16 @@ CATALOGUE: dict[str, dict[str, str]] = {
                             "ru": "FortuneVoice не смог загрузить модель"},
     "notify.no_audio": {"en": "FortuneVoice can't hear you",
                         "ru": "FortuneVoice вас не слышит"},
+    "notify.silence": {"en": "Nothing was recorded",
+                       "ru": "Записывать было нечего"},
+    "notify.silence_muted": {
+        "en": "The microphone sent pure silence. Check that it is not muted and "
+              "that Windows is listening to the right input device.",
+        "ru": "Микрофон отдал полную тишину. Проверьте, не выключен ли он и тот "
+              "ли вход слушает Windows."},
+    "notify.silence_quiet": {
+        "en": "Only room noise came through. The dictation is in History, untyped.",
+        "ru": "Пришёл только шум комнаты. Диктовка лежит в истории, не напечатана."},
     "notify.recovered": {"en": "Recovered — saved to History",
                          "ru": "Восстановлено — сохранено в историю"},
 

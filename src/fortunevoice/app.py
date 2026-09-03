@@ -47,6 +47,12 @@ logger = get_logger("app")
 
 SAMPLE_RATE = 16_000
 
+# Below this RMS the microphone sent digital zero rather than a quiet room.
+# Measured on this machine: a muted or wrong input device logs 0.00001, while
+# a genuinely silent room still carries 0.0002-0.0009 of noise floor. The two
+# have different fixes, so the "nothing was recorded" message tells them apart.
+_DEAD_MIC_RMS = 0.0001
+
 
 def decide_delivery(*, stale: bool, focus_held: bool, editable: bool | None) -> str:
     """Where does this transcript go — into the app, or into the panel?
@@ -957,6 +963,17 @@ class App:
                     )
                 )
                 sound.play("error")
+                # Say so. Dropping the text without a word is the one outcome
+                # that looks identical to the app being broken: the user held
+                # the key, spoke, and nothing arrived. Digital silence (a muted
+                # microphone, or Windows listening to the wrong input) reads
+                # very differently from a room that was merely quiet, so the
+                # message names which one it was.
+                self._notify(
+                    t("notify.silence"),
+                    t("notify.silence_muted") if audio_level < _DEAD_MIC_RMS
+                    else t("notify.silence_quiet"),
+                )
                 self._record_drop("silence", raw_text, audio_seconds, stt_ms, key_up,
                                   stream_passes, result)
                 return
