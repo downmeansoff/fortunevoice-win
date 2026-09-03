@@ -31,8 +31,8 @@ def _rows(pairs, model=None, **extra):
     """Metric rows the fit will accept.
 
     `cleanup_model` is required now: `model` in a metric is the WHISPER model,
-    so without this the fit pooled runs from different cleanup models — 1141 ms
-    against 656 ms on the same text — and fitted a line through both.
+    so without this the fit pooled runs from different cleanup models (1141 ms
+    against 656 ms on the same text), and fitted a line through both.
     """
     from fortunevoice import config
 
@@ -64,7 +64,7 @@ def test_fit_learns_this_machines_cost(monkeypatch):
 
 def test_fit_is_floored(monkeypatch):
     """A run of cache-hot samples can regress to a near-zero intercept. Trusting
-    it would clear work the budget cannot actually afford — the exact waste the
+    it would clear work the budget cannot actually afford: the exact waste the
     predictor exists to prevent."""
     pairs = [(chars, 5 + chars * 0.9) for chars in range(20, 200, 10)]
     monkeypatch.setattr(cleaner, "metrics", _FakeMetrics(_rows(pairs)), raising=False)
@@ -170,7 +170,7 @@ def test_geometry_drops_a_position_on_a_vanished_monitor(monkeypatch):
 def test_invented_content_is_rejected():
     """The failure this exists for, measured on this machine: qwen2.5:1.5b
     turned one sentence into a different one of the same length. The 35% guard
-    only catches deletion, so substitution went straight through it — and
+    only catches deletion, so substitution went straight through it, and
     substitution is worse, because the app types it."""
     said = "Ну это самое, короче, надо бы проверить, как работает диктовка."
     invented = "Ну это самое, короче, нужно правильно это писать."
@@ -191,7 +191,7 @@ def test_invented_content_is_rejected():
 ])
 def test_legitimate_edits_pass(said, cleaned, why):
     """Every edit the cleanup is *supposed* to make, including Russian
-    inflection and the ё that Whisper drops — the guard compares stems so a
+    inflection and the ё that Whisper drops: the guard compares stems so a
     changed ending does not read as invention."""
     assert cleaner._no_invented_content(said, cleaned) is True, why
 
@@ -203,7 +203,7 @@ def test_guard_ignores_a_short_answer():
 
 
 def test_the_fit_ignores_a_different_cleanup_model(monkeypatch):
-    """Switching model changes the cost outright — measured here, gemma3:4b at
+    """Switching model changes the cost outright: measured here, gemma3:4b at
     1141 ms against qwen2.5:3b at 656 ms on the same sentence. Fitting across
     the change describes neither."""
     from fortunevoice import config

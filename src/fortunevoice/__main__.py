@@ -1,6 +1,6 @@
 """Entry point: `python -m fortunevoice`.
 
-Subcommands exist for the things that are otherwise invisible in a tray app —
+Subcommands exist for the things that are otherwise invisible in a tray app:
 checking that the machine can actually run this, and reading back the timings
 the app records.
 """
@@ -69,7 +69,7 @@ def _already_running() -> None:
     """Say so visibly.
 
     Launched from a shortcut there is no console to print to, so a silent exit
-    looks exactly like the app failing to start — and the user double-clicks
+    looks exactly like the app failing to start, and the user double-clicks
     again, and again.
     """
     import ctypes

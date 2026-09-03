@@ -18,7 +18,7 @@ def test_set_persists_and_reloads():
 
 
 def test_only_non_defaults_are_written():
-    """A value the user never touched must not be frozen into their config —
+    """A value the user never touched must not be frozen into their config;
     otherwise a future default change would never reach them."""
     config.set("FVLanguage", "en")
     stored = paths.config_file().read_text(encoding="utf-8")
@@ -41,7 +41,7 @@ def test_an_unreadable_file_does_not_erase_the_other_settings():
     """Reported as "my shortcut keeps going back to ctrl+alt+space".
 
     `set()` rewrites the whole file from what it believes the settings are.
-    After a failed read that belief used to be DEFAULTS alone — so one corrupt
+    After a failed read that belief used to be DEFAULTS alone, so one corrupt
     or briefly locked file, plus any later change, silently reset every setting
     the user had made. ctrl+alt+space is simply the default hotkey, which is
     why that is the value they saw come back.
@@ -80,7 +80,7 @@ def test_toggle():
 def test_a_zero_length_config_does_not_erase_the_settings():
     """What an abrupt power-off leaves behind: the rename went through, the
     contents never reached the platter. `set()` now fsyncs before renaming so
-    this should not happen — but if it does, the settings must still survive.
+    this should not happen, but if it does, the settings must still survive.
     """
     config.set("FVHotkey", "ctrl+alt")
     paths.config_file().write_text("", encoding="utf-8")
@@ -125,7 +125,7 @@ def test_the_write_is_flushed_before_the_rename(monkeypatch):
 
 def test_two_threads_writing_different_settings_keep_both():
     """`set()` is a read-modify-write of the whole file. Without a lock across
-    it, two threads each read, change their own key and write the lot back —
+    it, two threads each read, change their own key and write the lot back,
     and the second write silently drops the first one's change. Not
     theoretical: the tray sets the microphone, the window saves its geometry as
     it closes, and the app writes FVOnboarded, all from different threads."""

@@ -39,7 +39,7 @@ def test_an_unknown_app_falls_through():
 
 def test_only_per_dictation_settings_can_be_overridden():
     """A profile able to change anything would be a config file pointing the
-    app at a different Ollama host depending on which window is in front —
+    app at a different Ollama host depending on which window is in front,
     surprising in the specific way that makes a bug impossible to find."""
     config.set("FVAppProfiles", {"Code.exe": {
         "FVCleanupEnabled": False,      # allowed

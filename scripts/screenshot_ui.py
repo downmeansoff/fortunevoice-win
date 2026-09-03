@@ -33,7 +33,7 @@ winapi.set_dpi_awareness()
 from fortunevoice.store import DictationRecord, DictationStore  # noqa: E402
 
 SAMPLES = [
-    ("Code.exe", "Проверь, пожалуйста, последний коммит — там поменялась логика подписки."),
+    ("Code.exe", "Проверь, пожалуйста, последний коммит: там поменялась логика подписки."),
     ("Telegram.exe", "Привет! Сегодня встречаемся в семь, я забронировал столик на четверых."),
     ("chrome.exe", "Напомни мне купить билеты на поезд до Самары на пятницу."),
     ("Code.exe", "Добавь тест на то, что настройка переживает перезапуск приложения."),
@@ -63,8 +63,8 @@ PAGES = [("History", "01-history"), ("Insights", "02-insights"),
 def capture(window, name: str) -> None:
     """Ask the window to draw itself into a bitmap.
 
-    Not a screen grab: this process cannot take the foreground — Windows
-    refuses it to a process that was not the last to receive input — so
+    Not a screen grab: this process cannot take the foreground (Windows
+    refuses it to a process that was not the last to receive input), so
     grabbing the screen region captured whatever happened to be in front.
     PrintWindow asks the window itself, and works while it is behind others.
     """
@@ -80,7 +80,7 @@ def capture(window, name: str) -> None:
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
     # Declared, all of them. ctypes passes an undeclared argument as C int, so
-    # a 64-bit DC or bitmap handle is truncated on the way in — which is the
+    # a 64-bit DC or bitmap handle is truncated on the way in, which is the
     # same defect this project has now fixed twice in its own Win32 code.
     user32.GetWindowDC.argtypes = (wintypes.HWND,)
     user32.GetWindowDC.restype = wintypes.HDC

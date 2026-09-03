@@ -24,7 +24,7 @@ def no_real_ollama(monkeypatch):
     """A test run must not launch Ollama.
 
     `cleaner.warmup()` starts it when the port is quiet, and the startup
-    budget is 60 s — so the moment warmup appeared in a test the suite went
+    budget is 60 s, so the moment warmup appeared in a test the suite went
     from 6 s to 65 s and left a real Ollama process behind. Reporting "not
     installed" makes `ensure_running()` give up at once.
 
@@ -41,8 +41,8 @@ def no_real_model_download(request, monkeypatch):
 
     Whisper is loaded from a background thread, and with nothing cached that
     is a multi-gigabyte download from Hugging Face. It surfaced as a stray SSL
-    error in the middle of an otherwise green suite — reported under whichever
-    test happened to be running when the leaked thread got there — and on a
+    error in the middle of an otherwise green suite, reported under whichever
+    test happened to be running when the leaked thread got there, and on a
     machine with no cached model it would be a test run that hangs for
     minutes.
 

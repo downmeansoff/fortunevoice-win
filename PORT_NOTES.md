@@ -17,7 +17,7 @@ Nothing in the macOS app runs on Windows:
 
 The Swift toolchain does exist on Windows, but without AppKit or CoreML it
 would buy nothing: roughly 85% of the 4 771 lines are platform surface. What
-is genuinely portable is the *design* — and it is the design, not the Swift,
+is genuinely portable is the *design*, and it is the design, not the Swift,
 that took three iterations to get right upstream.
 
 ## Module map
@@ -31,19 +31,19 @@ that took three iterations to get right upstream.
 | `StreamingSession.swift` | `streaming.py` | algorithm identical; Swift actors → threads |
 | `Timeout.swift` | `timeout.py` | same abandon-don't-kill semantics |
 | `SerialGate` (in `Transcriber.swift`) | `transcriber.SerialGate` | same bounded-wait FIFO, `Condition` instead of continuations |
-| `Transcriber.swift` | `transcriber.py` | **rebuilt** — WhisperKit → faster-whisper |
-| `AudioRecorder.swift` | `audio.py` | **rebuilt** — AVAudioEngine → PortAudio |
-| `TextInjector.swift` | `injector.py` | **rebuilt** — CGEvent → SendInput |
-| `AppDelegate.swift` (hotkey half) | `hotkey.py` | **rebuilt** — `KeyboardShortcuts` → `WH_KEYBOARD_LL` |
+| `Transcriber.swift` | `transcriber.py` | **rebuilt**: WhisperKit → faster-whisper |
+| `AudioRecorder.swift` | `audio.py` | **rebuilt**: AVAudioEngine → PortAudio |
+| `TextInjector.swift` | `injector.py` | **rebuilt**: CGEvent → SendInput |
+| `AppDelegate.swift` (hotkey half) | `hotkey.py` | **rebuilt**: `KeyboardShortcuts` → `WH_KEYBOARD_LL` |
 | `AppDelegate.swift` (state machine) | `app.py` | structure and every constant preserved |
-| `AppDelegate.swift` (menubar) | `tray.py` | **rebuilt** — `NSStatusItem` → pystray |
+| `AppDelegate.swift` (menubar) | `tray.py` | **rebuilt**: `NSStatusItem` → pystray |
 | `DictationStore` / `RecoveryStore` | `store.py` | same formats, same vault-first ordering |
 | `DictationStats.swift` | `stats.py` | line-for-line |
 | `Metrics.swift` | `metrics.py` | same field names, so both ports' numbers compare |
-| `MainWindow` / `ResultPanel` / `Onboarding` / `Glass` / `RecordingPill` / `SpectrumAnalyzer` | — | **not ported**; see "Deliberately dropped" |
-| — | `doctor.py` | **new**; Windows needs it, see below |
-| — | `config.py` | **new**; replaces `defaults write` |
-| — | `winapi.py` | **new**; shared ctypes declarations |
+| `MainWindow` / `ResultPanel` / `Onboarding` / `Glass` / `RecordingPill` / `SpectrumAnalyzer` | - | **not ported**; see "Deliberately dropped" |
+| - | `doctor.py` | **new**; Windows needs it, see below |
+| - | `config.py` | **new**; replaces `defaults write` |
+| - | `winapi.py` | **new**; shared ctypes declarations |
 
 ## Behaviour carried over unchanged
 
@@ -75,14 +75,14 @@ enqueues, times itself, and reinstalls the hook if it ever runs long), and our
 own synthesized keystrokes come back through the hook (so `LLKHF_INJECTED`
 events are passed straight through).
 
-**Default chord.** Upstream's ⌥Space is Alt+Space on Windows — the system
+**Default chord.** Upstream's ⌥Space is Alt+Space on Windows: the system
 window menu. Swallowing it globally breaks a real OS shortcut, and a lone
 Alt-release activates the menu bar in Win32 apps. Default is `Ctrl+Alt+Space`;
 `FVHotkey` accepts anything else, including single keys like `f9` or `rctrl`.
 
 **Held modifiers.** macOS cleared the flags on its synthetic events. Windows
 keeps global modifier state, and users release the trigger key before the
-modifiers — so every typed character would arrive as a shortcut. `injector.py`
+modifiers, so every typed character would arrive as a shortcut. `injector.py`
 synthesizes key-ups for whatever is still held before typing.
 
 **Newlines and surrogate pairs.** `KEYEVENTF_UNICODE` with U+000A does nothing
@@ -109,12 +109,12 @@ greedy decode; the temperature fallback list and the tightened
 is **off**, because it is the biggest amplifier of repetition loops in
 faster-whisper and dictation windows are short enough not to need it.
 `vad_filter` is off so the streaming session's own RMS silence logic stays
-authoritative — a second VAD would move the timestamps it cuts on.
+authoritative; a second VAD would move the timestamps it cuts on.
 
 **Audio.** We ask the device for 16 kHz and let the Windows audio engine
 resample, which works on essentially every modern machine. When a device
-refuses, `audio._downsample` decimates from the native rate with a box filter
-— crude, but the anti-aliasing is what matters and Whisper's front end
+refuses, `audio._downsample` decimates from the native rate with a box filter,
+which is crude, but the anti-aliasing is what matters and Whisper's front end
 discards everything above 8 kHz anyway.
 
 **Threading.** Swift's `@MainActor` + `async` becomes: the hook thread
@@ -127,14 +127,14 @@ dropped so a queued press can't start a recording the user abandoned.
 
 The AppKit/SwiftUI surface was dropped in the first pass and rebuilt after: an
 app whose only feedback was a tray colour gave no way to tell "listening" from
-"crashed". All of it is tkinter, which ships with Python — no extra wheel, and
+"crashed". All of it is tkinter, which ships with Python: no extra wheel, and
 nothing to install on a machine that is already running the app.
 
 **Two GUI loops in one process.** pystray runs a Win32 message loop and wants
 the main thread; Tk wants a `mainloop` of its own. Tk gets a dedicated thread
 (`ui/__init__.py`), and every widget in the package lives on it. Callers hand
 a callable to `ui.call()`; nothing outside that module touches a Tk object.
-Tkinter is not thread-safe and breaking the rule does not raise — it corrupts
+Tkinter is not thread-safe and breaking the rule does not raise; it corrupts
 the interpreter and crashes minutes later somewhere unrelated.
 
 **The overlay must not take focus.** This is the detail the whole pill depends
@@ -147,7 +147,7 @@ app underneath.
 
 **Rounded corners** come from Tk's `-transparentcolor`: the capsule is drawn
 on a chroma-key background that Windows turns into a hole. The waveform is a
-scrolling history of per-block RMS — the app has no spectrum analyser, and a
+scrolling history of per-block RMS: the app has no spectrum analyser, and a
 scrolling level history is an honest picture of what it does have.
 
 **ttk is avoided throughout.** On Windows the native theme engine overrides
@@ -161,7 +161,7 @@ chips, and the rounded cards.
 hosts an ordinary Frame inset far enough that the Frame's square corners never
 poke through the drawn ones. It auto-sizes from the content's requested
 height, because a Canvas otherwise has no idea what is inside it and falls
-back to its 7 cm default — which is what a "why is every history card 250 px
+back to its 7 cm default, which is what a "why is every history card 250 px
 tall" bug looks like.
 
 **Glyphs are drawn in code** (`ui/icons.py`). SF Symbols have no Windows
@@ -212,13 +212,13 @@ the mark is reviewable in a diff.
 
 Pillow's ICO writer silently discards any requested size larger than the image
 being saved. Building the file from the 16 px render therefore produced a
-one-frame icon that Explorer upscaled — a blurry desktop icon with no error
+one-frame icon that Explorer upscaled: a blurry desktop icon with no error
 anywhere. The base has to be the largest frame; `tests/test_assets.py` pins it.
 
 ## Added
 
 **`python -m fortunevoice doctor`.** macOS surfaced failures through system
-permission dialogs. Windows fails silently — no mic, a CUDA runtime that won't
+permission dialogs. Windows fails silently: no mic, a CUDA runtime that won't
 load, a model that never downloaded, Ollama not running, a typo in `FVHotkey`.
 The doctor checks all five, including an actual one-second recording, because
 device enumeration succeeding says nothing about a device another app holds
@@ -235,13 +235,13 @@ Measured on an RTX 3060 Laptop (6 GB), Windows 11, Python 3.11,
 
 | Check | Result |
 |---|---|
-| Model load (cached) | 4.5–5.6 s |
-| Batch decode, 10.6 s of Russian | 875 ms — 12x realtime, avg logprob −0.11 |
-| Batch decode, 7.0 s of English | 375 ms — 19x realtime |
-| Streaming key-up decode, same 10.6 s clip | 438 ms after 6 passes — **half** the batch latency, byte-identical text |
-| Streaming key-up decode, 7.0 s clip | 391 ms after 3 passes — no gain over batch, which is why the first pass is delayed 3 s |
+| Model load (cached) | 4.5-5.6 s |
+| Batch decode, 10.6 s of Russian | 875 ms (12x realtime, avg logprob −0.11) |
+| Batch decode, 7.0 s of English | 375 ms (19x realtime) |
+| Streaming key-up decode, same 10.6 s clip | 438 ms after 6 passes: **half** the batch latency, byte-identical text |
+| Streaming key-up decode, 7.0 s clip | 391 ms after 3 passes: no gain over batch, which is why the first pass is delayed 3 s |
 | Microphone capture | 19 devices enumerated, 1 s captured at 16 kHz |
-| SendInput | ASCII, Cyrillic, mixed, punctuation, an emoji surrogate pair, an embedded newline, and a 200-char burst — all round-tripped exactly |
+| SendInput | ASCII, Cyrillic, mixed, punctuation, an emoji surrogate pair, an embedded newline, and a 200-char burst: all round-tripped exactly |
 | Offline test suite | 90 passed |
 
 Speech for the decode checks came from Windows SAPI (Irina ru-RU, Zira
@@ -260,20 +260,20 @@ than typing when it does not.
 
 The app itself is not exposed to this: it types only into the window that was
 already in front when the user pressed the hotkey, and `app._deliver` rechecks
-that the same window still holds focus — with a 500 ms settle for transient
-popups — before typing anything.
+that the same window still holds focus (with a 500 ms settle for transient
+popups) before typing anything.
 
 ## Measured: the cleanup pass, and why it is worth distrusting here
 
 Ollama 0.32.5 with `gemma3:4b` (Q4_K_M) on the same box. The **mechanism** is
-healthy — the transport, the budget, the safety nets all behave:
+healthy, and the transport, the budget, the safety nets all behave:
 
 | | |
 |---|---|
-| Round-trip, 40–124 chars | 578–1094 ms, i.e. **under** the ported `900 + 6.25·chars` prediction in 5 of 5 runs |
-| 124-char sample against the real 1.5 s budget | declined up front (`over_budget=1`, 0 ms spent) — exactly the waste the predictor exists to prevent |
+| Round-trip, 40-124 chars | 578-1094 ms, i.e. **under** the ported `900 + 6.25·chars` prediction in 5 of 5 runs |
+| 124-char sample against the real 1.5 s budget | declined up front (`over_budget=1`, 0 ms spent), exactly the waste the predictor exists to prevent |
 | 35% word-drop safety net | fired twice on a 6→2-word rewrite and kept the raw text |
-| Cold model load during `warmup()` | **over 120 s**. `keep_alive` is 24h so it happens once, but the first dictation after a reboot gets raw text — which is the designed degradation, not a bug |
+| Cold model load during `warmup()` | **over 120 s**. `keep_alive` is 24h so it happens once, but the first dictation after a reboot gets raw text, which is the designed degradation, not a bug |
 
 The **output quality** is a different story. Three runs per prompt on Russian
 samples:
@@ -281,20 +281,20 @@ samples:
 | Sample | mini prompt (< 25 words) | full prompt |
 |---|---|---|
 | `ну я это, короче, хотел сказать…` | 3/3 edited, removed only «короче» | 3/3 edited, but emitted a leading `- ` bullet |
-| `нужно правильно это правильно писать…` | **0/3** — stumble not collapsed | 3/3 collapsed correctly, but emitted a leading `— ` |
-| `сделай кнопку синим, нет, красным` | **0/3** — self-correction not applied | 1/3 |
-| `Завтра встреча в десять утра.` (already clean) | 0/3 — correctly untouched | **3/3 changed it into a question** |
+| `нужно правильно это правильно писать…` | **0/3**, stumble not collapsed | 3/3 collapsed correctly, but emitted a leading em dash |
+| `сделай кнопку синим, нет, красным` | **0/3**, self-correction not applied | 1/3 |
+| `Завтра встреча в десять утра.` (already clean) | 0/3, correctly untouched | **3/3 changed it into a question** |
 
 So on this model: the mini prompt is *safe but weak* (it no-ops rather than
-mangles), and the full prompt is *actively unsafe* — the list rule leaks a
-stray `- `/`— ` onto the front of ordinary prose, and the punctuation rule
+mangles), and the full prompt is *actively unsafe*: the list rule leaks a
+stray `- ` or em dash onto the front of ordinary prose, and the punctuation rule
 turned a statement into a question. Turning clean text into a question is
 worse than doing nothing at all.
 
 Because dictations under 25 words take the mini path, the shipped defaults sit
 in the safe regime. Longer ones do not.
 
-This is a **model** finding, not a port bug — the prompts are byte-identical
+This is a **model** finding, not a port bug; the prompts are byte-identical
 to upstream's.
 
 ### Head to head against qwen2.5:3b
@@ -314,7 +314,7 @@ text (leading bullet/dash, meaning change, already-clean text rewritten).
 (`нужно правильно это правильно писать` → `нужно правильно это писать`, keeping
 the ё), applies the self-correction, removes the English filler, and never
 emits a stray leading dash. Its two harms are one run in three that
-lower-cased the opening word — a capitalisation flake, not a meaning change.
+lower-cased the opening word, a capitalisation flake, not a meaning change.
 It is also 2.4x faster and 1.9 GB against 3.3 GB, which matters on a 6 GB card
 that is already holding Whisper.
 
@@ -333,9 +333,9 @@ Not a recommendation to trust it blindly. Through the real `clean()` path at
 the app's 1.5 s budget:
 
 - `ну я это, короче, хотел сказать что завтра встреча` →
-  `я хотел сказать, что завтра есть встреча` — **invented «есть»**, which the
+  `я хотел сказать, что завтра есть встреча`: **invented «есть»**, which the
   prompt explicitly forbids.
-- `сделай кнопку синим, нет, красным цветом` → `сделай красным цветом` — the
+- `сделай кнопку синим, нет, красным цветом` → `сделай красным цветом`: the
   self-correction is right but **«кнопку» was dropped**. Six words to three is
   a 50% loss, and it slipped past the 35% safety net by exactly one word:
   the guard is `clean < int(raw * 0.65)`, and `3 < int(3.9)` is `3 < 3`, false.
@@ -352,7 +352,7 @@ this reason.
 `predicted_ms = 900 + 6.25·chars` was fitted against live gemma3:4b runs on
 Apple silicon. qwen2.5:3b answers in ~280 ms where the model predicts 1200+.
 With the 1.5 s budget that means **anything past ~96 characters is declined up
-front** — the 124-char sample above spent 0 ms and returned raw, though qwen
+front**: the 124-char sample above spent 0 ms and returned raw, though qwen
 would have cleaned it in ~300 ms.
 
 Deliberately not refitted here: upstream's own comment warns that a synthetic
@@ -368,7 +368,7 @@ actual dictation, not from a loop like the one above.
   and including the decode is exercised above, but nobody has spoken into it.
 - **A cleanup model that actually suits these prompts.** Only `gemma3:4b` has
   been measured, and it is the one upstream benchmarked on Apple silicon.
-- **The CPU fallback rung** of the backend ladder — CUDA loaded first try, so
+- **The CPU fallback rung** of the backend ladder: CUDA loaded first try, so
   the `cpu/int8` path was never exercised end to end.
 - **Long dictations** near the 300 s cap, and the recovery flow after a real
   decode failure.
@@ -381,14 +381,14 @@ Things that are invisible when they work and confusing when they do not.
 per-user so two Windows accounts each get their own). Two copies is not a
 cosmetic problem: each installs its own low-level keyboard hook, so one press
 starts two recordings and the transcript is typed twice into the user's
-document. A second launch shows a message box and exits — silent would look
+document. A second launch shows a message box and exits; silent would look
 exactly like failing to start, and the user double-clicks again.
 
 **DPI awareness, set before any window exists.** Asking afterwards is ignored
 and Windows bitmap-stretches the whole UI: blurry text, blurry icons, and a
 pill that lands in the wrong place because the coordinates it reports are
 virtualised. `theme.px()` scales the layout constants and Tk's own `tk
-scaling` handles fonts. **Unverified at anything but 100%** — the only display
+scaling` handles fonts. **Unverified at anything but 100%**: the only display
 here is 100%.
 
 **The overlay follows the user.** Tk's `winfo_screenwidth/height` describe the
@@ -397,7 +397,7 @@ and even on one screen it ignored the taskbar. Both the pill and the result
 panel now position against the work area of the monitor holding the foreground
 window.
 
-**Esc cancels.** The audio is dropped without a decode — no transcript, no
+**Esc cancels.** The audio is dropped without a decode: no transcript, no
 history entry, nothing typed. Polled from the thread that already runs for the
 life of a recording, rather than through a second global hook, because another
 hook is another thing that can wedge the input queue. Deliberately the
@@ -405,7 +405,7 @@ opposite of the device-interrupted path, which *salvages*: there the user
 still wants their words.
 
 **The shortcut is recorded, not typed.** It is the one setting where a typo is
-invisible — a bad string parses into nothing, the hook never fires, and the
+invisible: a bad string parses into nothing, the hook never fires, and the
 app looks dead rather than misconfigured. Changing it rebinds the hook
 immediately, because a shortcut you cannot try until after a restart is one
 you cannot tell is wrong. Modifier state is read from the physical keyboard
@@ -416,7 +416,7 @@ differs between Tk builds.
 microphone list stores a *name fragment* rather than an index, because indices
 are reassigned as devices come and go and a saved index quietly starts
 pointing at a different microphone. The Ollama list shows only what is
-actually pulled — offering a model that is not installed produces a setting
+actually pulled: offering a model that is not installed produces a setting
 that looks applied and fails at the first dictation.
 
 ### The cost model now learns
@@ -424,13 +424,13 @@ that looks applied and fails at the first dictation.
 `predicted_ms` was the one number in the port fitted on hardware nobody here
 owns: gemma3:4b on Apple silicon, 900 + 6.25·chars. Measured against
 qwen2.5:3b on this 3060 it was so conservative that **nothing past ~96
-characters was ever attempted** — the budget declined work the machine could
+characters was ever attempted**: the budget declined work the machine could
 do in a third of the time.
 
 It now fits itself from `metrics.jsonl`, which has recorded `cleanup_ms` and
 `chars` per dictation since the first commit precisely so this could be done
 from real use rather than from a synthetic loop. Guards, because the failure
-direction is asymmetric — underestimating starts work that then runs past the
+direction is asymmetric: underestimating starts work that then runs past the
 deadline and is thrown away:
 
 - fewer than 12 recorded cleanups: keep the shipped fit,
@@ -448,12 +448,12 @@ unified memory and lots of it, so parking the cleanup model costs nothing. On a
 
 | | VRAM used / free | decode |
 |---|---|---|
-| qwen2.5:3b resident | 5925 / **72 MiB** | 5766 ms — 2.1x realtime |
-| qwen2.5:3b unloaded | 3828 / 2169 MiB | **563 ms — 21.2x realtime** |
+| qwen2.5:3b resident | 5925 / **72 MiB** | 5766 ms (2.1x realtime) |
+| qwen2.5:3b unloaded | 3828 / 2169 MiB | **563 ms (21.2x realtime)** |
 
 `large-v3-turbo` at float16 plus its CUDA context is ~3.8 GB; a resident
 qwen2.5:3b adds ~2.1 GB. Together that is 5.9 of 6 GB, and CUDA spends the
-difference thrashing. Nothing on screen explains it — dictation just feels
+difference thrashing. Nothing on screen explains it: dictation just feels
 slow, forever.
 
 It reproduces inside a single run: with the GPU free, decodes came back at
@@ -465,15 +465,15 @@ stays quiet.
 
 ### And the cleanup itself is not earning its keep
 
-Measured against Windows SAPI speech (a clean voice — an accuracy ceiling, not
+Measured against Windows SAPI speech (a clean voice, an accuracy ceiling, not
 a typical result), Whisper transcribed all five samples correctly. What
 qwen2.5:3b then did to them:
 
 | Said | Cleaned |
 |---|---|
-| `Ну это самое, короче, надо бы проверить…` | `ну ладно, нужно бы проверить…` — **invented «ну ладно»**, swapped «надо»→«нужно» |
-| `Сделай кнопку синим, нет, красным цветом.` | `сделай кнопку красным?` — right edit, but **became a question** and lost «цветом» |
-| `Нужно правильно это правильно писать…` | `нужно правильно это писать…` — correct |
+| `Ну это самое, короче, надо бы проверить…` | `ну ладно, нужно бы проверить…`: **invented «ну ладно»**, swapped «надо»→«нужно» |
+| `Сделай кнопку синим, нет, красным цветом.` | `сделай кнопку красным?`: right edit, but **became a question** and lost «цветом» |
+| `Нужно правильно это правильно писать…` | `нужно правильно это писать…`: correct |
 
 Plus a consistent lower-casing of the opening word. Two of three edits damaged
 the text, on top of the 10x decode tax.
@@ -481,23 +481,23 @@ the text, on top of the 10x decode tax.
 So on this machine cleanup is off (`FVCleanupEnabled`, `FVSmartFix` both
 false). Whisper already punctuates and capitalises; the LLM pass was removing
 value in both directions. Worth revisiting with a model that fits beside
-Whisper — qwen2.5:1.5b — rather than treating this as settled.
+Whisper (qwen2.5:1.5b) rather than treating this as settled.
 
 ## The DPI pass was half-done, and I could not see it
 
 Worth recording as a method failure, not just a bug.
 
-`theme.px()` scaled the structural constants — window size, sidebar width, card
+`theme.px()` scaled the structural constants: window size, sidebar width, card
 radius, row heights. It did **not** scale what widgets draw inside themselves:
 dropdown chip geometry, the app badges, icon sizes, the pill's label column.
-Meanwhile `tk scaling` made every font 25% larger. So on the target machine —
-a **125%** display — the text grew and the boxes around it did not. Chevrons
+Meanwhile `tk scaling` made every font 25% larger. So on the target machine
+(a **125%** display), the text grew and the boxes around it did not. Chevrons
 sat on top of the last word, icons looked undersized next to their labels, and
 the whole thing read as cheap.
 
 The reason it survived review is the more useful lesson: **every screenshot
-harness ran in a DPI-unaware process.** Windows virtualises those — they are
-told the display is 96 dpi no matter what it is — so every render I checked
+harness ran in a DPI-unaware process.** Windows virtualises those (they are
+told the display is 96 dpi no matter what it is), so every render I checked
 was a 100% render. `winapi.scale_factor()` called from such a process returns
 1.0 and looks like confirmation. The app itself calls `set_dpi_awareness()`
 in `__main__` and saw 1.25.
@@ -514,7 +514,7 @@ Two changes came out of it:
 ### The white title bar
 
 Tk styles the client area only, so a dark app gets the default Windows title
-bar on top of it — light, with the app's own dark surface starting one pixel
+bar on top of it: light, with the app's own dark surface starting one pixel
 below. It is the single most "unfinished" thing about the UI and it shows on
 every window at once.
 
@@ -540,7 +540,7 @@ drawn label is translated. A language change therefore cannot break which page
 a click opens.
 
 Changing it needs a restart, and says so. Half the strings are baked into
-module constants at import — the pill sizes itself from its longest label —
+module constants at import (the pill sizes itself from its longest label),
 so live re-translation would mean rebuilding every window.
 
 ## The cleanup model, settled
@@ -549,7 +549,7 @@ Three models measured on this 6 GB card, same clip, same Whisper instance:
 
 | Model | VRAM free with Whisper | Decode | Verdict |
 |---|---|---|---|
-| gemma3:4b | — | — | leaks stray `- `/`— ` into prose, rewrote a statement as a question |
+| gemma3:4b | - | - | leaks a stray `- ` or em dash into prose, rewrote a statement as a question |
 | qwen2.5:3b | **72 MiB** | 5766 ms (2.1x) | best edits, but **10x the decode cost** |
 | **qwen2.5:1.5b** | 420 MiB | **406 ms (29.5x)** | fits for free; edits are decent but it invented a sentence |
 
@@ -559,14 +559,14 @@ stopped being about speed and became about trust.
 ### The guard that made it usable
 
 The shipped 35% word-drop net only catches **deletion**. On the filler sample
-1.5b returned *"Ну это самое, короче, нужно правильно это писать"* — same
+1.5b returned *"Ну это самое, короче, нужно правильно это писать"*: same
 length, different sentence, straight past the guard, and the app would have
 typed it. Substitution is the worse failure and nothing caught it.
 
 `_no_invented_content` compares 4-character stems of the output against the
 input: more than 30% unfamiliar and the raw text wins. Stems, not whole words,
 so Russian inflection and the ё Whisper drops don't read as invention. Verified
-against every measured case — the bad rewrite is rejected, and collapsing a
+against every measured case: the bad rewrite is rejected, and collapsing a
 stumble, applying a self-correction, dropping a filler and re-casing all pass.
 
 It fires in production: the log line is `cleanup invented content, using raw
@@ -578,7 +578,7 @@ transcript, which is what the app would have typed anyway.
 ## The cold start that made cleanup miss its budget
 
 Measured on a real dictation: one cleanup took **2016 ms against a 1500 ms
-budget**. Not a slow model — a cold one.
+budget**. Not a slow model but a cold one.
 
 `warmup()` runs on hotkey-down, while the user is still speaking, so the real
 call pays only for the user's text. It was throttled to once per 10 minutes
@@ -588,7 +588,7 @@ loaded anyway.
 That assumption breaks in the two situations that matter most here:
 
 * Ollama restarts (it has no autostart on Windows, so this is routine), and
-* Ollama **evicts** the model under VRAM pressure — exactly what happens on a
+* Ollama **evicts** the model under VRAM pressure, exactly what happens on a
   6 GB card when Whisper loads beside it.
 
 In both, `warmup()` returned early on a model that was no longer there, and
@@ -597,7 +597,7 @@ the next dictation paid the cold load inside its own budget.
 The fix is to stop trusting elapsed time and check the fact: `/api/ps` lists
 what Ollama actually has in memory. Warm-up now skips only when a recent prime
 succeeded **and** the model is still resident. The probe has a 1 s timeout and
-"don't know" means "prime anyway" — it sits on hotkey-down and its answer is
+"don't know" means "prime anyway": it sits on hotkey-down and its answer is
 only ever used to skip work.
 
 Proven on the exact failure:
@@ -610,13 +610,13 @@ Proven on the exact failure:
 | new code re-primes | 3.6 s, while the user is still talking |
 | first cleanup after eviction | **359 ms** (was 2016 ms) |
 
-## "Продолжение следует" — the guard that never fired
+## "Продолжение следует": the guard that never fired
 
 Reported from real use: hold the hotkey, say nothing, and the app types
 **«Продолжение следует.»** into the document. Whisper is trained on subtitle
 corpora and fills an empty room with their boilerplate.
 
-There was already a guard for exactly this — and it had never once fired.
+There was already a guard for exactly this, and it had never once fired.
 Recording real silence from this machine's microphone, four runs out of four:
 
 | rms | no_speech_prob | heard |
@@ -627,7 +627,7 @@ Recording real silence from this machine's microphone, four runs out of four:
 | 0.00080 | **0.000** | Продолжение следует. |
 
 The guard required `no_speech_prob > 0.6 **AND** rms < 0.006`. The audio half
-was right — RMS correctly read a silent room, four times under the threshold.
+was right: RMS correctly read a silent room, four times under the threshold.
 The model half was not merely wrong but maximally wrong: **0.000**, total
 confidence that the room noise was speech. With an `AND`, one broken signal
 disabled the whole guard.
@@ -635,18 +635,18 @@ disabled the whole guard.
 `no_speech_prob` is now not consulted at all. `textclean.is_hallucinated_silence`
 decides on two independent signals, either sufficient:
 
-1. **RMS below the silence floor** — the loudest 0.5 s window in the whole
-   recording never reached speech level. Measured room noise is 0.0003–0.0015
+1. **RMS below the silence floor**: the loudest 0.5 s window in the whole
+   recording never reached speech level. Measured room noise is 0.0003-0.0015
    and speech is 0.02+, so 0.006 sits with a 4x margin over one and a 3x
    margin under the other.
-2. **Subtitle boilerplate in the band just above it** — a fan or street noise
+2. **Subtitle boilerplate in the band just above it**: a fan or street noise
    can lift RMS over the floor while the room still holds no speech. The
    phrase list covers the strings Whisper actually emits in Russian and
    English.
 
 The phrase net stops at 4x the floor, so a person who genuinely says
 "продолжение следует" out loud is never censored: at speech volume only the
-audio decides. Verified — the same sentence passes at rms 0.15.
+audio decides. Verified: the same sentence passes at rms 0.15.
 
 A caught hallucination is still saved to History, untyped. A false positive
 must always be recoverable; a truly silent drop never happens.
@@ -655,12 +655,12 @@ must always be recoverable; a truly silent drop never happens.
 
 Reported: the Shortcut setting could not be changed.
 
-The widget itself was fine — driven directly it captured keys, ignored bare
+The widget itself was fine: driven directly it captured keys, ignored bare
 modifiers and saved correctly. Three things on the real path were not.
 
 **The hook swallowed the chord.** The global `WH_KEYBOARD_LL` hook claims the
 configured hotkey and returns 1, so the key never reaches Tk. The chord a user
-reaches for first when changing a shortcut is *the one already set* — pressing
+reaches for first when changing a shortcut is *the one already set*; pressing
 it started a dictation instead of recording anything. `App.pause_hotkey()` now
 uninstalls the hook while the recorder is listening and `resume_hotkey()`
 puts it back, picking up whatever was just saved.
@@ -676,12 +676,12 @@ on the toplevel.
 Deliberately not `bind_all`: that registers for the whole interpreter, and the
 matching `unbind_all("<KeyPress>")` wipes **every** other key handler in the
 app rather than just this one. The funcid returned by `bind` is kept so
-exactly one handler is removed. The test suite found this immediately — two
+exactly one handler is removed. The test suite found this immediately: two
 recorders in one interpreter stopped seeing each other's keys.
 
 ## Recording a global shortcut through window focus was the wrong idea
 
-The recorder captured keys with a Tk binding. It passed every test — driven
+The recorder captured keys with a Tk binding. It passed every test: driven
 directly, through `event_generate`, and even with real mouse clicks and real
 keystrokes when Tk ran on the main thread. In the app it did nothing.
 
@@ -693,13 +693,13 @@ keystrokes go somewhere else.
 The deeper mistake was reading a **global** hotkey through **window focus**.
 `hotkey.ChordCapture` installs its own `WH_KEYBOARD_LL` hook for the duration
 of the recording, so the chord is read exactly the way the listener will read
-it later — no focus, no foreground, no Tk.
+it later: no focus, no foreground, no Tk.
 
 Four details that took a measurement each:
 
 * **Modifier state is tracked from the hook's own events**, not read back with
   `GetAsyncKeyState`. Capture *swallows* what it sees, so the modifiers never
-  reach the OS and `GetAsyncKeyState` reports them up — `ctrl+shift+f1` came
+  reach the OS and `GetAsyncKeyState` reports them up: `ctrl+shift+f1` came
   out as `f1`. Swallowing has to stay: the chord being recorded must not leak
   into the window underneath.
 * **Injected events are not filtered**, unlike in the listener. The listener
@@ -710,7 +710,7 @@ Four details that took a measurement each:
 * **The hook is paused first.** The chord a user reaches for when changing a
   shortcut is usually the one already set.
 * A loop variable named `name` shadowed the captured key's name, so every
-  chord came back ending in `win`. Caught by driving real keys — no unit test
+  chord came back ending in `win`. Caught by driving real keys; no unit test
   of the map would have found it.
 
 Verified with real keystrokes and no window at all: `f9`, `ctrl+shift+f1`,
@@ -719,7 +719,7 @@ Verified with real keystrokes and no window at all: `f9`, `ctrl+shift+f1`,
 ### Holding Ctrl or Alt as the shortcut
 
 Reported from use: *«Работает только на обычных кнопках. Я хотел поставить на
-Ctrl и Alt, но на них не работает.»* Recording `Ctrl+Alt` produced nothing —
+Ctrl и Alt, но на них не работает.»* Recording `Ctrl+Alt` produced nothing:
 the capture waited for a non-modifier key that never came, and the parser had
 no way to express a chord that is only modifiers.
 
@@ -728,7 +728,7 @@ Three things had to change, and each one is a different failure.
 **Capture decides on release.** While a key is down there is no way to tell
 `Ctrl` *as the shortcut* from `Ctrl` *on the way to Ctrl+C*. `ChordCapture`
 now emits a modifiers-only chord when one of them goes up, computed from the
-set held **before** that key left it — otherwise lifting Alt first out of
+set held **before** that key left it; otherwise lifting Alt first out of
 Ctrl+Alt records the leftover `ctrl`.
 
 **The listener must not swallow it.** Every other trigger returns 1 from the
@@ -738,17 +738,17 @@ trigger always falls through; the dictation happens *in addition to* the key
 doing its normal job.
 
 **`GetAsyncKeyState` cannot see the key that is arriving.** This one cost the
-most. `Ctrl+Alt` parsed, the hook fired, and nothing happened — because
+most. `Ctrl+Alt` parsed, the hook fired, and nothing happened, because
 `modifiers_held()` asked Windows whether Ctrl was down, and a low-level hook
 runs *before* the keystroke is committed, so the answer is no. It never
 mattered while triggers were ordinary keys: the trigger is known to be down
 because the hook just said so, and only the *other* modifiers were queried. A
 modifier trigger is both at once. `modifiers_held(arriving)` now skips the
 group the incoming key belongs to. As a side effect the chord no longer cares
-about press order — Ctrl-then-Alt and Alt-then-Ctrl both fire.
+about press order: Ctrl-then-Alt and Alt-then-Ctrl both fire.
 
 On top of that, a modifier press only counts after `HOLD_SECONDS = 0.3`. Not
-polish — without it, `Ctrl` as a shortcut means every Ctrl+C starts a
+polish: without it, `Ctrl` as a shortcut means every Ctrl+C starts a
 dictation, and `Ctrl+Alt` fires on every AltGr, which is how a Russian layout
 sends the right Alt. A tap starts nothing at all, so no recording, no overlay,
 no empty transcript. Settings says so while the chip is listening; a threshold
@@ -762,29 +762,29 @@ while the hotkey is live.
 ### Dressing it like Claude Desktop
 
 Asked for: *«сделай дизайн в стиле дизайна claude desktop»*. The palette was
-already centralised in `ui/theme.py`, so most of it was constants — but the
+already centralised in `ui/theme.py`, so most of it was constants, but the
 constants are not where the resemblance lives. Four changes did the work.
 
 **Warm greys.** Claude's dark surfaces sit around hue 40°; this was navy at
 220°. Swapping the ramp (`#1F1E1D` page, `#191817` rail, `#262624` cards) is
 the single largest part of the effect, and a neutral `#202020` would not have
-got there — the warmth is the point.
+got there: the warmth is the point.
 
 **One clay accent, rationed.** `#D97757`, and nothing else saturated. The
 loudest thing on Settings was a column of Apple-bright icon tiles; the plate is
 now neutral and only the glyph carries the tint. The headline stat tile no
-longer floods a whole card in accent — its number is clay, the surface is the
+longer floods a whole card in accent: its number is clay, the surface is the
 same as its neighbours. The active sidebar row lost its filled blue plate for a
 raised grey one with a clay glyph.
 
-**A serif for display type.** Georgia — on every Windows install, and the
+**A serif for display type.** Georgia, on every Windows install, and the
 nearest stand-in for the face Claude sets its headings in. Page titles, the
 wordmark, and the big figures. Everything else stays in Segoe UI; a serif body
 would read as a document, not an app.
 
 **The scrollbar had to be rewritten to obey any of it.** `tk.Scrollbar` on
 Windows renders through the native theme and ignores `bg`/`troughcolor`
-outright — it drew a `#F0F0F0` slab down the edge of a dark window, and had
+outright: it drew a `#F0F0F0` slab down the edge of a dark window, and had
 been doing so all along. `ttk` is no better; the one theme that takes colours
 (`clam`) can only be selected for the whole interpreter. `theme.scrollbar` is
 now a canvas widget speaking the two halves of Tk's scrollbar protocol that a
@@ -793,14 +793,14 @@ scrolling canvas needs.
 Two things surfaced while looking at the screenshots, unrelated to colour:
 all-caps 8 px Cyrillic (`СЛОВ В МИНУТУ`) is a grey smear rather than a word, so
 the captions are sentence case; and `strftime("%A")` answers in the C locale,
-which had History reading «Сегодня», «Вчера», then "Saturday" — day and month
+which had History reading «Сегодня», «Вчера», then "Saturday"; day and month
 names are now in the catalogue, with Russian months in the genitive.
 
 ### The hold threshold, turned into a pre-roll
 
 Modifier hotkeys need a hold threshold: `Ctrl` is the first half of Ctrl+C, and
 `Ctrl+Alt` is what a Russian layout's AltGr sends, so a tap has to start
-nothing. But the threshold was 300 ms of the user's speech going nowhere —
+nothing. But the threshold was 300 ms of the user's speech going nowhere:
 they press, they talk, and the first third of a second was never recorded.
 
 Measured first, because the obvious fix was the wrong one. A ring buffer over
@@ -814,12 +814,12 @@ what the threshold itself accounts for:
 | every one after | 78-94 ms |
 
 So two separate changes. `audio.prewarm()` pays PortAudio's initialisation on
-a startup thread — 375 ms becomes 78 ms. And the microphone now opens when the
+a startup thread: 375 ms becomes 78 ms. And the microphone now opens when the
 chord goes **down**, not when the hold completes: the wait becomes a pre-roll
 instead of a hole, with no always-on microphone anywhere.
 
 `HotkeyListener` grew `on_arm`/`on_disarm`. Arm fires after the hold timer is
-started, never before — opening a microphone is slow enough that doing it
+started, never before: opening a microphone is slow enough that doing it
 first would push the measurement out by however long the device takes. Disarm
 fires when the hold did not complete, and the app throws the audio away.
 
@@ -828,8 +828,8 @@ Ctrl+C, Ctrl+V and Ctrl+S the user types; the recording would be discarded
 each time, but the microphone indicator would blink all day, which is its own
 kind of alarming.
 
-`_start_dictation` had to learn not to restart the recorder — restarting is
-what discards the buffer, which is precisely the audio this exists to keep —
+`_start_dictation` had to learn not to restart the recorder (restarting is
+what discards the buffer, which is precisely the audio this exists to keep),
 and to date the recording from the moment the microphone opened rather than
 from the press.
 

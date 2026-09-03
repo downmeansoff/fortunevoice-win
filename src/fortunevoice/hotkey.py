@@ -3,7 +3,7 @@
 macOS used the KeyboardShortcuts package, which hands you key-down and key-up
 for a registered chord. Windows has no such API:
 
-* `RegisterHotKey` delivers WM_HOTKEY on press only — no key-up, so
+* `RegisterHotKey` delivers WM_HOTKEY on press only: no key-up, so
   hold-to-talk is impossible with it.
 * A `WH_KEYBOARD_LL` hook sees both edges and can *swallow* the chord so the
   trigger key never reaches the focused app. That is what we use.
@@ -102,8 +102,8 @@ MODIFIER_KEYS: dict[str, tuple[int, ...]] = {
     "win": (VK_LWIN, VK_RWIN),
 }
 
-# Virtual keys that are modifiers. A hotkey may still be built on one — holding
-# Ctrl to talk is a fine push-to-talk — but the listener must never swallow it.
+# Virtual keys that are modifiers. A hotkey may still be built on one: holding
+# Ctrl to talk is a fine push-to-talk, but the listener must never swallow it.
 _MODIFIER_VKS = {
     VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
     VK_LWIN, VK_RWIN, 0x10, 0x11, 0x12,  # the combined SHIFT/CONTROL/MENU
@@ -123,7 +123,7 @@ class HotkeySpec:
         self.keys = keys or (key,)
         self.label = label
         # True when the trigger is itself a modifier ("ctrl+alt", "ctrl").
-        # Those are never swallowed — see HotkeyListener._handle.
+        # Those are never swallowed: see HotkeyListener._handle.
         self.modifier_trigger = modifier_trigger
 
     def modifiers_held(self, arriving: int | None = None) -> bool:
@@ -132,8 +132,8 @@ class HotkeySpec:
         `arriving` is the virtual key the hook is reporting right now. Its own
         group has to be skipped: a low-level hook runs *before* Windows commits
         the keystroke, so GetAsyncKeyState still reports that key as up. That
-        never mattered while triggers were ordinary keys — the trigger is known
-        to be down because the hook said so — but a modifier trigger is both at
+        never mattered while triggers were ordinary keys: the trigger is known
+        to be down because the hook said so, but a modifier trigger is both at
         once, and checking it here made Ctrl+Alt never fire.
         """
         for name in self.modifiers:
@@ -237,7 +237,7 @@ class ChordCapture:
 
     A shortcut recorder built on window focus cannot be trusted: the thing
     being recorded is a GLOBAL hotkey, and the keys have to be read the same
-    way the hook will read them later — regardless of which window happens to
+    way the hook will read them later, regardless of which window happens to
     hold focus, and regardless of Windows refusing foreground to a background
     thread.
 
@@ -247,7 +247,7 @@ class ChordCapture:
 
     # Nothing may leave this hook installed forever. It SWALLOWS keys, so a
     # path that forgets to stop it eats the user's typing system-wide and
-    # leaves the app's own hotkey paused — the whole keyboard half-dead with
+    # leaves the app's own hotkey paused: the whole keyboard half-dead with
     # no way to tell why. Closing the Settings window mid-recording did
     # exactly that. Recording a chord takes a second; a minute is a generous
     # ceiling that still guarantees the hook cannot outlive the session.
@@ -264,7 +264,7 @@ class ChordCapture:
         # Modifier state is tracked from the hook's own events rather than
         # read back with GetAsyncKeyState: capture SWALLOWS what it sees, so
         # the modifiers never reach the OS and GetAsyncKeyState would report
-        # them as up. Swallowing matters — the chord being recorded must not
+        # them as up. Swallowing matters: the chord being recorded must not
         # leak into whatever window is underneath.
         self._held: set[int] = set()
         self._proc = _HOOKPROC(self._callback)
@@ -289,7 +289,7 @@ class ChordCapture:
         abandoned, rather than eating keys for the rest of the session."""
         if self._done:
             return
-        logger.warning("chord capture timed out after %.0f s — releasing the keyboard",
+        logger.warning("chord capture timed out after %.0f s, releasing the keyboard",
                        self.MAX_LISTENING_SECONDS)
         self._done = True
         if self._on_cancel:
@@ -397,7 +397,7 @@ class ChordCapture:
             return True
         if vk in _MODIFIER_VKS:
             self._held.add(vk)
-            return True  # held, not the trigger — swallow and keep waiting
+            return True  # held, not the trigger: swallow and keep waiting
 
         name = _VK_TO_NAME.get(vk)
         if name is None:
@@ -414,7 +414,7 @@ class HotkeyListener:
     """Runs the hook on its own thread with its own message pump.
 
     A low-level keyboard hook only delivers to a thread that pumps messages,
-    and the app's own thread is busy driving dictation — so the hook gets a
+    and the app's own thread is busy driving dictation, so the hook gets a
     dedicated one that does nothing else.
     """
 
@@ -434,7 +434,7 @@ class HotkeyListener:
         self._on_press = on_press
         self._on_release = on_release
         # Fired the moment the chord goes down, before the hold threshold has
-        # elapsed, so the microphone can be opened early — the wait then costs
+        # elapsed, so the microphone can be opened early: the wait then costs
         # the user nothing instead of eating the start of their sentence. The
         # disarm says the hold never completed and whatever was captured
         # should be thrown away.
@@ -457,7 +457,7 @@ class HotkeyListener:
         self._probe_sent_at = 0.0
         self._proc = _HOOKPROC(self._callback)  # keep a reference alive
         self._stop = threading.Event()
-        # A modifier trigger fires from a timer thread, not from the hook —
+        # A modifier trigger fires from a timer thread, not from the hook:
         # see _begin_press.
         self._press_lock = threading.Lock()
         self._timer: threading.Timer | None = None
@@ -528,7 +528,7 @@ class HotkeyListener:
             return
         if any(_key_is_down(vk) for vk in self._spec.keys):
             return
-        # The keyboard says up — but WE may have said that. Before
+        # The keyboard says up, but WE may have said that. Before
         # typing, `injector.release_held_modifiers` synthesizes key-ups
         # for whatever is held, so the transcript does not arrive as a
         # string of shortcuts. While dictations overlap, that happens
@@ -539,14 +539,14 @@ class HotkeyListener:
 
         if injector.faked_release_age() < self.FAKED_RELEASE_GRACE:
             return
-        logger.info("the hotkey release was never delivered — resyncing")
+        logger.info("the hotkey release was never delivered, resyncing")
         self._held = False
         self._end_press()
 
     def _report_broken(self) -> None:
         """Say the hotkey is dead. Windows refusing the hook, or refusing to
         reinstall it after a slow callback, left the app looking alive while
-        the key did nothing — with the only trace in a log file."""
+        the key did nothing, with the only trace in a log file."""
         if self.on_broken is None:
             return
         try:
@@ -558,7 +558,7 @@ class HotkeyListener:
         self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, None, 0)
         if not self._hook:
             logger.error(
-                "SetWindowsHookEx failed (error %d) — the hotkey will not work",
+                "SetWindowsHookEx failed (error %d): the hotkey will not work",
                 ctypes.get_last_error(),
             )
             return False
@@ -595,7 +595,7 @@ class HotkeyListener:
         was restarted by hand.
 
         The first attempt at this compared `GetLastInputInfo` against what the
-        hook had seen — and GetLastInputInfo counts the MOUSE. Moving the
+        hook had seen, and GetLastInputInfo counts the MOUSE. Moving the
         pointer without typing looked exactly like a dead hook, so it was
         reinstalled every twenty seconds for as long as the machine was in
         use. Guessing replaced by asking: press a key nobody uses and see
@@ -610,7 +610,7 @@ class HotkeyListener:
             if self._last_seen >= self._probe_at:
                 self._probe_at = 0.0      # it answered; the hook is alive
                 return
-            logger.warning("the hook did not see its own probe — reinstalling")
+            logger.warning("the hook did not see its own probe, reinstalling")
             self._probe_at = 0.0
             self._last_seen = now
             self._reinstall = True
@@ -622,7 +622,7 @@ class HotkeyListener:
         # somebody being at the desk. Sending one every twenty seconds
         # of quiet meant the idle timer never advanced: no screen
         # blank, no screensaver, no lock, no sleep, and a laptop that
-        # ran the night out — a mouse jiggler nobody asked for.
+        # ran the night out: a mouse jiggler nobody asked for.
         #
         # So ask only when there is something to be suspicious about:
         # the system has seen input that our hook did not. A hook that
@@ -671,7 +671,7 @@ class HotkeyListener:
         return user32.CallNextHookEx(None, code, wparam, lparam)
 
     def _handle(self, wparam: int, lparam: int) -> bool:
-        """True to swallow the event. Runs inside the hook — do nothing slow."""
+        """True to swallow the event. Runs inside the hook: do nothing slow."""
         event = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
         if event.flags & LLKHF_INJECTED:
             return False  # our own typed dictation, not a user keypress
@@ -713,7 +713,7 @@ class HotkeyListener:
     # to wait: Ctrl is also the first half of Ctrl+C, and Ctrl+Alt is what a
     # Russian layout's AltGr sends. Requiring the keys to stay down for
     # HOLD_SECONDS separates "reaching for a shortcut" from "holding a key to
-    # talk" — a tap does nothing at all, and the press never starts.
+    # talk": a tap does nothing at all, and the press never starts.
 
     HOLD_SECONDS = 0.3
 
@@ -722,7 +722,7 @@ class HotkeyListener:
         measured?
 
         Only for a chord of two or more modifiers. A lone "ctrl" would arm on
-        every Ctrl+C, Ctrl+V and Ctrl+S the user types — the recording would
+        every Ctrl+C, Ctrl+V and Ctrl+S the user types: the recording would
         be discarded each time, but the Windows "microphone in use" indicator
         would blink all day, which is its own kind of alarming.
         """
@@ -744,13 +744,13 @@ class HotkeyListener:
         if self._on_arm and self.prerolls():
             self._on_arm()
 
-    # Press and release are raised from two different threads — the press from
-    # the hold timer, the release from the hook — and BOTH are raised while
+    # Press and release are raised from two different threads (the press from
+    # the hold timer, the release from the hook), and BOTH are raised while
     # holding _press_lock. That is the only thing that makes their order
     # certain. Each used to drop the lock first, so a key-up landing exactly as
     # the timer fired could enqueue the release ahead of the press: the app saw
-    # a release with nothing recording (ignored), then a press with no key held
-    # — a recording that ran until the 300 s cap.
+    # a release with nothing recording (ignored), then a press with no key held,
+    # a recording that ran until the 300 s cap.
     #
     # Safe to hold across these because the callbacks only put an event on a
     # queue. Nothing here may ever call back into this class.
@@ -778,7 +778,7 @@ class HotkeyListener:
         # A tap: nothing was ever started, but the microphone may have been
         # opened for the pre-roll. It has to be closed and its audio dropped,
         # or a Ctrl+Alt reached for by mistake leaves a recording running until
-        # the next one. Outside the lock — this one reaches into the app.
+        # the next one. Outside the lock: this one reaches into the app.
         if self._on_disarm and self.prerolls():
             self._on_disarm()
 

@@ -1,4 +1,4 @@
-"""Hotkey parsing. No Windows API is touched — only the string → (modifiers,
+"""Hotkey parsing. No Windows API is touched: only the string → (modifiers,
 virtual key) mapping, which is where a typo in config.json turns into a hotkey
 that silently never fires."""
 
@@ -28,7 +28,7 @@ def test_case_and_spacing_insensitive():
 
 
 def test_modifier_as_trigger():
-    # "hold right ctrl to talk" — no modifiers required alongside it.
+    # "hold right ctrl to talk": no modifiers required alongside it.
     spec = parse("rctrl")
     assert spec.modifiers == []
     assert spec.key == 0xA3
@@ -46,7 +46,7 @@ def test_bare_modifier_as_trigger():
 
 
 def test_modifier_chord_accepts_either_order():
-    """"ctrl+alt" — every key is both a trigger and a requirement, so it fires
+    """"ctrl+alt": every key is both a trigger and a requirement, so it fires
     whichever finger lands second and ends when either one lifts."""
     spec = parse("ctrl+alt")
     assert spec.modifier_trigger is True
@@ -63,7 +63,7 @@ def test_ordinary_key_is_not_a_modifier_trigger():
 def test_the_arriving_key_is_not_checked_against_the_async_state(monkeypatch):
     """A low-level hook runs before Windows commits the keystroke, so
     GetAsyncKeyState still reports the key being pressed as up. Checking it
-    there made Ctrl+Alt never fire once — nothing is held in this process, and
+    there made Ctrl+Alt never fire once: nothing is held in this process, and
     the chord must still be considered satisfied by the key the hook reports."""
     from fortunevoice import hotkey as H
 
@@ -159,7 +159,7 @@ def test_modifier_keys_are_never_reported_as_a_trigger():
 
 
 def test_capture_orders_modifiers_the_way_the_parser_prints_them():
-    """ctrl, alt, shift, win — so the chip shows "ctrl+alt+space" whatever
+    """ctrl, alt, shift, win, so the chip shows "ctrl+alt+space" whatever
     order the user's fingers landed in."""
     from fortunevoice.hotkey import ChordCapture
 
@@ -174,7 +174,7 @@ def test_capture_orders_modifiers_the_way_the_parser_prints_them():
 
 
 def test_capture_reports_the_whole_chord_even_when_released_out_of_order():
-    """Lifting Alt first out of Ctrl+Alt must still record "ctrl+alt" — the
+    """Lifting Alt first out of Ctrl+Alt must still record "ctrl+alt": the
     chord is read from what was down at the moment of release, not from what
     happens to remain."""
     from fortunevoice.hotkey import ChordCapture
@@ -226,7 +226,7 @@ def test_a_release_lost_to_a_desktop_switch_is_recovered(monkeypatch):
     """A UAC prompt, Win+L and Ctrl+Alt+Del switch desktops, and the key-up
     lands on a desktop this hook is not on. The latch then says the key is
     still down: the next press is read as auto-repeat and swallowed, and a
-    recording that was running never ends — it runs to the 300 s cap and types
+    recording that was running never ends: it runs to the 300 s cap and types
     five minutes of room noise."""
     from fortunevoice import hotkey as H
 
@@ -319,7 +319,7 @@ def test_a_hook_that_answers_its_probe_is_left_alone(monkeypatch):
 
 def test_moving_the_mouse_is_not_a_dead_hook(monkeypatch):
     """The first version of this compared `GetLastInputInfo` against what the
-    hook had seen — and that counts the MOUSE. Moving the pointer without
+    hook had seen, and that counts the MOUSE. Moving the pointer without
     typing looked exactly like a dead hook, so it was reinstalled every twenty
     seconds for as long as the machine was in use. The probe does not care what
     the mouse is doing."""
@@ -339,7 +339,7 @@ def test_moving_the_mouse_is_not_a_dead_hook(monkeypatch):
 
 
 def test_a_recently_used_hook_is_not_probed(monkeypatch):
-    """No question worth asking while keys are arriving — and the probe is a
+    """No question worth asking while keys are arriving, and the probe is a
     synthetic keypress, which is not free."""
     import time
 
@@ -358,7 +358,7 @@ def test_a_recently_used_hook_is_not_probed(monkeypatch):
 
 
 def test_a_probe_that_cannot_be_sent_proves_nothing(monkeypatch):
-    """SendInput can be refused — by UIPI, by a full input queue. Treating
+    """SendInput can be refused: by UIPI, by a full input queue. Treating
     "could not ask" as "broken" would reinstall the hook on a timer for ever."""
     import time
 

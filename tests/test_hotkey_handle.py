@@ -2,8 +2,8 @@
 
 No real keystrokes are involved: the test builds a KBDLLHOOKSTRUCT and calls
 `_handle` directly. That covers the four rules that decide whether dictation
-starts at all — swallow the chord, ignore auto-repeat, never claim the key
-without its modifiers, and never react to our own typed output — without
+starts at all: swallow the chord, ignore auto-repeat, never claim the key
+without its modifiers, and never react to our own typed output, without
 needing a desktop session or risking input reaching another window.
 """
 
@@ -71,14 +71,14 @@ def test_auto_repeat_is_swallowed_without_refiring():
 
 
 def test_key_without_modifiers_passes_through():
-    """Plain Space must stay plain Space — not swallowed, no dictation."""
+    """Plain Space must stay plain Space: not swallowed, no dictation."""
     listener, events = make_listener(modifiers_held=False)
     assert listener._handle(WM_KEYDOWN, event(VK_SPACE)) is False
     assert events == []
 
 
 def test_release_without_a_press_passes_through():
-    """The chord's modifiers were released first, so we never saw the press —
+    """The chord's modifiers were released first, so we never saw the press:
     the key-up belongs to the app, not to us."""
     listener, events = make_listener()
     assert listener._handle(WM_KEYUP, event(VK_SPACE)) is False
@@ -113,7 +113,7 @@ def test_syskey_variants_are_handled():
 # Two rules make these safe. The key is never swallowed, because eating Ctrl
 # would break Ctrl+C everywhere. And the press only counts after HOLD_SECONDS,
 # because Ctrl is also the first half of Ctrl+C and Ctrl+Alt is what a Russian
-# layout's AltGr sends — a tap has to do nothing at all.
+# layout's AltGr sends; a tap has to do nothing at all.
 
 VK_LCONTROL, VK_RCONTROL, VK_LMENU = 0xA2, 0xA3, 0xA4
 
@@ -128,7 +128,7 @@ def hold(listener, vk: int) -> bool:
 
 
 def test_modifier_only_trigger():
-    """FVHotkey = "rctrl" — the trigger is itself a modifier, so no additional
+    """FVHotkey = "rctrl": the trigger is itself a modifier, so no additional
     modifiers are required."""
     listener, events = make_listener("rctrl")
     assert hold(listener, VK_RCONTROL) is False, "a modifier must reach the app"
@@ -146,7 +146,7 @@ def test_modifier_trigger_is_never_swallowed():
 
 def test_a_tap_on_a_modifier_starts_nothing():
     """Ctrl+C begins with a Ctrl press. Released before the threshold, it must
-    not produce a dictation — not even an empty one."""
+    not produce a dictation, not even an empty one."""
     listener, events = make_listener("ctrl")
     listener._handle(WM_KEYDOWN, event(VK_LCONTROL))
     listener._handle(WM_KEYUP, event(VK_LCONTROL))
@@ -164,7 +164,7 @@ def test_either_side_of_a_modifier_works():
 
 
 def test_modifier_chord_needs_every_key_held():
-    """"ctrl+alt" with Ctrl not actually down is a plain Alt — not our chord."""
+    """"ctrl+alt" with Ctrl not actually down is a plain Alt, not our chord."""
     listener, events = make_listener("ctrl+alt", modifiers_held=False)
     hold(listener, VK_LMENU)
     assert events == []
@@ -239,7 +239,7 @@ def test_a_lone_modifier_never_arms():
 
 
 def test_an_ordinary_chord_never_arms():
-    """Ctrl+Alt+Space fires the moment Space goes down — there is no wait to
+    """Ctrl+Alt+Space fires the moment Space goes down: there is no wait to
     fill, so there is nothing to pre-roll."""
     listener, events = make_arming_listener("ctrl+alt+space")
     assert listener.prerolls() is False
@@ -251,7 +251,7 @@ def test_press_and_release_are_raised_under_the_lock():
     """The property that makes an inversion impossible, rather than a race the
     test has to be lucky enough to lose.
 
-    Press and release come from two different threads — the press from the hold
+    Press and release come from two different threads: the press from the hold
     timer, the release from the hook. Each used to drop the lock before calling
     its callback, so a key-up landing exactly as the timer fired could enqueue
     the release ahead of the press: the app saw a release with nothing

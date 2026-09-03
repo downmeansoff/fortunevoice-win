@@ -47,7 +47,7 @@ class DictationStats:
 
 
 class DictationStore:
-    """Append-only history, capped and pruned. One JSON array on disk — a
+    """Append-only history, capped and pruned. One JSON array on disk: a
     dictation log is thousands of rows at most, and a single readable file
     beats a database the user can't inspect."""
 
@@ -86,8 +86,8 @@ class DictationStore:
     def add(self, record: DictationRecord) -> bool:
         """False when the dictation could NOT be saved.
 
-        The caller has to know: the whole delivery order — vault first, then
-        the focused window — rests on this having worked.
+        The caller has to know: the whole delivery order (vault first, then
+        the focused window) rests on this having worked.
         """
         with self._lock:
             records = self.all()
@@ -100,7 +100,7 @@ class DictationStore:
         """Delete one dictation, matched on timestamp and text.
 
         Matched on content rather than index because the caller is a UI list
-        that was built from a filtered, reversed copy — an index into that is
+        that was built from a filtered, reversed copy: an index into that is
         not an index into the file, and using one would delete a neighbour.
         """
         with self._lock:
@@ -122,8 +122,8 @@ class DictationStore:
         holds a row out of a filtered, reversed copy.
 
         `raw` is left alone, and filled in from the old text when it was empty.
-        It is the exact spoken words, and it is what makes a bad edit — by the
-        cleanup model or by the user — recoverable; an edit that overwrote it
+        It is the exact spoken words, and it is what makes a bad edit (by the
+        cleanup model or by the user) recoverable; an edit that overwrote it
         would be the one edit that cannot be undone.
         """
         transcript = transcript.strip()
@@ -144,7 +144,7 @@ class DictationStore:
 
     def clear(self) -> None:
         """Delete every record. Only reachable from an explicit confirmation in
-        the UI — this is the vault every delivery path writes to first."""
+        the UI: this is the vault every delivery path writes to first."""
         with self._lock:
             self._write([])
 
@@ -191,7 +191,7 @@ class DictationStore:
 
         It used to log and return as if it had worked, so `add()` could not
         fail and no caller checked. A full disk or a file held open by a
-        backup tool meant dictations silently stopped being kept — the exact
+        backup tool meant dictations silently stopped being kept, the exact
         failure the vault-first ordering exists to prevent, failing invisibly.
         """
         tmp = self._path.with_suffix(".json.tmp")
@@ -210,7 +210,7 @@ class DictationStore:
 class RecoveryStore:
     """Crash pad for dictations the decoder failed on.
 
-    The vault-first guarantee only starts AFTER a successful transcription —
+    The vault-first guarantee only starts AFTER a successful transcription:
     before that point a decode error would throw the user's words away. So on
     failure the raw 16 kHz audio is written here as WAV (16-bit PCM, half the
     float32 size) and a tray "Recover" item lets the user retry once the model
@@ -229,7 +229,7 @@ class RecoveryStore:
         return self._dir
 
     def save(self, samples: np.ndarray) -> Path | None:
-        """Persist failed-dictation audio. None on any error — recovery is
+        """Persist failed-dictation audio. None on any error: recovery is
         best-effort and must never crash the error path itself."""
         if samples is None or len(samples) == 0:
             return None
@@ -254,7 +254,7 @@ class RecoveryStore:
 
     def load(self, path: Path) -> np.ndarray | None:
         """Read a recovery WAV back into 16 kHz float samples. Fixed 44-byte
-        header — we only ever read files we wrote ourselves."""
+        header: we only ever read files we wrote ourselves."""
         try:
             data = path.read_bytes()
         except OSError:

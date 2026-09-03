@@ -82,7 +82,7 @@ def test_refuses_the_lengths_that_used_to_be_discarded():
 
 
 def test_still_accepts_the_lengths_that_landed_in_time():
-    # 1184 ms and 1559 ms measured — guards against over-correcting into
+    # 1184 ms and 1559 ms measured: guards against over-correcting into
     # "never clean".
     assert predicted_ms(64) <= BUDGET_MS
     assert predicted_ms(82) <= BUDGET_MS
@@ -147,7 +147,7 @@ def test_a_real_self_correction_is_still_caught():
 
 def test_a_short_dictation_cannot_be_gutted():
     """The drop guard was off entirely below six words, so "нет я не согласен
-    совсем" could come back as "согласен" and pass — every remaining word does
+    совсем" could come back as "согласен" and pass: every remaining word does
     appear in the raw, so the invented-content check sees nothing wrong."""
     from fortunevoice.cleaner import _kept_enough
 
@@ -166,7 +166,7 @@ def test_short_cleanup_that_only_removes_filler_is_still_allowed():
 def test_cleanup_may_not_drop_a_negation():
     """Losing a "не" inverts the sentence. Every other word survives, so the
     invented-content guard passes it, and the ratio guard sees one word out of
-    twelve — well inside its tolerance."""
+    twelve, well inside its tolerance."""
     from fortunevoice.cleaner import _is_safe
 
     said = ("ну я думаю что мы не будем это делать сегодня потому что "
@@ -195,7 +195,7 @@ def test_keeping_the_negations_is_fine():
 
 
 def test_losing_one_of_two_negations_is_refused_too():
-    """Russian doubles up — "не будем никак" — and dropping the second changes
+    """Russian doubles up: "не будем никак", and dropping the second changes
     what was said. Falling back to the raw text costs the user some polish;
     the alternative costs them the meaning."""
     from fortunevoice.cleaner import _is_safe
@@ -207,7 +207,7 @@ def test_losing_one_of_two_negations_is_refused_too():
 
 def test_every_guard_is_still_wired_into_is_safe():
     """Adding the negation rule once dropped the invented-content call from
-    `_is_safe` — the tests caught it, and this one names the risk: the guards
+    `_is_safe`; the tests caught it, and this one names the risk: the guards
     live in one function precisely so none can be lost while editing it."""
     from fortunevoice import cleaner as C
 
@@ -232,7 +232,7 @@ def test_an_english_contraction_counts_as_a_negation():
     """`_letter_words` splits on non-letters, so "don't" arrived as "don" +
     "t" and matched nothing. "i don't think we can ship this", cleaned to "I
     think we can ship this", passed every guard: the same words, one shorter,
-    no negation counted on either side — and the sentence now says the
+    no negation counted on either side, and the sentence now says the
     opposite."""
     assert cleaner._negations("i don't think we can ship this") == 1
     assert cleaner._negations("I think we can ship this") == 0
@@ -260,7 +260,7 @@ def test_a_negation_that_survives_is_left_alone():
 
 def test_six_words_may_not_lose_half_of_themselves():
     """`int()` truncates: six words allowed a drop to three, which is half the
-    dictation gone through a guard whose stated limit is about a third — and
+    dictation gone through a guard whose stated limit is about a third, and
     six words is exactly where the strict every-word-survives rule stops
     applying."""
     from fortunevoice.cleaner import _kept_enough

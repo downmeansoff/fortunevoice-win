@@ -4,7 +4,7 @@ A dictation app with a hidden UI needs its state audible: the user is looking
 at the app they're dictating into, not at the tray. macOS used NSSound with
 system sounds; Windows has winsound in the standard library.
 
-Every call is fire-and-forget on its own thread — winsound.Beep blocks for the
+Every call is fire-and-forget on its own thread: winsound.Beep blocks for the
 full duration, and blocking the dictation pipeline to play a 60 ms tone would
 be absurd.
 """

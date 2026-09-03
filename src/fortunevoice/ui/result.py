@@ -1,14 +1,14 @@
 """The result panel.
 
 Port of Sources/FortuneVoice/ResultPanel.swift. When a transcript can't be
-typed — the user switched windows, there is no editable field, SendInput
-failed — it must not vanish into a log line. macOS showed a floating panel
+typed (the user switched windows, there is no editable field, SendInput
+failed), it must not vanish into a log line. macOS showed a floating panel
 with a Copy button; the first cut of this port showed a tray balloon, which
 truncates, disappears on its own schedule, and can't be copied from.
 
 Non-activating like the pill, for the same reason: this appears *after* a
 dictation, and stealing focus at that moment would be its own bug. It is not
-click-through, though — the whole point is the Copy button.
+click-through, though: the whole point is the Copy button.
 
 Nothing is put on the clipboard until the user asks. That was the reason the
 macOS build stopped routing dictations through the clipboard at all, and a
@@ -87,7 +87,7 @@ class ResultPanel:
 
         footer = tk.Frame(body, bg=theme.INK)
         footer.pack(fill="x", padx=18, pady=12)
-        # The commonest reason this panel exists is "you switched windows" —
+        # The commonest reason this panel exists is "you switched windows",
         # so the thing the user wants is the text in the window they are in
         # NOW. `App.retype_last` does exactly that and was buried in the tray
         # menu; without this button the sequence is copy, dismiss, click,
@@ -98,7 +98,7 @@ class ResultPanel:
         self._copy_button = theme.button(footer, t("result.copy"), self._copy)
         self._copy_button.pack(side="right", padx=(0, theme.px(10)))
         # No "Saved to History" here: the header above already says it, as
-        # part of the reason ("Couldn't type it — saved to History"). Twice, in
+        # part of the reason ("Couldn't type it, saved to History"). Twice, in
         # two different wordings, read as two different facts.
 
         self._window = window
@@ -138,7 +138,7 @@ class ResultPanel:
         self._after_id = self._window.after(AUTO_HIDE_MS, self._hide)
 
         # Twenty seconds is fine for a panel nobody is looking at, and rude to
-        # one somebody is reading — the transcript can be much longer than the
+        # one somebody is reading: the transcript can be much longer than the
         # four lines shown. The pointer is the only signal available here (the
         # window is deliberately non-activating, so there is no focus to
         # watch), and it is a good one.

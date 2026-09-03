@@ -5,9 +5,9 @@ nothing on screen, and if the user doesn't already know the chord, the app is
 indistinguishable from one that failed to start. macOS at least raised
 permission dialogs that announced the app existed; Windows raises nothing.
 
-So this says the three things that decide whether the first dictation works —
+So this says the three things that decide whether the first dictation works:
 the hotkey, whether the microphone is actually producing signal, and whether
-the model finished loading — and proves the microphone with a live meter
+the model finished loading, and proves the microphone with a live meter
 instead of claiming it is fine.
 """
 
@@ -105,8 +105,8 @@ class Onboarding:
         inner = tk.Frame(chord, bg=theme.CARD)
         inner.pack(fill="x", padx=theme.px(18), pady=theme.px(16))
         # The pretty label either way. Without an app this fell back to the
-        # raw config string, so the first thing a new user reads — in the
-        # largest type on the screen — was "ctrl+alt+space" rather than the
+        # raw config string, so the first thing a new user reads (in the
+        # largest type on the screen) was "ctrl+alt+space" rather than the
         # "Ctrl+Alt+Space" every other surface shows.
         if self._app is not None:
             hotkey = self._app.hotkey_label
@@ -121,7 +121,7 @@ class Onboarding:
         theme.label(inner, t("setup.hold_to_talk"), size=9,
                     colour=theme.TEXT_MUTED).pack(anchor="w")
         # Recordable, not stated. This is the largest type on the screen and
-        # it was a Label — so the single most likely thing a new user needs to
+        # it was a Label, so the single most likely thing a new user needs to
         # change on first run, because ctrl+alt+space collides with their IME
         # or their launcher, was the one thing presented as immutable. They
         # had to dismiss setup, find the tray, open the window and scroll to
@@ -201,7 +201,7 @@ class Onboarding:
 
         The whole screen is built around "the microphone works, look at the
         meter". When it did not, there was no way to choose another from here
-        at all — the user's only recourse was to already know the tray has a
+        at all: the user's only recourse was to already know the tray has a
         Microphone submenu.
         """
         config.set("FVMicrophone", name)
@@ -281,7 +281,7 @@ class Onboarding:
 
     def _refresh_model(self) -> None:
         if self._app is None:
-            self._model_note.configure(text="—")
+            self._model_note.configure(text="-")
             return
         transcriber = self._app.transcriber
         if transcriber.loaded_model:

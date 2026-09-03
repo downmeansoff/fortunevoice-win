@@ -10,7 +10,7 @@ Threading, which is where this differs structurally from the Swift original:
 * The hotkey hook calls us from inside a Windows hook callback that must
   return in milliseconds. It only enqueues; nothing else.
 * A **controller** thread drains that queue and drives the state machine. It
-  stays responsive — a press arriving mid-transcription is rejected on the
+  stays responsive: a press arriving mid-transcription is rejected on the
   spot by the state guard, exactly as the `@MainActor` version rejected it.
 * Each dictation's transcribe → clean → deliver pipeline runs on its **own**
   worker thread, so a slow decode never wedges the controller.
@@ -49,7 +49,7 @@ SAMPLE_RATE = 16_000
 
 
 def decide_delivery(*, stale: bool, focus_held: bool, editable: bool | None) -> str:
-    """Where does this transcript go — into the app, or into the panel?
+    """Where does this transcript go: into the app, or into the panel?
 
     Returns `"type"`, or the reason it cannot be typed: `"stale"`, `"focus"`,
     `"noedit"`. Kept pure and separate because it is the single most
@@ -62,7 +62,7 @@ def decide_delivery(*, stale: bool, focus_held: bool, editable: bool | None) -> 
     * **focus before editability.** If focus moved, the editability answer
       describes the wrong window.
     * **`editable is False`, not `not editable`.** `None` means "Windows would
-      not say" — common in terminals and Electron apps, where the user really
+      not say", common in terminals and Electron apps, where the user really
       is typing into a real field. Treating unknown as "no" would refuse to
       type in exactly the apps people dictate into most, so unknown types
       anyway and the outcome is recorded as `pasted-blind`.
@@ -86,7 +86,7 @@ class State(enum.Enum):
 
 class App:
     # Drop the transcript instead of typing it when this much time passed since
-    # key-up — the user has moved focus elsewhere by then.
+    # key-up: the user has moved focus elsewhere by then.
     STALE_PASTE_LIMIT = 20.0
     # How long recording continues past key-up to catch the final syllable.
     # Users release the key on the last syllable and Whisper chews the final
@@ -100,7 +100,7 @@ class App:
     # What the LLM cleanup is allowed to SPEND. The predictor declines work
     # that doesn't fit rather than starting it and being cut off: macOS metrics
     # showed 24 of 60 cleanup runs burning a flat 3 s deadline and having their
-    # output discarded — 3 s of waiting for the raw transcript the user would
+    # output discarded: 3 s of waiting for the raw transcript the user would
     # have got anyway.
     CLEANUP_BUDGET = 1.5
     # For FVCleanupDevice="cpu". Measured here: 10.5 s cold, 4.2 s warm on
@@ -120,11 +120,11 @@ class App:
     # so while the user can still fix it, instead of after an empty transcript.
     NO_SIGNAL_CHECK_DELAY = 2.5
     NO_SIGNAL_LOUDNESS = 0.05
-    # 4 s, not 2: a two-second pause is a normal mid-sentence think — cutting
+    # 4 s, not 2: a two-second pause is a normal mid-sentence think; cutting
     # there loses the continuation. 4 s only ends genuinely finished speech.
     SILENCE_STOP_SECONDS = 4.0
     # What counts as "still talking" for the toggle-mode auto-stop. It was a
-    # bare 0.2 — four times the level at which the app warns the microphone is
+    # bare 0.2, four times the level at which the app warns the microphone is
     # dead, and ten times audio.py's own floor for speech. A normal voice at
     # normal gain never reached it, so `_last_loud` stayed pinned at the start
     # of the recording and toggle mode cut the user off four seconds in,
@@ -132,11 +132,11 @@ class App:
     SILENCE_STOP_LOUDNESS = 0.02
     # Hard cap. Hold mode relies on a key-up that can simply never arrive
     # (focus stolen mid-press, the machine sleeping), and without a cap that
-    # leaves the app recording forever with the state stuck outside idle —
+    # leaves the app recording forever with the state stuck outside idle,
     # which silently kills the hotkey for the rest of the session.
     MAX_RECORDING_SECONDS = 300.0
     # Ignore only true accidental taps. Anything longer is transcribed; if it
-    # turns out empty the empty-text guard handles it — we never drop a real
+    # turns out empty the empty-text guard handles it: we never drop a real
     # short word ("да", "нет", "стоп") unheard.
     MIN_SAMPLES = 1_600
     # A pre-roll older than this is not this dictation's. The hold
@@ -178,7 +178,7 @@ class App:
         # dictation into the same field does not arrive glued to the first.
         self._last_typed: tuple[int, float, str] | None = None
         # Counts dictations. A pipeline captures it at the start and only
-        # touches shared state afterwards while it is still the current one —
+        # touches shared state afterwards while it is still the current one:
         # checking the state alone is not enough, because a *second* dictation
         # can already be in PROCESSING when the first pipeline finishes.
         self._generation = 0
@@ -231,9 +231,9 @@ class App:
         self._notify(t("notify.ui_failed"), detail)
 
     def _notify(self, title: str, body: str) -> None:
-        # Title only. Notification bodies carry transcript excerpts — the
+        # Title only. Notification bodies carry transcript excerpts: the
         # recovered text, the preview shown when there is no window to show it
-        # in — and this log is the file the user is asked to hand over when
+        # in, and this log is the file the user is asked to hand over when
         # something goes wrong. What it says happened is diagnostic; what was
         # dictated is not.
         logger.info("notification: %s", title)
@@ -285,7 +285,7 @@ class App:
 
         Without this the failure is invisible: dictation keeps working and
         types raw Whisper text, which looks exactly like the cleanup setting
-        being off. Said once at startup and never again — a notification per
+        being off. Said once at startup and never again: a notification per
         dictation would be worse than the silence it replaces.
         """
         from . import ollama
@@ -309,7 +309,7 @@ class App:
         try:
             spec = parse_hotkey(config.get_str("FVHotkey"))
         except ValueError as exc:
-            logger.error("%s — falling back to ctrl+alt+space", exc)
+            logger.error("%s: falling back to ctrl+alt+space", exc)
             self._notify(t("notify.bad_hotkey"), str(exc))
             spec = parse_hotkey("ctrl+alt+space")
             ok = False
@@ -352,8 +352,8 @@ class App:
         """Stop listening for the global hotkey.
 
         Used while the user is recording a NEW shortcut. Without this the hook
-        swallows the very chord they are trying to press — the current hotkey
-        is exactly the one a user reaches for first — and starts a dictation
+        swallows the very chord they are trying to press: the current hotkey
+        is exactly the one a user reaches for first, and starts a dictation
         instead of recording the key.
         """
         if self._listener is not None:
@@ -395,7 +395,7 @@ class App:
             from .ui import ui
             from .ui.onboarding import needed, onboarding
         except Exception as exc:  # noqa: BLE001 - no Tk is survivable
-            logger.warning("UI unavailable (%s) — running headless", exc)
+            logger.warning("UI unavailable (%s), running headless", exc)
             return
         self.ui_available = ui.start()
         if not self.ui_available:
@@ -444,12 +444,12 @@ class App:
         """Load the model, optionally driving the app's state while it happens.
 
         `announce` means this load OWNS the state machine, and only startup
-        does. Every other load runs *underneath* something else — the reload
+        does. Every other load runs *underneath* something else: the reload
         kicked off at key-down when the idle unload had dropped the model, the
         one inside the pipeline, the one in `recover_failed`. Announcing there
         set LOADING and then IDLE while the user was still speaking, and
         `_finish_dictation` returns early unless the state is RECORDING, so the
-        whole dictation was thrown away at key-up — with the microphone left
+        whole dictation was thrown away at key-up, with the microphone left
         open, because the matching stop never ran either. The default is False
         for that reason: forgetting the argument has to fail safe.
 
@@ -477,8 +477,8 @@ class App:
         """Drop the model, then load whatever the settings now name.
 
         The unload is the point. `Transcriber.load()` is a no-op while a model
-        is already resident — deliberately, so two threads racing on a 6 GB
-        card cannot both pay for it — so reloading without unloading first did
+        is already resident, deliberately, so two threads racing on a 6 GB
+        card cannot both pay for it, so reloading without unloading first did
         nothing whatsoever, and choosing a different Whisper model in Settings
         silently went on using the old one until the app was restarted.
         """
@@ -500,7 +500,7 @@ class App:
             # Only a press. A release, a cancel and an interrupt are
             # TERMINATORS: acting on one late is strictly better than not at
             # all. Dropping a stale release left the app recording with the key
-            # already up — the pill saying "Listening", the microphone open —
+            # already up: the pill saying "Listening", the microphone open,
             # until the 300 s cap, and then it typed five minutes of room noise
             # into whatever had focus by then. The controller can easily be
             # busy for over a second inside _start_dictation: opening a
@@ -510,7 +510,7 @@ class App:
                 logger.debug("dropping stale press event")
                 # The arm that came with it opened the microphone. Dropping
                 # only the press left it open until the next dictation, with
-                # the buffer growing the whole time — and `AudioRecorder.start`
+                # the buffer growing the whole time, and `AudioRecorder.start`
                 # returns early when it is already recording, so that buffer
                 # was then handed to the next decode with everything said in
                 # the room in between.
@@ -557,7 +557,7 @@ class App:
     # A modifier chord only counts as a press after HOLD_SECONDS, so that a
     # Ctrl+Alt reached for by mistake starts nothing. Waiting that long before
     # opening the microphone would cost the user the first third of a second
-    # of speech — so the microphone opens at once, and the wait becomes a
+    # of speech, so the microphone opens at once, and the wait becomes a
     # pre-roll rather than a hole. If the hold never completes, the audio is
     # dropped and nothing else ever knew about it.
 
@@ -579,7 +579,7 @@ class App:
         self._armed = 0.0
         # Anything except an actual dictation in progress. Guarding on IDLE
         # instead was not enough: the leak this closes happens precisely when
-        # the app is busy, so the one state that must be spared is RECORDING —
+        # the app is busy, so the one state that must be spared is RECORDING:
         # in toggle mode the key-up arrives while a recording is legitimately
         # running, and stopping it there cuts the user off mid-sentence.
         if self.state != State.RECORDING:
@@ -587,16 +587,16 @@ class App:
 
     def _on_interrupted(self) -> None:
         """Input device died mid-recording. Don't throw away what was already
-        captured — transcribe and deliver it (truncated is far better than
+        captured: transcribe and deliver it (truncated is far better than
         erased), exactly like a normal key-up."""
         if self.state != State.RECORDING:
-            # Not recording yet, but the pre-roll may have the microphone open
-            # — and the device that just died is the one it opened. Nothing
+            # Not recording yet, but the pre-roll may have the microphone open,
+            # and the device that just died is the one it opened. Nothing
             # else closes it: the arm is only undone by a key-up that is now
             # never coming for a device that is gone.
             self._on_disarm()
             return
-        logger.warning("recording interrupted — salvaging captured audio")
+        logger.warning("recording interrupted, salvaging captured audio")
         self._finish_dictation(time.monotonic(), winapi.foreground_window())
 
     def _on_cancel(self) -> None:
@@ -604,7 +604,7 @@ class App:
 
         The opposite of `_on_interrupted`, which salvages. Here the user is
         saying they don't want this dictation, so the audio is dropped without
-        a decode — no transcript, no history entry, nothing typed. A misfired
+        a decode: no transcript, no history entry, nothing typed. A misfired
         hotkey otherwise costs a full decode and whatever the model invented
         out of room noise.
         """
@@ -617,7 +617,7 @@ class App:
         self.recorder.stop()
         # Nothing to clear from recovery: audio is written there only after a
         # decode fails, and a cancel happens before any decode. This called a
-        # `recovery.clear()` that does not exist, so every Esc raised —
+        # `recovery.clear()` that does not exist, so every Esc raised,
         # skipping the sound and the pill below and leaving the user with no
         # sign at all that the cancel had worked. Clearing would also have been
         # wrong: the folder holds audio from EARLIER failed dictations that the
@@ -633,7 +633,7 @@ class App:
     def _start_dictation(self) -> None:
         state = self.state
         logger.info("hotkey DOWN (state = %s)", state.value)
-        # The previous dictation is decoding, not recording — the microphone
+        # The previous dictation is decoding, not recording: the microphone
         # and the samples it holds are already someone else's copy, and
         # `_finish_pipeline` was written to notice it is no longer the current
         # generation. So the next sentence can start now instead of waiting
@@ -644,7 +644,7 @@ class App:
             # An arm that never became a dictation has to be undone here, or
             # the microphone opened at key-down stays open with nothing left
             # to close it. Reachable whenever something moved the app out of
-            # IDLE during the 300 ms hold — a previous dictation still being
+            # IDLE during the 300 ms hold: a previous dictation still being
             # delivered, a model reload.
             self._on_disarm()
             # Remembered, not discarded. Finishing a sentence and starting the
@@ -653,26 +653,26 @@ class App:
             # one did nothing. Picked up by `_finish_pipeline` when the state
             # comes back, provided the key is still down by then.
             # PROCESSING only happens here when overlap is off; LOADING is
-            # the case that survives the default, and it is the one that hurts
-            # — the model was dropped by the idle watcher and the user is
+            # the case that survives the default, and it is the one that hurts:
+            # the model was dropped by the idle watcher and the user is
             # pressing while it comes back. Without this the whole queued-press
             # feature was unreachable as shipped.
             if state in (State.PROCESSING, State.LOADING):
                 self._pending_press = time.monotonic()
                 # Otherwise the pill still reads "Расшифровка" from the
                 # dictation before, which looks exactly like the press having
-                # been lost — the behaviour that taught the user to press
+                # been lost: the behaviour that taught the user to press
                 # twice.
                 pill = self._pill()
                 if pill is not None:
                     pill.show("queued")
             return
         # Already open from the pre-roll, and holding the audio from before
-        # the hold threshold elapsed — keep it, and date the recording from
+        # the hold threshold elapsed: keep it, and date the recording from
         # when the microphone actually opened.
         armed_at, self._armed = self._armed, 0.0
-        # And only if it is fresh. An arm that never became a dictation —
-        # the app was busy, a disarm was lost — would otherwise hand this
+        # And only if it is fresh. An arm that never became a dictation
+        # (the app was busy, a disarm was lost) would otherwise hand this
         # recording a start time from minutes ago, and the microphone
         # buffer along with it.
         if armed_at and time.monotonic() - armed_at > self.ARMED_MAX_AGE:
@@ -704,7 +704,7 @@ class App:
         sound.play("start")
         self._arm_auto_stop()
 
-        # Load the cleanup model now, while the user is still talking — a cold
+        # Load the cleanup model now, while the user is still talking: a cold
         # Ollama load costs ~9 s if it happens after they release.
         if config.get_bool("FVCleanupEnabled") or config.get_bool("FVSmartFix"):
             self.cleaner.warmup()
@@ -742,7 +742,7 @@ class App:
         """Give the video memory back when the app has plainly been left open.
 
         Off by default. Measured here: idle with the model resident is 3180 MiB
-        against 1088 with the app closed — ~2.1 GB of a 6 GB card held while
+        against 1088 with the app closed: ~2.1 GB of a 6 GB card held while
         nothing is happening. Reloading costs 5.6 s, and that lands inside a
         dictation, so this is only worth it on a small card left running all
         day. The user decides; nothing is quietly traded on their behalf.
@@ -788,7 +788,7 @@ class App:
         self._auto_stop.start()
 
     def _on_level(self, level: float) -> None:
-        """Called from the audio thread — keep it to arithmetic and one store."""
+        """Called from the audio thread: keep it to arithmetic and one store."""
         pill = self._pill()
         if pill is not None:
             pill.push_level(level)
@@ -812,7 +812,7 @@ class App:
         """Last-resort guard on PROCESSING.
 
         The hotkey is gated on the app being idle, so any pipeline step that
-        never returns doesn't just lose one dictation — it kills dictation for
+        never returns doesn't just lose one dictation; it kills dictation for
         the rest of the session, with no recovery and nothing on screen to
         explain it. The per-step timeouts are the real defense; this is the
         backstop for the step nobody thought to bound.
@@ -822,7 +822,7 @@ class App:
         def fire() -> None:
             if self.state != State.PROCESSING:
                 return
-            logger.error("processing never finished after %.0f s — forcing idle", seconds)
+            logger.error("processing never finished after %.0f s, forcing idle", seconds)
             # The pipeline wedged before it could deliver, so the words exist
             # nowhere yet. Keeping the audio is the difference between "retry
             # it from the tray" and the dictation being gone; the tone alone
@@ -914,7 +914,7 @@ class App:
                     result = run_with_timeout(decode_timeout, lambda: session.finish(samples))
                     pre_cleaned = session.last_pre_cleaned
                 except Exception as exc:  # noqa: BLE001
-                    # Streaming failed — fall back to the plain batch path so
+                    # Streaming failed: fall back to the plain batch path so
                     # the dictation is never lost.
                     logger.warning("streaming failed (%s), batch fallback", exc)
                     result = run_with_timeout(
@@ -941,13 +941,13 @@ class App:
             # Silence-hallucination guard: Whisper fills an empty room with
             # subtitle boilerplate ("Продолжение следует", "Thanks for
             # watching"). Judged on the audio, not on the model's own
-            # no_speech_prob — that reported 0.000 on four out of four
+            # no_speech_prob, which reported 0.000 on four out of four
             # recordings of real silence here. Still saved to History
             # (untyped), so a false positive is recoverable; never a truly
             # silent drop.
             if is_hallucinated_silence(raw_text, audio_level):
                 logger.warning(
-                    "silence hallucination (rms %.5f, no_speech %.2f) — saved, not typed",
+                    "silence hallucination (rms %.5f, no_speech %.2f): saved, not typed",
                     audio_level, result.no_speech_prob,
                 )
                 self.store.add(
@@ -977,7 +977,7 @@ class App:
             sound.play("error")
             self._notify(
                 "FortuneVoice couldn't transcribe that",
-                "The audio was saved — use “Recover failed dictation” in the tray menu.",
+                "The audio was saved: use “Recover failed dictation” in the tray menu.",
             )
             metrics.record(
                 metrics.DictationMetric(
@@ -1034,7 +1034,7 @@ class App:
         self._events.put(("press", time.monotonic()))
 
     def _finish_pipeline(self, generation: int = 0) -> None:
-        """Hand the state machine back — but only if this pipeline still owns it.
+        """Hand the state machine back, but only if this pipeline still owns it.
 
         Forcing IDLE unconditionally killed the NEXT dictation: let go, start
         talking again straight away, and the previous pipeline's cleanup landed
@@ -1049,7 +1049,7 @@ class App:
         self._cancel_watchdog()
         if self.state == State.PROCESSING:
             self._set_state(State.IDLE)
-            # The state is free again — so is the press that arrived
+            # The state is free again; so is the press that arrived
             # while it was not.
             self._resume_pending_press()
 
@@ -1059,7 +1059,7 @@ class App:
         generation: int = 0,
     ) -> None:
         """Empty transcript. If the audio was actually loud, the decoder failed
-        on real speech — retry once (timed) before giving up."""
+        on real speech: retry once (timed) before giving up."""
         if audio_level > 0.02:
             logger.warning("empty transcript on loud audio (rms %.3f), retrying", audio_level)
             try:
@@ -1079,20 +1079,20 @@ class App:
         logger.warning("empty transcript (rms %.3f), nothing to type", audio_level)
         kept_audio = audio_level > 0.02
         if kept_audio:
-            # Loud audio, two failed decodes — that was real speech the decoder
+            # Loud audio, two failed decodes: that was real speech the decoder
             # lost. Keep the audio for a manual retry.
             self.recovery.save(samples)
-        # Never end a dictation without telling the user what happened — a
+        # Never end a dictation without telling the user what happened: a
         # silent drop reads as "the app ate my words".
         sound.play("error")
         if audio_level < 0.006:
             self._notify(
                 "FortuneVoice didn't hear anything",
-                "The microphone picked up no signal — check the input device in the tray menu.",
+                "The microphone picked up no signal: check the input device in the tray menu.",
             )
         elif kept_audio:
             # There WAS speech and the decoder lost it. The recording is on
-            # disk and the tray can retry it — but only if the user is told;
+            # disk and the tray can retry it, but only if the user is told;
             # an error beep on its own reads as "the app ate my words".
             self._notify(t("notify.lost"), t("notify.stuck_body"))
         self._record_drop(
@@ -1104,12 +1104,12 @@ class App:
         self, raw_text: str, result: Result, pre_cleaned: tuple[str, str] | None
     ) -> tuple[str, float, int | None]:
         """Cleanup with its own safety net. Hard deadline: macOS metrics showed
-        a cold Ollama load stalling this for ~16 s — raw Whisper text NOW beats
+        a cold Ollama load stalling this for ~16 s: raw Whisper text NOW beats
         perfect text later, so past the deadline we type raw and let the LLM
         finish unused."""
         # Its own state on the pill. The decode and a cold Ollama load were
         # one undifferentiated "Transcribing", and the second of those costs
-        # about nine seconds — long enough, with nothing changing on screen,
+        # about nine seconds: long enough, with nothing changing on screen,
         # to read as a hang.
         pill = self._pill()
         if pill is not None:
@@ -1137,7 +1137,7 @@ class App:
         budget = self.SMART_FIX_BUDGET if low_confidence else self.CLEANUP_BUDGET
         if config.get_str("FVCleanupDevice").lower() == "cpu":
             # A CPU run is 4-10 s where a GPU one is under one, so the GPU
-            # budget rejects every single one — and a cleanup that always
+            # budget rejects every single one, and a cleanup that always
             # misses its deadline is no cleanup at all, except the user waited
             # for it. This is the cost of the trade, and it is the reason the
             # setting is a choice rather than a fallback.
@@ -1167,7 +1167,7 @@ class App:
     def _assemble(prefix: str, remainder: str, raw: str) -> str:
         """Join the prefix cleaned during recording with the freshly cleaned
         tail. Same safety net as the whole-text path: if the assembled result
-        lost more than ~35% of the spoken words, something ate content — use
+        lost more than ~35% of the spoken words, something ate content: use
         the raw transcript. Losing punctuation beats losing sentences."""
         joined = collapse_repeats(" ".join(p for p in (prefix, remainder) if p))
         raw_words = word_count(raw)
@@ -1198,7 +1198,7 @@ class App:
         Two dictations into the same field arrived as "...все суперПривет!":
         the app types exactly what it transcribed, and Whisper never returns a
         leading space. We cannot read the target field, so the decision is
-        made from what we ourselves last put there — same window, recently,
+        made from what we ourselves last put there: same window, recently,
         and it ended in something a space belongs after.
         """
         previous, self._last_typed = self._last_typed, None
@@ -1230,7 +1230,7 @@ class App:
         if not earlier.wait(self.DELIVERY_ORDER_WAIT):
             # Its pipeline is wedged. The watchdog owns that problem; this one
             # is not going to hold a finished transcript hostage to it.
-            logger.warning("dictation %d gave up waiting for %d — delivering "
+            logger.warning("dictation %d gave up waiting for %d: delivering "
                            "out of order", generation, generation - 1)
 
     def _deliver(
@@ -1242,7 +1242,7 @@ class App:
         """Deliver the final transcript.
 
         ORDER MATTERS for reliability: the text is saved to History FIRST (the
-        vault — it can never be lost from here on), then routed to the focused
+        vault: it can never be lost from here on), then routed to the focused
         app. Every path keeps the text recoverable; nothing is ever silently
         discarded.
         """
@@ -1272,8 +1272,8 @@ class App:
         )
         if not saved:
             # The vault is the reason every other failure below is survivable.
-            # With it gone the text still gets typed — that is the user's
-            # dictation and they should have it — but they must be told that
+            # With it gone the text still gets typed: that is the user's
+            # dictation and they should have it, but they must be told that
             # this one is not recoverable, rather than finding out later that
             # History has been quietly empty for a week.
             self._notify(t("notify.history_failed"), t("notify.history_failed_body"))
@@ -1324,7 +1324,7 @@ class App:
                 cleanup_ms=cleanup_ms, total_ms=total_ms, chars=len(text),
                 outcome=outcome,
                 # < 20 ms means no LLM round-trip happened (disabled, or
-                # needs_cleanup said the text was already clean) — an HTTP call
+                # needs_cleanup said the text was already clean): an HTTP call
                 # is never that fast.
                 cleanup_skipped=cleanup_ms < 20, retried=retried,
                 stream_passes=stream_passes, logprob=result.avg_logprob,
@@ -1343,7 +1343,7 @@ class App:
         )
 
     def _hold(self, reason: str, text: str) -> None:
-        """We couldn't type it — show the transcript with a Copy button.
+        """We couldn't type it: show the transcript with a Copy button.
 
         Nothing is put on the clipboard until the user presses that button.
         That is the whole reason the macOS build stopped routing dictations
@@ -1400,7 +1400,7 @@ class App:
                     timeout, lambda: self.transcriber.transcribe(samples)
                 )
                 if not result.text:
-                    sound.play("error")  # still nothing — keep the WAV for later
+                    sound.play("error")  # still nothing: keep the WAV for later
                     return
                 self.last_transcript = result.text
                 self.store.add(

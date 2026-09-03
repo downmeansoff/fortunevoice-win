@@ -8,7 +8,7 @@ package lives on it.
 Tkinter is not thread-safe. The rule that makes this work is absolute: **no
 code outside this module ever touches a Tk object directly.** Callers hand a
 callable to `ui.call()`, it lands on a queue, and the UI thread drains it from
-a timer. Breaking that rule does not raise — it corrupts the interpreter and
+a timer. Breaking that rule does not raise; it corrupts the interpreter and
 crashes minutes later somewhere unrelated.
 """
 
@@ -27,7 +27,7 @@ logger = get_logger("ui")
 _PUMP_MS = 25
 # And how often once the queue has been empty for a while. Measured: draining
 # an empty queue forty times a second costs 1.4% of a core, all day, for a tray
-# app doing nothing — the single largest thing this process burns while idle.
+# app doing nothing: the single largest thing this process burns while idle.
 # At 100 ms that is roughly a quarter, and the cost is at most 100 ms before
 # the pill appears, which is well under the 300 ms the hotkey already spends
 # deciding a modifier chord was really held.
@@ -51,7 +51,7 @@ class UiThread:
 
     def start(self) -> bool:
         """Start the thread and wait for Tk to come up. False when Tk is
-        unavailable — the app must keep dictating without any of this."""
+        unavailable: the app must keep dictating without any of this."""
         if self._thread and self._thread.is_alive():
             return not self._failed
         self._thread = threading.Thread(target=self._run, name="ui", daemon=True)
@@ -72,7 +72,7 @@ class UiThread:
             self._apply_icon()
         except Exception as exc:  # noqa: BLE001 - a headless or broken Tk is survivable
             self._failed = True
-            logger.warning("UI unavailable (%s) — running without windows", exc)
+            logger.warning("UI unavailable (%s), running without windows", exc)
             self._ready.set()
             return
 
@@ -132,8 +132,8 @@ class UiThread:
     # Set by the app once the tray exists. A window that fails to build is
     # otherwise completely silent: the user clicks "Settings", nothing appears,
     # and the only record is a line in a log file they have no reason to open.
-    # That happened twice during this port — a renamed colour constant and a
-    # missing helper — and both times it was found by reading the log, not by
+    # That happened twice during this port: a renamed colour constant and a
+    # missing helper, and both times it was found by reading the log, not by
     # the app saying anything.
     on_error: Callable[[str], None] | None = None
 

@@ -5,7 +5,7 @@ relying on: Segoe Fluent Icons only exists on Windows 11 and addresses its
 glyphs through private-use codepoints that move between releases, and colour
 emoji clash with a flat blue accent.
 
-So the dozen glyphs this UI needs are drawn from primitives — every one is a
+So the dozen glyphs this UI needs are drawn from primitives: every one is a
 few arcs and lines. They render at 8x and downsample, because PIL has no
 antialiased drawing and a 16 px glyph drawn directly looks like gravel.
 
@@ -209,7 +209,7 @@ def _render(name: str, size: int, colour: str, stroke: float):
 
 
 def image(name: str, size: int = 16, colour: str = "#F5F4EE", stroke: float = 0.075):
-    """PIL image of a glyph. Cached — the same icon is asked for on every
+    """PIL image of a glyph. Cached: the same icon is asked for on every
     repaint of a scrolling list."""
     return _render(name, size, colour, stroke)
 
@@ -226,7 +226,7 @@ def _mix(a: str, b: str, amount: float) -> tuple[int, int, int, int]:
 
 def tile(name: str, size: int, glyph_colour: str, background: str,
          radius: float = 0.28, tint: str | None = None):
-    """A glyph on a rounded plate — the Settings row icons.
+    """A glyph on a rounded plate: the Settings row icons.
 
     `tint` washes the plate rather than colouring the glyph. Colouring the
     glyph is what made these read as smudges: a muted earth tone on a dark

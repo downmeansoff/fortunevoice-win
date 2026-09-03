@@ -2,7 +2,7 @@
 
 The .ico is what Explorer, the taskbar and Alt-Tab draw. Windows picks the
 frame closest to the size it wants and scales it, so a missing frame does not
-fail — it just looks blurry, which nobody files a bug about and everybody
+fail; it just looks blurry, which nobody files a bug about and everybody
 notices.
 """
 
@@ -18,8 +18,8 @@ WANTED = {(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48),
 
 def test_ico_contains_every_size(tmp_path):
     """Regression: built from the 16 px render, Pillow silently dropped every
-    larger frame — its ICO writer discards requested sizes bigger than the
-    image being saved — and shipped a one-frame icon that Explorer upscaled."""
+    larger frame (its ICO writer discards requested sizes bigger than the
+    image being saved) and shipped a one-frame icon that Explorer upscaled."""
     path = assets.write_ico(tmp_path / "icon.ico")
     with Image.open(path) as image:
         assert set(image.ico.sizes()) == WANTED
@@ -45,7 +45,7 @@ def test_mark_renders_at_the_requested_size():
 
 def test_tray_image_has_no_plate():
     """The tray icon sits directly on the user's taskbar colour, so its corners
-    must be transparent — a plate of any kind would show as a box on a light
+    must be transparent: a plate of any kind would show as a box on a light
     taskbar."""
     image = assets.tray_image(assets.IDLE)
     assert image.getpixel((0, 0))[3] == 0
@@ -71,7 +71,7 @@ def test_the_logo_has_a_reflection():
 
 
 def test_the_logo_lightens_towards_the_bottom():
-    """The caustic — light leaving the bottom of the sphere. Without it the
+    """The caustic: light leaving the bottom of the sphere. Without it the
     shape reads as a flat disc."""
     image = assets.logo(128).convert("RGB")
     middle = sum(image.getpixel((64, 70)))

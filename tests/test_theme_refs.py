@@ -3,7 +3,7 @@
 Split out of the UI smoke tests on purpose: those need a desktop session and
 are opt-in, while this is pure text analysis and must run on every commit.
 
-It exists because of a real failure — rewriting the palette removed
+It exists because of a real failure: rewriting the palette removed
 `theme.INK_RAISED` and two windows still referenced it. The main window
 screenshotted perfectly while the first-run screen raised AttributeError
 inside a UI callback, was swallowed by the event pump, and simply never

@@ -1,7 +1,7 @@
 """Aggregates over dictation history.
 
 Port of Sources/FortuneVoice/DictationStats.swift. Pure functions over a list
-of records — no I/O, so the tests that came with them port directly.
+of records: no I/O, so the tests that came with them port directly.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ def total_words(records: list[DictationRecord]) -> int:
 
 
 def words_per_minute(records: list[DictationRecord]) -> float:
-    """Words per minute of actual speaking time. 0 when nothing was said —
+    """Words per minute of actual speaking time. 0 when nothing was said,
     never a division by zero."""
     seconds = sum(r.duration for r in records)
     if seconds <= 0:
@@ -55,7 +55,7 @@ def streak_days(records: list[DictationRecord], now: datetime | None = None) -> 
 
 def words_by_app(records: list[DictationRecord]) -> list[tuple[str, int]]:
     """(app, words) descending. Records with no app are bucketed as Unknown
-    rather than dropped — they are still words the user dictated."""
+    rather than dropped: they are still words the user dictated."""
     totals: dict[str, int] = {}
     for record in records:
         name = record.app or UNKNOWN_APP

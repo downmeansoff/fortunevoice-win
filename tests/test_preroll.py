@@ -79,7 +79,7 @@ def test_disarming_without_arming_does_nothing(app):
 def test_the_dictation_keeps_the_pre_rolled_audio(app, monkeypatch):
     """The point of the whole exercise: `_start_dictation` must not restart the
     recorder, because restarting throws away everything captured during the
-    hold — which is exactly the speech this feature exists to keep."""
+    hold, which is exactly the speech this feature exists to keep."""
     monkeypatch.setattr(app.transcriber, "warmup", lambda: None)
     monkeypatch.setattr(app.transcriber, "reset_session_language", lambda: None)
 
@@ -95,7 +95,7 @@ def test_the_dictation_keeps_the_pre_rolled_audio(app, monkeypatch):
 
 
 def test_a_dictation_without_a_pre_roll_still_starts(app, monkeypatch):
-    """An ordinary chord like ctrl+alt+space never arms — that path has to keep
+    """An ordinary chord like ctrl+alt+space never arms: that path has to keep
     opening the microphone itself."""
     monkeypatch.setattr(app.transcriber, "warmup", lambda: None)
     monkeypatch.setattr(app.transcriber, "reset_session_language", lambda: None)
@@ -139,8 +139,8 @@ def test_arming_is_ignored_unless_idle(app):
 
 def test_an_arm_that_never_becomes_a_dictation_closes_the_microphone(app, monkeypatch):
     """The microphone is opened at key-down and handed to `_start_dictation`
-    300 ms later. If anything moved the app out of IDLE in between — another
-    dictation still finishing, a model reload — that function returns early,
+    300 ms later. If anything moved the app out of IDLE in between (another
+    dictation still finishing, a model reload), that function returns early,
     and the arm it never consumed used to leave the microphone recording with
     nothing left to stop it.
     """
@@ -152,7 +152,7 @@ def test_an_arm_that_never_becomes_a_dictation_closes_the_microphone(app, monkey
 
     # LOADING, not PROCESSING: a dictation now starts over a decode on
     # purpose (FVOverlapDictation), so PROCESSING no longer leaves an
-    # arm stranded. LOADING still does — there is no model to decode
+    # arm stranded. LOADING still does: there is no model to decode
     # with, and the leak this test guards is unchanged.
     app._set_state(State.LOADING)   # busy by the time the hold completes
     app._start_dictation()

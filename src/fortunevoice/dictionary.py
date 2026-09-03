@@ -1,4 +1,4 @@
-"""Custom vocabulary — names and jargon Whisper keeps mishearing.
+"""Custom vocabulary: names and jargon Whisper keeps mishearing.
 
 Stored as a plain JSON list the user can edit by hand:
 
@@ -111,7 +111,7 @@ def _words_with_sentence_starts(text: str) -> list[tuple[str, bool]]:
 
     `_words()` discards punctuation, so a caller walking its output cannot
     tell. The flag used to be set True once and never again, which made every
-    capitalised word after the first look mid-sentence — and an ordinary word
+    capitalised word after the first look mid-sentence, and an ordinary word
     opening the second sentence was learned as vocabulary.
     """
     out: list[tuple[str, bool]] = []
@@ -139,7 +139,7 @@ def _looks_like_a_term(word: str, sentence_start: bool) -> bool:
     """Is this a name or a piece of jargon, rather than an ordinary word?
 
     Two signals, both cheap and both specific to the thing being fixed:
-    a capital letter away from the start of a sentence, and Latin letters —
+    a capital letter away from the start of a sentence, and Latin letters,
     which in a Russian dictation is by definition a foreign name or a product.
     """
     if len(word) < MIN_TERM_CHARS:
@@ -153,7 +153,7 @@ def learn_from_correction(before: str, after: str) -> list[str]:
     """Terms the user introduced by correcting a transcript.
 
     A correction is the one place the app knows for certain that speech
-    recognition got a word wrong AND what the right word was — the user just
+    recognition got a word wrong AND what the right word was: the user just
     typed it. Feeding those back as vocabulary is what stops the same name
     being misheard every single time.
 

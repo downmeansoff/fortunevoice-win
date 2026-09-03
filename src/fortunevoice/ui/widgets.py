@@ -50,7 +50,7 @@ class Card:
 
     def _fit(self, _event=None) -> None:
         """Grow the canvas to whatever the content needs. Without this a Card
-        collapses to zero height — a Canvas has no idea what is inside it."""
+        collapses to zero height: a Canvas has no idea what is inside it."""
         height = self.body.winfo_reqheight() + self._pady * 2
         if self.canvas.winfo_height() != height:
             self.canvas.configure(height=height)
@@ -122,7 +122,7 @@ class Dropdown:
         self._get, self._set = get, set_
         # Options that can change while the window is open. The Ollama model
         # list is built by asking Ollama, and Ollama on Windows shuts itself
-        # down when idle — so a list built once at window-open time silently
+        # down when idle, so a list built once at window-open time silently
         # collapsed to the single model already configured.
         self._refresh = refresh
 
@@ -146,7 +146,7 @@ class Dropdown:
     def _fill(self, options: list[tuple[str, str]]) -> None:
         """Radio items, so the open menu says which one you are on.
 
-        With plain commands the list gave no indication at all — you opened
+        With plain commands the list gave no indication at all: you opened
         "Язык речи", saw four languages, and had to close the menu and read
         the row behind it to find out which was selected. The tray menu has
         always done this correctly; the window did not.
@@ -186,7 +186,7 @@ class Dropdown:
         for value, title in self._options:
             if value == current:
                 return title
-        return current or "—"
+        return current or "-"
 
     def paint(self) -> None:
         text = self._title()
@@ -223,7 +223,7 @@ class Chip:
     """A small label with an edge.
 
     Two forms. Filled is the quiet one used inside a list; `outline=True` is a
-    hairline box on the page itself, for the shortcut in the masthead — a
+    hairline box on the page itself, for the shortcut in the masthead: a
     filled pill there would be the second-loudest thing on a page whose whole
     argument is that nothing is filled.
     """
@@ -308,7 +308,7 @@ class NavItem:
                                 font=theme.font(10, "bold" if self._active else "normal"))
         if self._active:
             # Two pixels of accent, sitting on the masthead rule. This is the
-            # only thing that says which tab you are on, and it is enough —
+            # only thing that says which tab you are on, and it is enough:
             # the filled plate it replaces was a button pretending to be a
             # location.
             self.canvas.create_rectangle(0, height - max(2, theme.px(2)),
@@ -319,7 +319,7 @@ class NavItem:
 
 
 class IconButton:
-    """A square rounded button holding one glyph — the actions above History."""
+    """A square rounded button holding one glyph: the actions above History."""
 
     def __init__(self, parent, glyph: str, command, size: int = 0, tooltip: str = "") -> None:
         import tkinter as tk
@@ -398,7 +398,7 @@ class SettingRow:
         text = tk.Frame(row, bg=theme.PAPER)
         text.pack(side="left", fill="x", expand=True)
         theme.label(text, title, size=10).pack(anchor="w")
-        # Kept on the row so callers can swap it — the shortcut row says
+        # Kept on the row so callers can swap it: the shortcut row says
         # something different while it is listening for keys.
         self.subtitle = None
         if subtitle:
@@ -444,7 +444,7 @@ def _pretty_chord(raw: str) -> str:
     The same spelling the header chip and the tray tooltip use. The
     row showed the raw config string, so the one place you go to
     CHANGE the shortcut was the one place that spelled it
-    differently — and lowercase, next to the words "Сочетание
+    differently, and lowercase, next to the words "Сочетание
     клавиш", reads like literal text to type rather than the keys
     you hold.
     """
@@ -483,7 +483,7 @@ class ShortcutRecorder:
         "bracketleft": "[", "bracketright": "]",
     }
     # Keys that are never a shortcut on their own. Tk on Windows reports the
-    # Windows key as Win_L/Win_R, NOT the X11 name Super_L — listing only the
+    # Windows key as Win_L/Win_R, NOT the X11 name Super_L: listing only the
     # X11 spelling let a lone Win press through as the literal key "win_l",
     # which the parser then rejected with "unknown key".
     _IGNORED = {
@@ -531,7 +531,7 @@ class ShortcutRecorder:
 
         # Every descendant, not just the direct children. A SettingRow keeps
         # its title and hint inside a frame, so clicking the words "Сочетание
-        # клавиш" — the obvious place to click — landed on a label nobody had
+        # клавиш" (the obvious place to click) landed on a label nobody had
         # bound and did nothing.
         for root in widgets:
             for widget in descendants(root):
@@ -563,7 +563,7 @@ class ShortcutRecorder:
             # Fallback: bound on the TOPLEVEL, not on the chip, so a stray
             # click elsewhere in the window cannot send the keypress somewhere
             # that ignores it while this widget still looks like it is
-            # listening. Not bind_all — the matching unbind_all wipes every
+            # listening. Not bind_all: the matching unbind_all wipes every
             # other <KeyPress> handler in the app, not just ours; keeping the
             # funcid removes exactly one.
             window = self.canvas.winfo_toplevel()
@@ -576,8 +576,8 @@ class ShortcutRecorder:
     def cancel(self) -> None:
         """Stop listening, from outside. Closing the window while the chip was
         armed used to leave the global hook installed: it swallows keys, so the
-        next keystroke anywhere vanished and the app's own hotkey stayed paused
-        — the keyboard half-dead with nothing on screen to explain it."""
+        next keystroke anywhere vanished and the app's own hotkey stayed paused,
+        the keyboard half-dead with nothing on screen to explain it."""
         if self._listening:
             self._end()
 
@@ -637,7 +637,7 @@ class ShortcutRecorder:
         # 150 px made "ctrl+alt+space" fill the whole box while "Русский" sat
         # in a third of one, so the right-hand column read as a mistake.
         label = (t("settings.shortcut_press") if self._listening
-                 else (_pretty_chord(self._get()) or "—"))
+                 else (_pretty_chord(self._get()) or "-"))
         pad = theme.px(12)
         chord_font = theme.mono(9)
         width = max(theme.px(96),
@@ -647,8 +647,8 @@ class ShortcutRecorder:
         self.canvas.delete("all")
         if self._listening:
             # Filled, and the only filled control in the window. This is
-            # a mode the user is IN — the keyboard is being swallowed
-            # while it lasts — and a mode you cannot see is how the
+            # a mode the user is IN: the keyboard is being swallowed
+            # while it lasts, and a mode you cannot see is how the
             # whole keyboard ends up feeling broken.
             self.canvas.create_rectangle(0, theme.px(2), width - 1,
                                          height - theme.px(2),
@@ -658,7 +658,7 @@ class ShortcutRecorder:
                                     fill="#FFFFFF", font=theme.font(9, "bold"))
             return
         # A chord is something you type, so it is set in the mono face,
-        # in a hairline box — the same box the masthead shows it in.
+        # in a hairline box, the same box the masthead shows it in.
         self.canvas.create_rectangle(0, theme.px(3), width - 1,
                                      height - theme.px(3),
                                      outline=theme.STROKE, width=max(1, theme.px(1)))

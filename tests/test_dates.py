@@ -1,6 +1,6 @@
 """Date labels in History.
 
-`strftime("%A")` answers in the C locale — English, whatever the UI language.
+`strftime("%A")` answers in the C locale: English, whatever the UI language.
 The result was a list headed «Сегодня», «Вчера», then "Saturday": two thirds
 translated, which reads worse than none of it.
 """
@@ -35,7 +35,7 @@ def test_today_and_yesterday_win_over_the_weekday(russian):
 
 
 def test_older_dates_use_the_genitive_month(russian):
-    """"16 июля", not "16 июль" — the nominative reads like a machine wrote it."""
+    """"16 июля", not "16 июль": the nominative reads like a machine wrote it."""
     assert _day_label("2026-07-16T10:00:00", TODAY) == "16 июля 2026"
 
 

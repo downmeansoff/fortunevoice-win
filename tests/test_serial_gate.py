@@ -2,7 +2,7 @@
 
 The gate serialises decodes. Its waits MUST be bounded: an unbounded version
 shipped once on macOS and turned a single wedged decode into a permanently
-dead app — the holder never released, every later decode blocked forever, and
+dead app: the holder never released, every later decode blocked forever, and
 the state machine never returned to idle, which silently killed the hotkey for
 the rest of the session.
 """
@@ -20,7 +20,7 @@ def test_acquires_when_free():
 
 def test_wait_times_out_when_the_holder_never_releases():
     """The regression test. A holder that never releases must not trap the
-    next caller — it gets refused and can fail fast."""
+    next caller: it gets refused and can fail fast."""
     gate = SerialGate()
     assert gate.acquire(1)  # held, never released
 
@@ -64,7 +64,7 @@ def test_expired_waiter_does_not_consume_a_later_release():
 
 
 def test_fifo_order():
-    """Two waiters are served in arrival order — a streaming pass must not
+    """Two waiters are served in arrival order: a streaming pass must not
     jump ahead of the final decode that queued before it."""
     gate = SerialGate()
     assert gate.acquire(1)

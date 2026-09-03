@@ -18,7 +18,7 @@ def tone_silence_tone() -> np.ndarray:
 
 
 def alternating(amplitude: float, count: int) -> np.ndarray:
-    """Alternating ±amplitude has RMS exactly `amplitude` — lets a test state
+    """Alternating ±amplitude has RMS exactly `amplitude`, lets a test state
     the loudness it means instead of approximating it."""
     signs = np.where(np.arange(count) % 2 == 0, 1.0, -1.0)
     return (signs * amplitude).astype(np.float32)
@@ -129,7 +129,7 @@ class _StubRecorder:
 def test_finishing_ends_the_block_cleanup_thread():
     """Only abort() used to stop it. The normal path left it blocked on
     queue.get() forever, so every dictation that cleaned a block leaked a
-    thread — and each one held its whole session alive: blocks, samples, the
+    thread, and each one held its whole session alive: blocks, samples, the
     transcriber reference."""
     import threading
     import time as _time

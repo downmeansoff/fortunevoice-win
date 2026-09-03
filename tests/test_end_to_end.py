@@ -2,7 +2,7 @@
 
 Every other test in this suite stubs the model: they check the app's ordering
 and its guards, and they are fast because nothing decodes. That leaves the one
-question they cannot answer — does a person speaking actually end up with their
+question they cannot answer: does a person speaking actually end up with their
 words typed into the window in front of them?
 
 So this synthesises Russian speech with the voice Windows ships (SAPI, Irina),
@@ -75,8 +75,8 @@ def spoken() -> np.ndarray:
 
 @pytest.fixture(autouse=True)
 def real_model(monkeypatch):
-    """Undo the suite-wide ban on loading a model — this file is about the
-    model — and point the weights at the ones already on disk.
+    """Undo the suite-wide ban on loading a model (this file is about the
+    model), and point the weights at the ones already on disk.
 
     Only the weights: history, config and metrics stay in the per-test temp
     home, so running this never touches what the user has dictated. Without
@@ -95,7 +95,7 @@ def real_model(monkeypatch):
         pytest.skip("no APPDATA to find the downloaded weights in")
     weights = Path(appdata) / "FortuneVoice" / "models"
     if not weights.exists():
-        pytest.skip("no model on disk — run the app once first")
+        pytest.skip("no model on disk: run the app once first")
     monkeypatch.setattr(paths, "models_dir", lambda: weights)
 
 
@@ -124,7 +124,7 @@ class SpeaksOnce:
 
 @pytest.fixture
 def app(monkeypatch, spoken):
-    """A real App — real transcriber, real cleaner — with the microphone and
+    """A real App (real transcriber, real cleaner) with the microphone and
     the keyboard replaced, and nothing allowed to reach the user's desktop."""
     from fortunevoice import app as app_module
     from fortunevoice.app import App, State
@@ -162,7 +162,7 @@ def _speak_and_wait(app, seconds: float = 90.0) -> str:
 
 
 def _sounds_right(text: str) -> bool:
-    """Whisper will not match the phrase word for word — it punctuates and
+    """Whisper will not match the phrase word for word: it punctuates and
     sometimes hears a different ending. Check the words that carry it."""
     lowered = text.lower()
     # Not "коммит": the synthetic voice says it in a way Whisper reliably hears
@@ -183,7 +183,7 @@ def test_a_dictation_after_the_idle_unload_still_arrives(app):
     With FVUnloadModelAfter set, the idle watcher drops the model; the next
     key-down starts a reload underneath the recording. That reload announced
     LOADING and then IDLE while the user was still speaking, and `_stop_dictation`
-    returns early unless the state is RECORDING — so at key-up nothing was
+    returns early unless the state is RECORDING, so at key-up nothing was
     decoded, nothing typed, nothing saved, and no sound played.
     """
     from fortunevoice.app import State
@@ -223,8 +223,8 @@ def test_changing_the_model_actually_changes_it(app):
 
 
 def test_a_long_phrase_is_not_cut_off_in_toggle_mode(app, spoken):
-    """The auto-stop treated anything under 0.2 RMS as silence — ten times the
-    app's own floor for speech — so a normal voice never counted as talking and
+    """The auto-stop treated anything under 0.2 RMS as silence, ten times the
+    app's own floor for speech, so a normal voice never counted as talking and
     toggle mode ended the recording four seconds in, mid-sentence."""
     from fortunevoice.app import State
 
@@ -245,5 +245,5 @@ def test_a_long_phrase_is_not_cut_off_in_toggle_mode(app, spoken):
     assert heard > 0, "not one block of real speech counted as speech"
     speech_blocks = heard / (spoken.size // block)
     assert speech_blocks > 0.25, (
-        f"only {speech_blocks:.0%} of the phrase counted as speech — the "
+        f"only {speech_blocks:.0%} of the phrase counted as speech: the "
         "silence timer would fire in the middle of it")

@@ -182,7 +182,7 @@ def test_a_missing_faster_whisper_says_how_to_fix_it(monkeypatch):
 
 def test_only_one_ctranslate_worker(fake_whisper):
     """The gate already serialises decoding, and a second worker doubles VRAM
-    for nothing — on a 6 GB card that is the difference between fitting beside
+    for nothing; on a 6 GB card that is the difference between fitting beside
     the cleanup model and not."""
     Transcriber().load()
     assert fake_whisper.built[0]["workers"] == 1
@@ -301,7 +301,7 @@ def test_the_decoding_options_that_were_paid_for_with_bugs(loaded):
 
 
 def test_the_gate_is_released_even_when_the_decode_raises():
-    """Otherwise one failed decode wedges every dictation after it — the app
+    """Otherwise one failed decode wedges every dictation after it: the app
     would look alive and never transcribe again.
 
     A plain error, deliberately: "CUDA out of memory" is now the signal to
@@ -321,7 +321,7 @@ def test_the_gate_is_released_even_when_the_decode_raises():
 
 
 def test_the_gate_survives_a_rebuild_after_a_dead_context(monkeypatch):
-    """The rebuild path acquires and releases the gate twice — once for the
+    """The rebuild path acquires and releases the gate twice: once for the
     decode that died, once for the retry. Getting that wrong wedges the app in
     exactly the situation it exists to rescue."""
     engine = Transcriber()
@@ -376,7 +376,7 @@ def test_warmup_runs_after_an_idle_gap(loaded):
 
 def test_warmup_uses_the_simple_options_not_the_real_ones(loaded):
     """Silence can fail the compression check, and with the real options that
-    sends the decoder into repeated re-decodes — making the warmup slower than
+    sends the decoder into repeated re-decodes, making the warmup slower than
     the dictation it exists to speed up."""
     engine, model = loaded
     engine._last_decode_at = None
@@ -568,7 +568,7 @@ def test_an_ordinary_failure_is_not_retried(monkeypatch):
 
 def test_the_second_failure_is_reported_rather_than_looped(monkeypatch):
     """A card that is genuinely out of memory fails the rebuild too. One
-    retry, then the truth — the audio is kept either way."""
+    retry, then the truth; the audio is kept either way."""
     import numpy as np
     import pytest as _pytest
 
@@ -608,7 +608,7 @@ def test_a_full_card_is_not_a_dead_context(monkeypatch):
 
     def full(samples):
         attempts.append(1)
-        # The message a full card actually gives — observed here when
+        # The message a full card actually gives, observed here when
         # Whisper was resident and a second model tried to load.
         # "cuda failed" stays a dead-context marker; a malloc that could
         # not find room is not one.

@@ -4,7 +4,7 @@ Only what the app actually calls. Everything here is plain ctypes rather than
 pywin32: one less binary wheel to install, and no DLL-loading surprises when
 the app is launched from a shortcut with a different working directory.
 
-ULONG_PTR is declared explicitly per-architecture — getting it wrong silently
+ULONG_PTR is declared explicitly per-architecture: getting it wrong silently
 corrupts the INPUT struct layout on 64-bit, and SendInput then fails with no
 error the caller can see.
 """
@@ -135,7 +135,7 @@ kernel32.GlobalLock.restype = wintypes.LPVOID
 kernel32.GlobalUnlock.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalUnlock.restype = wintypes.BOOL
 # Declared like the rest of them. ctypes passes an undeclared argument as C
-# int — 32 bits — so a handle above 2 GB arrived at GlobalFree truncated, and
+# int, 32 bits, so a handle above 2 GB arrived at GlobalFree truncated, and
 # what got freed was whatever that torn value happened to name.
 kernel32.GlobalFree.argtypes = (wintypes.HGLOBAL,)
 kernel32.GlobalFree.restype = wintypes.HGLOBAL
@@ -181,7 +181,7 @@ def toplevel_hwnd(window) -> int:
     """The real top-level HWND behind a Tk window.
 
     `winfo_id()` gives Tk's client window, which for a decorated toplevel is a
-    child of a wrapper frame — setting styles on the child would do nothing
+    child of a wrapper frame: setting styles on the child would do nothing
     visible. Tk exposes the frame through `wm_frame()`; fall back to walking up
     with GetParent for the borderless case where there is no wrapper.
     """
@@ -216,7 +216,7 @@ def make_click_through(window) -> None:
 
     The pill floats over whatever the user is working in. Without this, a
     button underneath it silently stops responding for as long as a dictation
-    lasts — a bug that would look like the *other* app being broken.
+    lasts, a bug that would look like the *other* app being broken.
 
     WS_EX_TRANSPARENT only behaves on a layered window; Tk's
     `-transparentcolor` already sets WS_EX_LAYERED, and the pill relies on it
@@ -281,7 +281,7 @@ kernel32.CloseHandle.restype = wintypes.BOOL
 
 
 def process_name(hwnd: int) -> str | None:
-    """The executable behind a window — "Code.exe" — or None."""
+    """The executable behind a window ("Code.exe") or None."""
     return process_name_of_pid(window_process_id(hwnd))
 
 
@@ -305,14 +305,14 @@ def process_name_of_pid(pid: int) -> str | None:
 
 
 def foreground_app_name() -> str | None:
-    """Which application the dictation is going into — "Telegram.exe".
+    """Which application the dictation is going into: "Telegram.exe".
 
     The executable name, not the window title. Per-app profiles are keyed by
     executable (see profiles.py), and matching them against a title meant they
     never matched anything at all: the feature was documented, configurable,
-    and dead. It is also the better label for history — a title is one
+    and dead. It is also the better label for history: a title is one
     document, so grouping "where you dictate" by it produced a list of file
-    names rather than a list of apps — and it keeps document names and page
+    names rather than a list of apps, and it keeps document names and page
     titles out of a file that sits on disk.
 
     Falls back to the title when the process cannot be opened, so a window we
@@ -368,7 +368,7 @@ def tap_probe_key() -> bool:
         events[index].ki.dwExtraInfo = 0
     # Whether Windows accepted it. A probe that was never sent cannot be
     # answered, and reading that silence as a dead hook reinstalls the hook
-    # every twenty seconds for as long as the refusal lasts — which is what a
+    # every twenty seconds for as long as the refusal lasts, which is what a
     # UAC prompt or a full-screen game with input blocked looks like.
     return user32.SendInput(2, events, ctypes.sizeof(INPUT)) == 2
 
@@ -388,7 +388,7 @@ def claim_single_instance() -> bool:
     Two instances is not a cosmetic problem: each installs its own low-level
     keyboard hook, so one press starts two recordings and the transcript is
     typed twice into the user's document. The handle is deliberately leaked
-    for the life of the process — Windows releases it on exit.
+    for the life of the process; Windows releases it on exit.
     """
     global _instance_mutex
 
@@ -405,7 +405,7 @@ DPI_AWARENESS_CONTEXT_SYSTEM_AWARE = ctypes.c_void_p(-2)
 
 
 # Windows groups taskbar buttons, and picks the icon, by Application User
-# Model ID. A Python app inherits pythonw.exe's — so the taskbar showed the
+# Model ID. A Python app inherits pythonw.exe's, so the taskbar showed the
 # Python logo next to our own window, and pinning it would have pinned Python.
 # Setting our own is the whole fix; it must happen before any window exists.
 APP_ID = "FortuneVoice.Dictation.Windows.1"
@@ -459,7 +459,7 @@ def scale_factor(hwnd: int = 0) -> float:
     """Display scale for a window (1.0 = 100%, 1.5 = 150%).
 
     Tk sizes widgets in raw pixels, so a DPI-aware process draws a 40 px row
-    as 40 physical pixels — correct on 100%, half the intended size on 200%.
+    as 40 physical pixels: correct on 100%, half the intended size on 200%.
     Layout constants are multiplied by this.
     """
     try:
@@ -489,11 +489,11 @@ class MONITORINFO(ctypes.Structure):
     ]
 
 
-# Declared, because ctypes defaults an undeclared restype to C int — 32 bits,
+# Declared, because ctypes defaults an undeclared restype to C int, 32 bits,
 # signed. An HMONITOR on 64-bit Windows is a pointer, so the handle came back
 # truncated and GetMonitorInfoW was handed something that is not a monitor. It
 # happened to work while the real handle fitted in 32 bits, and fell back to
-# the primary screen when it did not — the overlay on the wrong display.
+# the primary screen when it did not, the overlay on the wrong display.
 user32.MonitorFromWindow.argtypes = (wintypes.HWND, wintypes.DWORD)
 user32.MonitorFromWindow.restype = wintypes.HANDLE
 user32.GetMonitorInfoW.argtypes = (wintypes.HANDLE, ctypes.c_void_p)
@@ -504,7 +504,7 @@ def work_area_of_window(hwnd: int) -> tuple[int, int, int, int]:
     """Work area (screen minus taskbar) of the monitor holding `hwnd`.
 
     The overlay used to be placed on the primary monitor's screen size, which
-    on a two-monitor desk put it on the wrong screen entirely — and even on
+    on a two-monitor desk put it on the wrong screen entirely, and even on
     one screen, ignoring the work area meant it could sit under the taskbar.
     Falls back to the primary monitor when there is no window to follow.
     """
@@ -533,7 +533,7 @@ def key_is_down(vk: int) -> bool:
 # ── window chrome ────────────────────────────────────────────────────────
 
 # Windows 10 1809 used 19; 1903+ and Windows 11 use 20. Setting both is
-# harmless — the build that doesn't know an attribute just returns an error.
+# harmless: the build that doesn't know an attribute just returns an error.
 DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19
 
@@ -542,7 +542,7 @@ def use_dark_titlebar(window, dark: bool = True) -> bool:
     """Match the title bar to the window below it.
 
     Tk styles the client area only, so the title bar keeps whatever the system
-    would give it — a white bar on a dark app, or a dark bar on a paper one.
+    would give it: a white bar on a dark app, or a dark bar on a paper one.
     Either way it is the single most "unfinished" thing about the UI, and it
     is visible on every window at once. This is the documented way to set it;
     there is no Tk option.

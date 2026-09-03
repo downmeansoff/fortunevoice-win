@@ -1,7 +1,7 @@
 """Every window actually builds.
 
 This exists because of a real failure: rewriting the palette removed
-`theme.INK_RAISED`, and two windows still referenced it. Nothing caught it —
+`theme.INK_RAISED`, and two windows still referenced it. Nothing caught it:
 the main window was screenshotted and looked perfect, while the first-run
 screen raised `AttributeError` inside a UI callback, was swallowed by the
 event pump, and simply never appeared. The user would have launched the app
@@ -36,7 +36,7 @@ def root():
 
     Creating and destroying a root per test breaks Tcl after a couple of
     cycles ("invalid command name tcl_findLibrary") and the remaining tests
-    skip themselves as if there were no display — a green run that tested
+    skip themselves as if there were no display: a green run that tested
     nothing.
     """
     tkinter = pytest.importorskip("tkinter")
@@ -108,7 +108,7 @@ def test_pill_builds_in_every_mode(root, monkeypatch):
 
 
 def test_every_glyph_renders():
-    """A glyph that raises takes the whole window build down with it — which is
+    """A glyph that raises takes the whole window build down with it, which is
     exactly how the Tk-versus-PIL arc angle bug manifested."""
     from fortunevoice.ui import icons
 
@@ -124,7 +124,7 @@ class _Key:
     """The two fields `_captured` reads off a Tk key event.
 
     Driven directly rather than through `event_generate`, which refuses letter
-    keysyms without a keycode and only dispatches to mapped windows — neither
+    keysyms without a keycode and only dispatches to mapped windows, neither
     of which is what this logic is about.
     """
 
@@ -196,7 +196,7 @@ def test_escape_cancels_without_saving(root):
 
 
 def test_the_key_binding_is_scoped_and_removed(root):
-    """Bound on the toplevel and removed by funcid — never `bind_all`, whose
+    """Bound on the toplevel and removed by funcid, never `bind_all`, whose
     matching `unbind_all` would wipe every other <KeyPress> handler in the
     app, not just this one."""
     widget, _saved, frame = _recorder(root)
@@ -305,7 +305,7 @@ def test_the_window_has_the_shortcuts_a_window_is_expected_to_have(window):
 
 def test_a_deleted_dictation_can_be_taken_back(window, root):
     """No confirmation on delete is the right call only if the mistake is
-    recoverable — and the × is a 9 px glyph on a row whose whole surface
+    recoverable, and the × is a 9 px glyph on a row whose whole surface
     copies, in a list that shifts under the cursor on every refresh."""
     from fortunevoice import metrics
     from fortunevoice.store import DictationRecord
@@ -378,7 +378,7 @@ def test_typing_replaces_the_dictionary_example(window, root):
 
 def test_the_shortcut_row_shows_the_same_spelling_as_the_masthead(root):
     """The masthead renders the parsed label, "Ctrl+Alt+Space". The Settings
-    row rendered the raw config string — so the one place you go to CHANGE the
+    row rendered the raw config string, so the one place you go to CHANGE the
     shortcut was the one place that spelled it differently, and lowercase,
     next to the words "Сочетание клавиш", reads like literal text to type."""
     from fortunevoice.hotkey import parse

@@ -127,7 +127,7 @@ def test_edit_recounts_the_words(tmp_path):
 
 
 def test_edit_keeps_the_spoken_words(tmp_path):
-    """`raw` is what makes a bad edit recoverable — by the cleanup model or by
+    """`raw` is what makes a bad edit recoverable, by the cleanup model or by
     the user. Overwriting it would be the one edit that cannot be undone."""
     store, record = _one(tmp_path, "как было сказано")
     store.edit(record, "как надо")
@@ -135,7 +135,7 @@ def test_edit_keeps_the_spoken_words(tmp_path):
 
 
 def test_an_existing_raw_is_not_overwritten(tmp_path):
-    """When cleanup already changed the text, `raw` holds the real speech —
+    """When cleanup already changed the text, `raw` holds the real speech:
     the pre-edit transcript is the model's version, not the user's words."""
     store = DictationStore(tmp_path / "history.json")
     store.add(DictationRecord(date="2026-08-17T10:00:00", words=2, duration=1.0,
@@ -160,7 +160,7 @@ def test_editing_a_record_that_is_gone_reports_it(tmp_path):
 
 def test_edit_leaves_the_neighbours_alone(tmp_path):
     """Matched on content, because the caller holds a row out of a filtered,
-    reversed copy — an index into that is not an index into the file."""
+    reversed copy: an index into that is not an index into the file."""
     store = DictationStore(tmp_path / "history.json")
     for i in range(3):
         store.add(DictationRecord(date=f"2026-08-17T10:0{i}:00", words=1,
@@ -173,7 +173,7 @@ def test_a_failed_write_is_reported_rather_than_swallowed(monkeypatch, tmp_path)
     """The vault-first promise is the app's central claim: the words are saved
     before anything else can go wrong. `_write` logged an OSError and returned
     as if it had worked, so a full disk or a locked file meant dictations
-    silently stopped being kept — the one failure the design exists to prevent,
+    silently stopped being kept: the one failure the design exists to prevent,
     failing invisibly."""
     from fortunevoice.store import DictationRecord, DictationStore
 

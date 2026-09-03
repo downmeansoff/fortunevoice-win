@@ -1,4 +1,4 @@
-"""`python -m fortunevoice doctor` — does this machine actually work?
+"""`python -m fortunevoice doctor`: does this machine actually work?
 
 A tray app fails invisibly. Every "it just doesn't type anything" report comes
 down to one of five things: no microphone, a CUDA runtime that won't load, a
@@ -45,7 +45,7 @@ def _check_audio() -> bool:
         _line(FAIL, "microphone", f"could not enumerate devices: {exc}")
         return False
     if not devices:
-        _line(FAIL, "microphone", "no input devices found — check Windows sound settings")
+        _line(FAIL, "microphone", "no input devices found; check Windows sound settings")
         return False
 
     wanted = config.get_str("FVMicrophone")
@@ -66,12 +66,12 @@ def _check_audio() -> bool:
         _line(FAIL, "capture", f"could not record: {exc}")
         return False
     if samples.size < 8_000:
-        _line(FAIL, "capture", f"only {samples.size} samples in 1 s — the device is not producing audio")
+        _line(FAIL, "capture", f"only {samples.size} samples in 1 s: the device is not producing audio")
         return False
     level = audio.max_window_rms(samples)
     if level < 0.001:
         _line(WARN, f"capture ({samples.size} samples, peak RMS {level:.4f})",
-              "silent — that's expected if you weren't speaking, a problem if you were")
+              "silent: that's expected if you weren't speaking, a problem if you were")
     else:
         _line(OK, f"capture ({samples.size} samples, peak RMS {level:.4f})")
     return True
@@ -108,14 +108,14 @@ def _check_model() -> bool:
     )
     wanted = config.get_str("FVModel")
     if wanted and transcriber.loaded_model != wanted:
-        # The ladder degrades on purpose — a dictation with the fallback
-        # beats no dictation — but silently accepting it here means the
+        # The ladder degrades on purpose: a dictation with the fallback
+        # beats no dictation, but silently accepting it here means the
         # check that exists to say "your setup is wrong" says nothing.
         # Seen live: the app was already holding the GPU, so a second
         # process could not allocate and doctor reported a tick.
         _line(
             WARN,
-            f"{wanted} did not load — running on {transcriber.loaded_model}",
+            f"{wanted} did not load, running on {transcriber.loaded_model}",
             "usually the video memory is already taken: FortuneVoice "
             "itself, another model, or a game. Quit them and run doctor "
             "again.",
@@ -165,7 +165,7 @@ def _check_ollama() -> bool:
         if binary is None:
             fix = f"install Ollama from https://ollama.com, then `ollama pull {wanted}`"
         elif not config.get_bool("FVAutoStartOllama"):
-            fix = (f"Ollama is installed at {binary}, but FVAutoStartOllama is off — "
+            fix = (f"Ollama is installed at {binary}, but FVAutoStartOllama is off: "
                    "start it yourself, or set that setting back to true")
         else:
             fix = (f"Ollama is installed at {binary} but did not come up. "
@@ -173,7 +173,7 @@ def _check_ollama() -> bool:
         _line(
             WARN,
             f"ollama at {host} unreachable ({exc})",
-            f"dictation still works — you get raw Whisper text without the "
+            f"dictation still works: you get raw Whisper text without the "
             f"cleanup pass. To enable it: {fix}",
         )
         return True
@@ -181,7 +181,7 @@ def _check_ollama() -> bool:
     installed = [m.get("name", "") for m in payload.get("models", [])]
     # Exact, give or take the implicit ":latest" Ollama adds. Matching on the
     # family name alone reported "qwen2.5:3b available" when what was installed
-    # was qwen2.5:1.5b — a different model, which cleanup then asked for and
+    # was qwen2.5:1.5b, a different model, which cleanup then asked for and
     # got a 404 from, falling back to raw text with doctor still showing a tick.
     def _same(name: str) -> bool:
         head, _, tag = name.partition(":")
@@ -204,7 +204,7 @@ def _check_vram() -> bool:
 
     Measured on a 6 GB RTX 3060 Laptop: large-v3-turbo at float16 plus its CUDA
     context takes ~3.8 GB, and a resident qwen2.5:3b takes another ~2.1 GB.
-    Together that is 5.9 GB of 6, leaving 72 MB free — and the decode of a 12 s
+    Together that is 5.9 GB of 6, leaving 72 MB free, and the decode of a 12 s
     clip went from 563 ms (21x realtime) to 5766 ms (2.1x). A ten-fold
     slowdown, with nothing on screen to explain it.
 
@@ -219,7 +219,7 @@ def _check_vram() -> bool:
     if total is None:
         return True  # no NVIDIA GPU, or nvidia-smi missing: nothing to warn about
     if total >= 8 * 1024:
-        _line(OK, f"GPU memory {total // 1024} GB — room for both models")
+        _line(OK, f"GPU memory {total // 1024} GB, room for both models")
         return True
     if free is not None and free < 512:
         _line(
@@ -233,7 +233,7 @@ def _check_vram() -> bool:
         return True
     _line(
         WARN,
-        f"GPU has {total // 1024} GB — tight for Whisper plus a cleanup model",
+        f"GPU has {total // 1024} GB, tight for Whisper plus a cleanup model",
         "If dictations feel slow, check `nvidia-smi`: with both models resident "
         "there may be no headroom left, which costs far more than cleanup saves.",
     )
@@ -268,13 +268,13 @@ def _check_injection() -> bool:
         OK,
         "text injection via SendInput",
         f"focused element reports editable={editable} "
-        "(None just means Windows can't say — FortuneVoice types anyway)",
+        "(None just means Windows can't say; FortuneVoice types anyway)",
     )
     return True
 
 
 def run() -> int:
-    print(f"FortuneVoice doctor — data in {paths.home()}\n")
+    print(f"FortuneVoice doctor, data in {paths.home()}\n")
     checks = [
         _check_hotkey,
         _check_audio,
@@ -293,7 +293,7 @@ def run() -> int:
             failed += 1
     print()
     if failed:
-        print(f"{failed} check(s) failed — fix those before expecting dictation to work.")
+        print(f"{failed} check(s) failed: fix those before expecting dictation to work.")
         return 1
     print("All checks passed.")
     return 0

@@ -1,7 +1,7 @@
 """The self-check, and the stats summary.
 
-This is what the user runs when dictation is not working. A doctor that lies —
-reporting fine when it is not, or hiding one failure behind another — leaves
+This is what the user runs when dictation is not working. A doctor that lies,
+reporting fine when it is not, or hiding one failure behind another, leaves
 them worse off than no doctor at all, because now they trust it.
 
 Nothing real is touched: no model is loaded, no microphone opened, no HTTP.
@@ -60,7 +60,7 @@ def test_one_failure_exits_non_zero(monkeypatch, capsys):
 
 
 def test_a_check_that_raises_is_reported_and_counted(monkeypatch, capsys):
-    """One broken check must not hide the rest — that is the failure mode that
+    """One broken check must not hide the rest: that is the failure mode that
     makes a diagnostic useless exactly when it is needed."""
     def explode():
         raise RuntimeError("the GPU query blew up")
@@ -77,7 +77,7 @@ def test_a_check_that_raises_is_reported_and_counted(monkeypatch, capsys):
 
 def test_every_check_runs_even_after_one_fails(monkeypatch, capsys):
     """Stopping at the first failure would make the user fix one thing, run
-    again, fix the next — instead of seeing the whole picture at once."""
+    again, fix the next, instead of seeing the whole picture at once."""
     ran: list[str] = []
     checks = {}
     for name in ("_check_hotkey", "_check_audio", "_check_injection",
@@ -152,7 +152,7 @@ def test_skipped_cleanups_do_not_drag_the_cleanup_median_down(capsys):
 
 
 def test_typed_counts_both_confirmed_and_blind(capsys):
-    """Most deliveries are "blind" — Windows would not confirm an editable
+    """Most deliveries are "blind": Windows would not confirm an editable
     field. Counting only the confirmed ones would report the app as barely
     working."""
     metrics.record(a_row(outcome="pasted"))
@@ -202,7 +202,7 @@ def _ollama_report(monkeypatch, capsys, installed):
 def test_a_different_size_of_the_same_family_is_not_the_model(monkeypatch, capsys):
     """Matching on the family name alone reported "qwen2.5:3b available" when
     what was installed was qwen2.5:1.5b. Cleanup then asked Ollama for a model
-    it does not have, got a 404 and fell back to raw text — with doctor still
+    it does not have, got a 404 and fell back to raw text, with doctor still
     showing a tick."""
     config.set("FVOllamaModel", "qwen2.5:3b")
     assert "not installed" in _ollama_report(monkeypatch, capsys, ["qwen2.5:1.5b"])

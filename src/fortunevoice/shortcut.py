@@ -7,10 +7,10 @@ the Startup folder".
 Two details decide whether this works at all:
 
 * **pythonw.exe, not python.exe.** `python.exe` keeps a console window open
-  for the life of the app — a black box on screen that closes the tray app
+  for the life of the app: a black box on screen that closes the tray app
   when someone tidies it away.
 * **Folder paths come from `SHGetKnownFolderPath`.** With OneDrive folder
-  backup on, the real Desktop is `%OneDrive%\\Рабочий стол` — localised, and
+  backup on, the real Desktop is `%OneDrive%\\Рабочий стол`, localised, and
   not what `%USERPROFILE%\\Desktop` points at. Asking Windows returns real
   UTF-16; routing the answer through a PowerShell pipe mangles it into the
   console code page, which is how the first attempt at this failed.
@@ -91,8 +91,8 @@ def _literal(value: object) -> str:
     """Escape for a PowerShell single-quoted string, where doubling the
     quote is the only escape there is.
 
-    Without this an apostrophe anywhere in the path — a Windows account
-    named O'Brien is all it takes — closed the literal early. PowerShell
+    Without this an apostrophe anywhere in the path (a Windows account
+    named O'Brien is all it takes) closed the literal early. PowerShell
     then failed to parse the script, and "Launch at login" refused to turn
     on with the switch snapping back and no message anywhere.
     """

@@ -1,9 +1,9 @@
 """The Windows edges.
 
 Most of this module is thin ctypes wrappers where a test would only restate
-the call. What is tested here is the part with decisions in it — the DPI
+the call. What is tested here is the part with decisions in it: the DPI
 maths, the monitor fallback, the single-instance claim, and the key-state
-mask — plus the small number of live calls whose contract is worth pinning
+mask, plus the small number of live calls whose contract is worth pinning
 against a Windows that answers differently than expected.
 """
 
@@ -69,7 +69,7 @@ def test_the_work_area_is_a_rectangle_with_area():
 
 def test_the_work_area_is_read_not_the_monitor_rectangle(monkeypatch):
     """Placing the pill on the full monitor size is how it ended up underneath
-    the taskbar. Asserting "not taller than the screen" is not enough — the
+    the taskbar. Asserting "not taller than the screen" is not enough: the
     monitor rectangle passes that too, which is exactly how this slipped
     through the first time. So both rectangles are filled with different
     values and the answer has to be the work one."""
@@ -94,7 +94,7 @@ def test_the_real_work_area_is_no_larger_than_the_screen():
 
 
 def test_an_unknown_window_falls_back_to_a_usable_screen(monkeypatch):
-    """No window to follow — the primary monitor is the only sane answer, and
+    """No window to follow: the primary monitor is the only sane answer, and
     it must still be a rectangle rather than zeros."""
     monkeypatch.setattr(winapi.user32, "MonitorFromWindow", lambda hwnd, flags: 0)
     left, top, right, bottom = winapi.work_area_of_window(0)
@@ -107,7 +107,7 @@ def test_an_unknown_window_falls_back_to_a_usable_screen(monkeypatch):
 
 def test_only_the_live_bit_counts(monkeypatch):
     """The low bit means "pressed since the last call" and is consumed by
-    whoever reads it first — using it would race with anything else polling
+    whoever reads it first: using it would race with anything else polling
     the same key, which in this app is the hotkey hook."""
     monkeypatch.setattr(winapi.user32, "GetAsyncKeyState", lambda vk: 0x0001)
     assert winapi.key_is_down(winapi.VK_ESCAPE) is False
@@ -119,7 +119,7 @@ def test_only_the_live_bit_counts(monkeypatch):
 
 def test_no_key_reads_as_down_when_nothing_is_pressed():
     """A live call: nothing is held during a test run, and a mask error would
-    make Escape look permanently pressed — cancelling every dictation."""
+    make Escape look permanently pressed, cancelling every dictation."""
     assert winapi.key_is_down(winapi.VK_ESCAPE) is False
 
 
@@ -151,7 +151,7 @@ def test_nothing_identifiable_becomes_none_not_an_empty_string(monkeypatch):
 
 
 def test_the_executable_of_this_very_process_is_readable():
-    """The ctypes path itself — OpenProcess, QueryFullProcessImageNameW, the
+    """The ctypes path itself: OpenProcess, QueryFullProcessImageNameW, the
     basename split. The tests above stub `process_name` out, so without this
     one a wrong argtype or a leaked handle would sit behind three green
     assertions. Asked of our own process, which we are always allowed to
@@ -180,7 +180,7 @@ class FakeCreateMutex:
     """Stands in for CreateMutexW, including the error code it leaves behind.
 
     The real one is declared with use_last_error, so the answer is read with
-    `ctypes.get_last_error()` rather than from the return value — patching
+    `ctypes.get_last_error()` rather than from the return value: patching
     kernel32.GetLastError instead tests nothing.
     """
 
@@ -217,11 +217,11 @@ def test_any_other_error_still_lets_the_app_run(monkeypatch):
 
 
 def test_the_monitor_handle_is_not_truncated():
-    """ctypes defaults an undeclared restype to C int — 32 bits, signed. An
+    """ctypes defaults an undeclared restype to C int, 32 bits, signed. An
     HMONITOR on 64-bit Windows is a pointer, so the handle came back truncated
     and GetMonitorInfoW was handed something that is not a monitor. It happened
     to work while the real handle fitted in 32 bits, and fell back to the
-    primary screen when it did not — the overlay on the wrong display.
+    primary screen when it did not, the overlay on the wrong display.
 
     Checked in a fresh process: monkeypatching a ctypes function pointer and
     restoring it loses the declaration, so any test that stubs
@@ -243,7 +243,7 @@ def test_the_monitor_handle_is_not_truncated():
 
 def test_the_app_declares_its_own_identity():
     """Windows groups taskbar buttons, and picks their icon, by Application
-    User Model ID. A Python app inherits pythonw.exe's — so the taskbar showed
+    User Model ID. A Python app inherits pythonw.exe's, so the taskbar showed
     the Python logo beside our own window, and pinning it would have pinned
     Python."""
     assert winapi.APP_ID.startswith("FortuneVoice")
@@ -262,7 +262,7 @@ def test_setting_the_app_id_survives_a_refusal(monkeypatch):
 
 
 def test_every_clipboard_handle_call_declares_its_signature():
-    """ctypes passes an undeclared argument as C int — 32 bits — so a handle
+    """ctypes passes an undeclared argument as C int, 32 bits, so a handle
     above 2 GB arrives truncated and what gets freed is whatever that torn
     value happens to name. GlobalFree was the one call in the clipboard path
     with no declaration."""

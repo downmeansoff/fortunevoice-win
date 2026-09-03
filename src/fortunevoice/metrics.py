@@ -1,7 +1,7 @@
 """Per-dictation timings, appended as JSON Lines.
 
-Every tuning decision carried over from the macOS build — the cleanup cost
-model, the streaming defaults, the tail-capture length — came from reading
+Every tuning decision carried over from the macOS build (the cleanup cost
+model, the streaming defaults, the tail-capture length) came from reading
 this file, not from a benchmark. Keeping the same fields means the two ports'
 numbers stay directly comparable.
 
@@ -21,12 +21,12 @@ from .log import get as get_logger
 logger = get_logger("metrics")
 
 _lock = threading.Lock()
-# A record is ~515 bytes, so this is ~10 MB — comfortably under the 30 MB at
+# A record is ~515 bytes, so this is ~10 MB, comfortably under the 30 MB at
 # which the trim starts, which is the point. At 200_000 the two gates
 # disagreed: the file had to reach 30 MB before anything happened, and then
 # the line cap kept every line, so nothing was ever removed. From there on
 # every dictation read and split a 30 MB file, under the lock, after the text
-# had already been typed — and the file went on growing towards 100 MB.
+# had already been typed, and the file went on growing towards 100 MB.
 # 20_000 dictations is a year of heavy use, and the cost model only reads the
 # recent ones.
 MAX_LINES = 20_000
@@ -56,8 +56,8 @@ class DictationMetric:
     cleanup_over_budget: int | None = None
     # Which model did the cleaning, and whether it had to be loaded first.
     # Without these the cost fit pooled runs that are not comparable: `model`
-    # above is the WHISPER model, so switching the cleanup model — gemma3:4b at
-    # 1141 ms against qwen2.5:3b at 656 ms on the same text — was invisible to
+    # above is the WHISPER model, so switching the cleanup model (gemma3:4b at
+    # 1141 ms against qwen2.5:3b at 656 ms on the same text) was invisible to
     # it, and a cold load (~2 s regardless of length) looked like a very
     # expensive short dictation.
     cleanup_model: str | None = None
@@ -73,7 +73,7 @@ def _ends_with_a_newline(path) -> bool:
 
     A machine losing power mid-append leaves a line without its terminator.
     Appending straight onto that glues the next dictation's metric to the
-    broken one and loses them BOTH — the damage spreading one record past
+    broken one and loses them BOTH, the damage spreading one record past
     where it happened. Costs one byte to check, not a read of the file.
     """
     try:
@@ -81,7 +81,7 @@ def _ends_with_a_newline(path) -> bool:
             handle.seek(-1, 2)  # SEEK_END
             return handle.read(1) == b"\n"
     except OSError:
-        return True  # missing or empty — nothing to repair
+        return True  # missing or empty, nothing to repair
 
 
 def record(metric: DictationMetric) -> None:
@@ -115,7 +115,7 @@ def _trim(path) -> None:
         # read + splitlines is 72 ms, and with MAX_LINES well under the byte
         # gate this runs once per ~114 000 dictations. Seeking to an estimated
         # offset would save those 72 ms at the price of a partial first line
-        # and a decode that can start mid-character — the exact corruption the
+        # and a decode that can start mid-character: the exact corruption the
         # tests above exist to catch. Not worth it.
         #
         # Through a temp file, like the history store: a write interrupted
@@ -131,7 +131,7 @@ def _trim(path) -> None:
 def read_all() -> list[dict]:
     try:
         # See _trim: one byte of a half-written character used to throw
-        # UnicodeDecodeError — which is a ValueError, not an OSError — straight
+        # UnicodeDecodeError, which is a ValueError, not an OSError, straight
         # out of the Insights page and out of `doctor stats`, permanently,
         # until the user found and hand-edited the file.
         raw = paths.metrics_file().read_text(encoding="utf-8", errors="replace")

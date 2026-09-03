@@ -2,7 +2,7 @@
 
 This is the cheapest test in the suite and it exists because of a real escape:
 a bad edit merged two import lines in `app.py`, producing
-`from .strings import t, RecoveryStore`. The app would have died on launch —
+`from .strings import t, RecoveryStore`. The app would have died on launch,
 and 125 tests stayed green, because nothing in the suite imported `app` at
 all. The biggest module in the project, the one holding the state machine, was
 not even loaded.
@@ -22,7 +22,7 @@ import pytest
 
 import fortunevoice
 
-# The UI package needs a display only to *run*, not to import — the Tk objects
+# The UI package needs a display only to *run*, not to import: the Tk objects
 # are all created inside functions.
 MODULES = sorted(
     name for _finder, name, _ispkg in pkgutil.walk_packages(
@@ -47,8 +47,8 @@ def test_module_imports(module):
 def test_app_constructs_without_starting():
     """Constructing App wires the recorder callbacks and builds the stores.
 
-    Nothing here touches the hotkey hook, the model or the UI — `start()` does
-    that — so this stays a unit test while still covering the __init__ that
+    Nothing here touches the hotkey hook, the model or the UI: `start()` does
+    that, so this stays a unit test while still covering the __init__ that
     every dictation depends on.
     """
     from fortunevoice.app import App, State

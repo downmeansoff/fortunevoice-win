@@ -3,7 +3,7 @@
 This is the part of the app that actually delivers, and until now the only
 thing testing it was a person watching characters appear. The tests here drive
 the real code and inspect the INPUT structures it builds, stubbing only
-`_send` — the one call that would reach the rest of the desktop.
+`_send`, the one call that would reach the rest of the desktop.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def test_a_failed_send_is_reported(monkeypatch):
 
 def test_long_text_is_chunked_but_complete(sent):
     """Sent in batches so a huge dictation does not hand Windows one enormous
-    array — every character must still arrive, exactly once."""
+    array; every character must still arrive, exactly once."""
     text = "я" * 500
     injector.type_text(text)
     assert units(sent) == [ord("я")] * 500
@@ -133,7 +133,7 @@ def test_nothing_is_released_when_nothing_is_held(sent):
 
 def test_clipboard_round_trip_and_restore():
     """The fallback delivery path. Genuinely touches the system clipboard, so
-    it puts back whatever was there — a test must not eat the user's copy."""
+    it puts back whatever was there: a test must not eat the user's copy."""
     original = injector._clipboard_text()
     try:
         assert injector.set_clipboard_text("проверка 🙂") is True
@@ -164,7 +164,7 @@ def test_inject_follows_the_setting(monkeypatch):
 
 def test_pasting_via_the_clipboard_does_not_crash(monkeypatch):
     """FVPasteViaClipboard is the escape hatch for apps that ignore synthesized
-    unicode — some Java and older Electron ones. It called `_set_clipboard_text`,
+    unicode, some Java and older Electron ones. It called `_set_clipboard_text`,
     which does not exist: the name is `set_clipboard_text`. Every dictation
     with the setting on raised NameError inside the pipeline and was filed as a
     failed transcription, so the one workaround for those apps was itself
@@ -198,7 +198,7 @@ def test_the_clipboard_route_reports_a_failure_rather_than_raising(monkeypatch):
 
 def test_a_failed_allocation_leaves_the_clipboard_alone(monkeypatch):
     """It used to call EmptyClipboard first and only then allocate, so a failed
-    allocation destroyed whatever the user had copied and returned False —
+    allocation destroyed whatever the user had copied and returned False:
     they lost their clipboard in exchange for nothing."""
     emptied: list[int] = []
     monkeypatch.setattr(injector.user32, "OpenClipboard", lambda _h: 1)
@@ -213,7 +213,7 @@ def test_a_failed_allocation_leaves_the_clipboard_alone(monkeypatch):
 
 # Kept alive for the whole module. `addressof(create_string_buffer(64))`
 # inline hands out the address of a buffer that is garbage before the call
-# returns, and `set_clipboard_text` then memmoves the text into freed memory —
+# returns, and `set_clipboard_text` then memmoves the text into freed memory,
 # a test that corrupts the interpreter's heap to check a return value.
 _SCRATCH: list = []
 
@@ -261,7 +261,7 @@ def test_a_block_the_clipboard_took_is_never_freed(monkeypatch):
 
 
 def test_the_clipboard_route_honours_a_per_app_profile(monkeypatch):
-    """FVPasteViaClipboard is listed in profiles.OVERRIDABLE — the whole point
+    """FVPasteViaClipboard is listed in profiles.OVERRIDABLE: the whole point
     is that the apps needing the clipboard route are specific ones. `inject`
     read it straight from config, so the profile was accepted, reported as
     applied, and ignored."""
@@ -355,7 +355,7 @@ def test_a_profile_can_keep_one_app_on_typing():
 
 def test_a_terminal_is_typed_into_however_long_the_text_is():
     """Windows terminals bind paste to Ctrl+Shift+V, or to right-click, or to
-    nothing — and a paste they ignore is a dictation that goes nowhere, which
+    nothing, and a paste they ignore is a dictation that goes nowhere, which
     is the one failure this app is built never to produce."""
     from fortunevoice import config, injector
 
@@ -394,8 +394,8 @@ def test_asking_for_paste_in_a_terminal_still_pastes():
 
 
 def test_the_dictation_is_not_left_on_an_empty_clipboard(monkeypatch):
-    """When there was nothing to put back — the clipboard was empty, or held
-    an image or files, which this code cannot reproduce — the old behaviour
+    """When there was nothing to put back: the clipboard was empty, or held
+    an image or files, which this code cannot reproduce, the old behaviour
     left the transcript sitting there: every Ctrl+V for the rest of the day,
     and every clipboard-history tool, holding something the user said out
     loud."""
@@ -407,7 +407,7 @@ def test_the_dictation_is_not_left_on_an_empty_clipboard(monkeypatch):
     # `_clipboard_snapshot`, which is what the code calls: stubbing the old
     # name left the real system clipboard exposed, and the restore thread
     # would have emptied whatever the developer had copied.
-    # (None, True): nothing was on the clipboard, and we know it — the case
+    # (None, True): nothing was on the clipboard, and we know it: the case
     # where clearing is right. A clipboard we merely could not open is
     # (None, False) and must be left alone.
     monkeypatch.setattr(injector, "_clipboard_snapshot", lambda: (None, True))
@@ -459,7 +459,7 @@ def test_something_copied_meanwhile_is_left_alone(monkeypatch):
 
 def test_a_clipboard_we_could_not_read_is_left_alone(monkeypatch):
     """`_clipboard_text` cannot tell "there was nothing" from "another
-    process had it open" — both are None. Emptying on the second erases
+    process had it open": both are None. Emptying on the second erases
     what the user copied, which is the opposite of the promise."""
     import threading
 

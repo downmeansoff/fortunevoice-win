@@ -30,7 +30,7 @@ def chunk_cores(flags: list[bool], merge_gap: int = 1) -> list[tuple[int, int]]:
     """Merge flagged sentence indices into inclusive (start, end) cores.
 
     Runs of flagged sentences swallow gaps of up to `merge_gap` clean ones
-    between them — one LLM call per core beats separate calls for near
+    between them: one LLM call per core beats separate calls for near
     neighbors. Gap of 1, not more: generation cost is proportional to core
     length, and greedy merging produced one huge chunk that blew the cleanup
     deadline on long dictations.

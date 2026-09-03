@@ -1,10 +1,10 @@
-"""Microphone capture as 16 kHz mono float32 — Whisper's native input format.
+"""Microphone capture as 16 kHz mono float32, Whisper's native input format.
 
 Port of Sources/FortuneVoice/AudioRecorder.swift. AVAudioEngine becomes
 PortAudio (via sounddevice); the accumulate-under-a-lock structure, the
 capacity reservation and the "a straggler callback must never write into the
 next session" guard are carried over unchanged, because they are what make a
-recording either whole or honestly truncated — never silently half-empty.
+recording either whole or honestly truncated, never silently half-empty.
 
 Sample rate: we ask the device for 16 kHz directly. Windows' shared-mode audio
 engine resamples for us on essentially every modern machine. When a device
@@ -75,7 +75,7 @@ def resolve_device(name_fragment: str) -> int | None:
 
 
 def max_window_rms(samples: np.ndarray, window: int = 8_000) -> float:
-    """Loudest 0.5 s window RMS — a reliable speech-vs-silence signal, unlike
+    """Loudest 0.5 s window RMS, a reliable speech-vs-silence signal, unlike
     Whisper's noSpeechProb which spikes on quiet real speech. Speech windows
     are ~0.02+; room silence is < 0.005. Windows overlap 50% so a short burst
     is never split across two of them."""
@@ -106,7 +106,7 @@ def prewarm() -> None:
 
     Measured here: the first `start()` in a process takes 375 ms before a
     single sample arrives, against 78-94 ms on every one after it. Those extra
-    300 ms are the beginning of whatever the user said — a whole word, lost on
+    300 ms are the beginning of whatever the user said: a whole word, lost on
     the first dictation after launch, which is the one that decides whether
     they think this works.
 
@@ -202,12 +202,12 @@ class AudioRecorder:
             raise AudioError(f"no usable audio input device: {exc}") from exc
 
     def _finished(self) -> None:
-        """PortAudio closed the stream on its own — device unplugged or switched
+        """PortAudio closed the stream on its own: device unplugged or switched
         away. Don't throw away what was already captured: the app transcribes
         and delivers it, exactly like a normal key-up. Truncated beats erased.
         """
         if self.is_recording and self.on_interrupted:
-            logger.warning("audio stream ended mid-recording — salvaging")
+            logger.warning("audio stream ended mid-recording, salvaging")
             self.on_interrupted()
 
     def _callback(self, indata, frames, time_info, status) -> None:  # noqa: ARG002
@@ -251,7 +251,7 @@ class AudioRecorder:
         if out_count <= 0:
             # Copied. PortAudio hands the callback a buffer it reuses for the
             # next block, so holding the array itself means the tail is
-            # overwritten with newer audio before it is ever consumed — a
+            # overwritten with newer audio before it is ever consumed: a
             # torn sample at the seam, on exactly the small-block devices
             # this branch exists for.
             self._resample_tail = block.copy()
@@ -268,7 +268,7 @@ class AudioRecorder:
         return block[windows].mean(axis=1).astype(np.float32, copy=False)
 
     def snapshot(self) -> np.ndarray:
-        """Thread-safe copy of everything captured so far — feeds the streaming
+        """Thread-safe copy of everything captured so far: feeds the streaming
         transcriber while the recording continues."""
         with self._lock:
             return self._buffer[: self._count].copy()
@@ -282,7 +282,7 @@ class AudioRecorder:
         self._close_stream()
         with self._lock:
             samples = self._buffer[: self._count].copy()
-            # Free the ~19 MB reservation instead of keeping it — this is a
+            # Free the ~19 MB reservation instead of keeping it: this is a
             # tray app that idles for hours between dictations.
             self._buffer = np.zeros(_INITIAL_CAPACITY, dtype=np.float32)
             self._count = 0

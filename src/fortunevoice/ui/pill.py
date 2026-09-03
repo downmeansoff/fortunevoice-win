@@ -2,7 +2,7 @@
 
 Port of Sources/FortuneVoice/RecordingPill.swift: a small dark capsule near the
 bottom of the screen with a row of bars that move with the voice. Without it
-the app has no visual state at all — you hold a hotkey and have to guess
+the app has no visual state at all: you hold a hotkey and have to guess
 whether anything is listening.
 
 Three things make it behave rather than annoy:
@@ -76,7 +76,7 @@ _MODE_TEXT = {
     "recording": t("pill.listening"),
     "processing": t("pill.transcribing"),
     # Its own state. One label covered both the decode and a cold Ollama
-    # load, which the app itself prices at about nine seconds — and nine
+    # load, which the app itself prices at about nine seconds, and nine
     # seconds of an identical animation after you have let go is exactly
     # where a user decides the thing has hung.
     "cleaning": t("pill.cleaning"),
@@ -121,7 +121,7 @@ class Pill:
 
         Used for the outcomes that leave nothing on screen to explain
         themselves: a failed dictation and a cancelled one. Success needs no
-        visual — the text appearing plus the sound cue say it.
+        visual: the text appearing plus the sound cue say it.
         """
         def job() -> None:
             self._show(mode)
@@ -162,7 +162,7 @@ class Pill:
         """Centre it on the monitor the user is actually working on.
 
         Tk's screenwidth/screenheight describe the primary monitor, so on a
-        two-screen desk the pill appeared on the wrong one — and even on a
+        two-screen desk the pill appeared on the wrong one, and even on a
         single screen it ignored the taskbar and could sit underneath it.
         The work area of the monitor holding the foreground window is the
         right frame of reference on both counts.
@@ -219,7 +219,7 @@ class Pill:
         canvas.delete("all")
         _rounded(canvas, 0, 0, WIDTH, HEIGHT, HEIGHT // 2, theme.PAPER)
         # Its own edge. This floats over the user's window and cannot borrow
-        # contrast from a background it does not own — a hairline in the
+        # contrast from a background it does not own: a hairline in the
         # page's own rule colour disappeared against a light desktop.
         _rounded(canvas, 0, 0, WIDTH, HEIGHT, HEIGHT // 2, "",
                  outline=theme.PILL_EDGE)
@@ -244,7 +244,7 @@ class Pill:
         # A clock, once the wait stops being instant. Three seconds is past
         # the point where a decode normally lands, so a number appearing at
         # all says "still working", and a number that keeps climbing says how
-        # long — which is the difference between waiting and wondering.
+        # long, which is the difference between waiting and wondering.
         since = getattr(self, "_since", 0.0)
         if since and self._mode in ("processing", "cleaning"):
             elapsed = int(time.monotonic() - since)
@@ -258,7 +258,7 @@ class Pill:
         )
 
     def _advance(self) -> None:
-        """Shift the history left and append the newest sample — a scrolling
+        """Shift the history left and append the newest sample: a scrolling
         waveform. The app only has a per-block RMS, not a spectrum, and a
         scrolling level history is an honest picture of that."""
         self._phase += 1

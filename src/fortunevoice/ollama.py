@@ -1,7 +1,7 @@
 """Finding Ollama, and starting it when it is not there.
 
 Ollama on Windows does not stay up. The desktop app exits, the server exits
-with it, and nothing tells the user — so cleanup silently stops happening and
+with it, and nothing tells the user, so cleanup silently stops happening and
 every dictation comes back as raw Whisper text. It looks exactly like the
 feature being switched off, and the only trace is a line in the log.
 
@@ -12,7 +12,7 @@ starts it and waits for the port.
 Deliberately narrow:
 
 * Only ever starts a binary found in the places Ollama's own installer puts
-  it, or on PATH. Nothing configurable, nothing from the config file — a
+  it, or on PATH. Nothing configurable, nothing from the config file: a
   setting that names an executable to launch is a setting worth attacking.
 * Never starts anything when the port already answers.
 * One attempt at a time, and a short cooldown after a failure. A user with no
@@ -49,8 +49,8 @@ _CANDIDATES = (
 # FortuneVoice came up together and competed for the disk. 12 s and then 25 s
 # both timed out on a server that was coming up fine, and the second one was
 # bad enough to fire a "cleanup does not work" notification at a user whose
-# cleanup started working seconds later. Waiting costs nothing real — the only
-# callers block a daemon thread — so the budget is generous on purpose.
+# cleanup started working seconds later. Waiting costs nothing real: the only
+# callers block a daemon thread, so the budget is generous on purpose.
 STARTUP_TIMEOUT = 60.0
 # Not retried more often than this after a failure, so a machine without
 # Ollama does not pay a spawn attempt per dictation.
@@ -73,7 +73,7 @@ def executable() -> Path | None:
             return path
     # PATH, but never the current directory. `shutil.which` on Windows
     # searches "." first by default, so a file called ollama.exe sitting in
-    # whatever folder the app happened to start in would be launched — and
+    # whatever folder the app happened to start in would be launched, and
     # this module's own docstring promises it only ever starts a binary from
     # where Ollama's installer puts it.
     found = shutil.which("ollama", path=os.environ.get("PATH", ""))
@@ -81,7 +81,7 @@ def executable() -> Path | None:
         return None
     resolved = Path(found).resolve()
     if resolved.parent == Path.cwd().resolve():
-        logger.warning("ignoring %s — it is in the working directory", resolved)
+        logger.warning("ignoring %s: it is in the working directory", resolved)
         return None
     return resolved
 
@@ -96,7 +96,7 @@ def is_up(timeout: float = 1.0) -> bool:
 
 
 def ensure_running(wait: float = STARTUP_TIMEOUT) -> bool:
-    """True if Ollama answers — starting it first if it does not.
+    """True if Ollama answers, starting it first if it does not.
 
     Safe to call from any thread and as often as you like: the fast path is a
     single HTTP request to a local port, and only one caller at a time gets to
@@ -115,7 +115,7 @@ def ensure_running(wait: float = STARTUP_TIMEOUT) -> bool:
             return False
         binary = executable()
         if binary is None:
-            logger.info("Ollama is not installed — cleanup will be skipped")
+            logger.info("Ollama is not installed: cleanup will be skipped")
             _last_failure = time.monotonic()
             return False
 
@@ -123,7 +123,7 @@ def ensure_running(wait: float = STARTUP_TIMEOUT) -> bool:
         try:
             # Detached, and with no window: this is the user's tray app, not a
             # child whose lifetime should follow ours. DETACHED_PROCESS alone
-            # is not enough — without a new process group, our own Ctrl-C
+            # is not enough: without a new process group, our own Ctrl-C
             # would reach it.
             flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | NEW_PROCESS_GROUP
             subprocess.Popen(  # noqa: S603 - fixed path, no user input
