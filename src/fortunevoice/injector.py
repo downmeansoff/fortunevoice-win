@@ -135,6 +135,13 @@ def type_text(text: str) -> bool:
         nonlocal events, ok
         if not events:
             return
+        # Releasing once before the loop only covers the first chunk. The user
+        # is usually still holding Ctrl+Alt while we type, and a physically
+        # held key auto-repeats: Windows sends a fresh key-down tens of
+        # milliseconds after our synthetic key-up, and every character from
+        # there on arrives as a Ctrl+Alt chord — eaten as a shortcut, or
+        # dinged at by the target app. Re-check before each chunk.
+        release_held_modifiers()
         if not _send(events):
             ok = False
         events = []
@@ -145,6 +152,7 @@ def type_text(text: str) -> bool:
             continue  # CRLF would produce two line breaks
         if char == "\n":
             flush()
+            release_held_modifiers()  # same reason as in flush()
             if not _send([_key_event(VK_RETURN, 0, 0), _key_event(VK_RETURN, 0, KEYEVENTF_KEYUP)]):
                 ok = False
             time.sleep(_TYPE_CHUNK_DELAY)
