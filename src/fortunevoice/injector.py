@@ -202,12 +202,10 @@ def wants_paste(text: str, app: str | None) -> bool:
         return mode == "paste"
     if profiles.get_bool("FVPasteViaClipboard", app):
         return True                      # the old boolean, when nothing newer
-    if mode == "paste":
-        return True
-    if mode == "type":
-        return False
-    # "auto" only. An explicit "paste" above still wins, because a user who
-    # asked for it in a terminal knows something we do not.
+    # "auto" only past here: an explicit mode returned above, and the boolean
+    # is the fallback for anyone who set it before the dropdown existed.
+    # A console gets typed text whatever its length, because Ctrl+V is not
+    # paste there and would be read as a command.
     if is_console(app):
         return False
     return len(text) > max(1, config.get_int("FVPasteOver"))
