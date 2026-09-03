@@ -61,6 +61,18 @@ _TYPE_CHUNK_DELAY = 0.0012
 
 _MODIFIERS = (VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN)
 
+# When `release_held_modifiers` last told Windows the modifiers were up
+# while the user was still holding them. Read by the hotkey listener.
+_faked_release_at = 0.0
+
+
+def faked_release_age() -> float:
+    """Seconds since we last synthesized a modifier release, or a large
+    number when we never have."""
+    if not _faked_release_at:
+        return 1e9
+    return time.monotonic() - _faked_release_at
+
 
 def _key_event(vk: int, scan: int, flags: int) -> INPUT:
     event = INPUT()
@@ -101,6 +113,12 @@ def release_held_modifiers() -> None:
             events.append(_key_event(vk, 0, KEYEVENTF_KEYUP))
     if events:
         _send(events)
+        # Remembered, because from here until the user actually lets go,
+        # GetAsyncKeyState reports keys the user IS still holding as up.
+        # Anything that reads the physical keyboard to decide whether a
+        # dictation is still being held has to know that.
+        global _faked_release_at
+        _faked_release_at = time.monotonic()
         time.sleep(0.005)  # let the target app process the state change
 
 

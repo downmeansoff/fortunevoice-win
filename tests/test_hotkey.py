@@ -453,3 +453,43 @@ def test_a_probe_nobody_answered_reinstalls_the_hook(monkeypatch):
     listener._check_still_hooked()
 
     assert listener._reinstall is True
+
+
+def test_our_own_fake_release_does_not_end_a_live_dictation(monkeypatch):
+    """Before typing, the injector synthesizes key-ups for whatever is held,
+    so the transcript does not arrive as a string of shortcuts. While
+    dictations overlap that happens WHILE the user is holding the key for the
+    next one -- Windows then reports Ctrl and Alt as up, and the resync cut the
+    dictation off a second later, mid-sentence, over and over."""
+    from fortunevoice import hotkey as H
+    from fortunevoice import injector
+
+    released = []
+    listener = H.HotkeyListener(H.parse("ctrl+alt"), lambda: None, lambda: None)
+    listener._held = True
+    monkeypatch.setattr(listener, "_end_press", lambda: released.append(1))
+    monkeypatch.setattr(H, "_key_is_down", lambda vk: False)   # the fake up
+    monkeypatch.setattr(injector, "faked_release_age", lambda: 0.2)
+
+    listener._resync_held()
+
+    assert released == [], "the user is still holding the key"
+    assert listener._held is True
+
+
+def test_a_genuinely_lost_release_is_still_recovered(monkeypatch):
+    """The grace window must not swallow the case the resync exists for."""
+    from fortunevoice import hotkey as H
+    from fortunevoice import injector
+
+    released = []
+    listener = H.HotkeyListener(H.parse("ctrl+alt"), lambda: None, lambda: None)
+    listener._held = True
+    monkeypatch.setattr(listener, "_end_press", lambda: released.append(1))
+    monkeypatch.setattr(H, "_key_is_down", lambda vk: False)
+    monkeypatch.setattr(injector, "faked_release_age", lambda: 60.0)
+
+    listener._resync_held()
+
+    assert released == [1]
+    assert listener._held is False
