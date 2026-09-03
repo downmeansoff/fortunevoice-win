@@ -355,7 +355,7 @@ def milliseconds_since_last_input() -> float | None:
     return float((now - info.dwTime) & 0xFFFFFFFF)
 
 
-def tap_probe_key() -> None:
+def tap_probe_key() -> bool:
     """Press and release a key that does nothing, so a hook can prove it is
     alive by noticing."""
     events = (INPUT * 2)()
@@ -366,7 +366,11 @@ def tap_probe_key() -> None:
         events[index].ki.dwFlags = flags
         events[index].ki.time = 0
         events[index].ki.dwExtraInfo = 0
-    user32.SendInput(2, events, ctypes.sizeof(INPUT))
+    # Whether Windows accepted it. A probe that was never sent cannot be
+    # answered, and reading that silence as a dead hook reinstalls the hook
+    # every twenty seconds for as long as the refusal lasts — which is what a
+    # UAC prompt or a full-screen game with input blocked looks like.
+    return user32.SendInput(2, events, ctypes.sizeof(INPUT)) == 2
 
 
 # ── single instance ──────────────────────────────────────────────────────

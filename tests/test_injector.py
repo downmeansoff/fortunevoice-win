@@ -179,7 +179,10 @@ def test_pasting_via_the_clipboard_does_not_crash(monkeypatch):
     wrote: list[str] = []
     monkeypatch.setattr(injector, "set_clipboard_text",
                         lambda text: wrote.append(text) or True)
-    monkeypatch.setattr(injector, "_clipboard_text", lambda: None)
+    # `_clipboard_snapshot`, which is what the code calls: stubbing the old
+    # name left the real system clipboard exposed, and the restore thread
+    # would have emptied whatever the developer had copied.
+    monkeypatch.setattr(injector, "_clipboard_snapshot", lambda: (None, False))
 
     assert injector.paste_via_clipboard("через буфер") is True
     assert wrote[0] == "через буфер"
@@ -323,11 +326,13 @@ def test_always_paste_is_honoured_however_short_it_is():
     assert _route("да", FVDelivery="paste", FVPasteViaClipboard=False) is True
 
 
-def test_the_old_boolean_still_wins():
-    """FVPasteViaClipboard predates FVDelivery. Somebody who set it to true is
-    someone whose app ignores synthesized input, and an upgrade must not start
-    typing into it again."""
-    assert _route("да", FVDelivery="type", FVPasteViaClipboard=True) is True
+def test_an_explicit_choice_beats_the_old_boolean():
+    """FVPasteViaClipboard predates FVDelivery, so it still decides when
+    nothing newer does. But an explicit pick in the dropdown has to win, or
+    somebody who set the boolean once could choose "Always type" in Settings
+    and watch it do nothing."""
+    assert _route("да", FVDelivery="type", FVPasteViaClipboard=True) is False
+    assert _route("да", FVDelivery="auto", FVPasteViaClipboard=True) is True
 
 
 def test_a_profile_can_keep_one_app_on_typing():
@@ -399,7 +404,13 @@ def test_the_dictation_is_not_left_on_an_empty_clipboard(monkeypatch):
     from fortunevoice import injector
 
     emptied: list[int] = []
-    monkeypatch.setattr(injector, "_clipboard_text", lambda: None)
+    # `_clipboard_snapshot`, which is what the code calls: stubbing the old
+    # name left the real system clipboard exposed, and the restore thread
+    # would have emptied whatever the developer had copied.
+    # (None, True): nothing was on the clipboard, and we know it — the case
+    # where clearing is right. A clipboard we merely could not open is
+    # (None, False) and must be left alone.
+    monkeypatch.setattr(injector, "_clipboard_snapshot", lambda: (None, True))
     monkeypatch.setattr(injector, "set_clipboard_text", lambda text: True)
     monkeypatch.setattr(injector, "release_held_modifiers", lambda: None)
     monkeypatch.setattr(injector, "_send", lambda events: True)
@@ -445,3 +456,30 @@ def test_something_copied_meanwhile_is_left_alone(monkeypatch):
             thread.join(3)
 
     assert touched == ["диктовка"], touched
+
+def test_a_clipboard_we_could_not_read_is_left_alone(monkeypatch):
+    """`_clipboard_text` cannot tell "there was nothing" from "another
+    process had it open" — both are None. Emptying on the second erases
+    what the user copied, which is the opposite of the promise."""
+    import threading
+
+    from fortunevoice import injector
+
+    emptied = []
+    monkeypatch.setattr(injector, "_clipboard_snapshot", lambda: (None, False))
+    monkeypatch.setattr(injector, "set_clipboard_text", lambda text: True)
+    monkeypatch.setattr(injector, "release_held_modifiers", lambda: None)
+    monkeypatch.setattr(injector, "_send", lambda events: True)
+    monkeypatch.setattr(injector.user32, "GetClipboardSequenceNumber", lambda: 7)
+    monkeypatch.setattr(injector.user32, "OpenClipboard", lambda handle: 1)
+    monkeypatch.setattr(injector.user32, "CloseClipboard", lambda: 1)
+    monkeypatch.setattr(injector.user32, "EmptyClipboard",
+                        lambda: emptied.append(1) or 1)
+    monkeypatch.setattr(injector.time, "sleep", lambda seconds: None)
+
+    assert injector.paste_via_clipboard("сказанное вслух") is True
+    for thread in threading.enumerate():
+        if thread.name == "clipboard-restore":
+            thread.join(3)
+
+    assert emptied == [], "a locked clipboard is not an empty one"

@@ -140,3 +140,43 @@ def test_a_bullet_list_survives_the_selective_rejoin(monkeypatch):
     long_text = ("нужно купить хлеб молоко и кофе " * 6).strip()
     out = cleaner.clean(long_text)
     assert out is None or "\n- молоко" in out or out == long_text, out
+
+
+# -- where the cleanup model runs ----------------------------------------
+
+
+def test_the_cpu_device_reaches_every_request(monkeypatch):
+    """Measured on a 6 GB card: qwen2.5:3b will not load on the GPU with
+    Whisper resident, so "cpu" is the only setting where the feature works at
+    all. Every request has to carry it -- warmup included, because priming is
+    what loads the model, and priming without it pulled 1.9 GB onto the card
+    the user had just told the app to leave alone."""
+    from fortunevoice import config
+
+    bodies = []
+    monkeypatch.setattr(C.OllamaCleaner, "_post",
+                        lambda self, body, timeout: bodies.append(body) or
+                        {"message": {"content": "готово."}})
+    config.set("FVCleanupDevice", "cpu")
+    cleaner = C.OllamaCleaner()
+
+    cleaner._chat("system", "user")
+    cleaner._prime("system")
+
+    assert bodies, "nothing was sent"
+    for body in bodies:
+        assert body["options"].get("num_gpu") == 0, body["options"]
+
+
+def test_the_gpu_device_sends_no_override(monkeypatch):
+    """The default has to look exactly as it did before the setting existed."""
+    from fortunevoice import config
+
+    bodies = []
+    monkeypatch.setattr(C.OllamaCleaner, "_post",
+                        lambda self, body, timeout: bodies.append(body) or
+                        {"message": {"content": "готово."}})
+    config.set("FVCleanupDevice", "gpu")
+    C.OllamaCleaner()._chat("system", "user")
+
+    assert "num_gpu" not in bodies[0]["options"], bodies[0]["options"]

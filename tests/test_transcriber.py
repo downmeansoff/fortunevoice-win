@@ -589,3 +589,66 @@ def test_the_second_failure_is_reported_rather_than_looped(monkeypatch):
     with _pytest.raises(RuntimeError):
         transcriber.transcribe(np.zeros(16_000, dtype=np.float32))
     assert len(attempts) == 2, "exactly one retry"
+
+
+def test_a_full_card_is_not_a_dead_context(monkeypatch):
+    """A card that is merely full -- a game started, another model loaded --
+    reports out of memory too. Rebuilding then walks the backend ladder and
+    can land the app on the CPU for the rest of the session: a permanent
+    penalty for a temporary condition. The failure actually seen here was
+    CUBLAS_STATUS_INTERNAL_ERROR with 3 GB free."""
+    import numpy as np
+    import pytest as _pytest
+
+    from fortunevoice.transcriber import Transcriber
+
+    engine = Transcriber()
+    engine._model = object()
+    attempts = []
+
+    def full(samples):
+        attempts.append(1)
+        # The message a full card actually gives — observed here when
+        # Whisper was resident and a second model tried to load.
+        # "cuda failed" stays a dead-context marker; a malloc that could
+        # not find room is not one.
+        raise RuntimeError("cudaMalloc failed: out of memory")
+
+    monkeypatch.setattr(engine, "_transcribe_once", full)
+    monkeypatch.setattr(engine, "unload",
+                        lambda force=False: _pytest.fail("nothing to rebuild"))
+
+    with _pytest.raises(RuntimeError):
+        engine.transcribe(np.zeros(1600, dtype=np.float32))
+    assert len(attempts) == 1
+
+
+def test_a_rebuild_leaves_another_threads_model_alone(monkeypatch):
+    """Between the exception and the rebuild another thread may have replaced
+    the model already, or started a decode on a perfectly good one. Forcing
+    the gate away from that breaks a dictation that was going fine to fix one
+    that is already over."""
+    import numpy as np
+    import pytest as _pytest
+
+    from fortunevoice.transcriber import Result, Transcriber
+
+    engine = Transcriber()
+    broken = object()
+    engine._model = broken
+    calls = []
+
+    def died(samples):
+        calls.append(1)
+        if len(calls) == 1:
+            # Somebody else rebuilt it while we were failing.
+            engine._model = object()
+            raise RuntimeError("cuBLAS failed with status CUBLAS_STATUS_INTERNAL_ERROR")
+        return Result(text="уже здоровая модель")
+
+    monkeypatch.setattr(engine, "_transcribe_once", died)
+    monkeypatch.setattr(engine, "unload",
+                        lambda force=False: _pytest.fail("that model is not ours"))
+    monkeypatch.setattr(engine, "load", lambda: _pytest.fail("nor is the rebuild"))
+
+    assert engine.transcribe(np.zeros(1600, dtype=np.float32)).text ==         "уже здоровая модель"

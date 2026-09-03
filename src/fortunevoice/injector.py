@@ -194,9 +194,14 @@ def wants_paste(text: str, app: str | None) -> bool:
     the clipboard untouched, and long text is pasted, which is the difference
     between instant and watching it spell itself out.
     """
-    if profiles.get_bool("FVPasteViaClipboard", app):
-        return True                      # the old boolean still wins
     mode = (profiles.get_str("FVDelivery", app) or "auto").lower()
+    if mode in ("type", "paste"):
+        # An explicit choice in the dropdown beats the old boolean. The other
+        # way round, someone who set FVPasteViaClipboard once could pick
+        # "Always type" in Settings and watch it do nothing.
+        return mode == "paste"
+    if profiles.get_bool("FVPasteViaClipboard", app):
+        return True                      # the old boolean, when nothing newer
     if mode == "paste":
         return True
     if mode == "type":
@@ -231,7 +236,7 @@ def paste_via_clipboard(text: str) -> bool:
     only if nothing else wrote to the clipboard meanwhile — which is exactly
     why it is no longer the default: that condition often does not hold, and
     the dictation is then left sitting in the user's clipboard."""
-    previous = _clipboard_text()
+    previous, previous_was_empty = _clipboard_snapshot()
     if not set_clipboard_text(text):
         return False
     sequence = user32.GetClipboardSequenceNumber()
@@ -261,7 +266,11 @@ def paste_via_clipboard(text: str) -> bool:
         # leaving the dictation there: every Ctrl+V for the rest of the day,
         # and every clipboard-history tool, holding something the user said
         # out loud. Clearing loses nothing that was recoverable anyway.
-        if user32.OpenClipboard(None):
+        # Only when we know it was empty. `_clipboard_text` returns None both
+        # for "there was nothing" and for "another process had the clipboard
+        # open", and emptying on the second erases whatever the user had
+        # copied — the opposite of the promise this code exists to keep.
+        if previous_was_empty and user32.OpenClipboard(None):
             try:
                 user32.EmptyClipboard()
             finally:
@@ -271,6 +280,31 @@ def paste_via_clipboard(text: str) -> bool:
 
     threading.Thread(target=restore, name="clipboard-restore", daemon=True).start()
     return ok
+
+
+def _clipboard_snapshot() -> tuple[str | None, bool]:
+    """The clipboard text, and whether we KNOW it was empty.
+
+    `_clipboard_text` cannot tell "there was nothing" from "somebody else had
+    the clipboard open" — both are None. The difference matters: the restore
+    empties the clipboard rather than leave a dictation on it, and doing that
+    to a clipboard we simply could not read erases what the user copied.
+    """
+    if not user32.OpenClipboard(None):
+        return None, False               # locked; assume nothing about it
+    try:
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return None, True            # genuinely nothing of ours to keep
+        pointer = kernel32.GlobalLock(handle)
+        if not pointer:
+            return None, False
+        try:
+            return ctypes.c_wchar_p(pointer).value, False
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
 
 
 def _clipboard_text() -> str | None:

@@ -652,7 +652,12 @@ class App:
             # silence means the user presses again and wonders why the first
             # one did nothing. Picked up by `_finish_pipeline` when the state
             # comes back, provided the key is still down by then.
-            if state is State.PROCESSING:
+            # PROCESSING only happens here when overlap is off; LOADING is
+            # the case that survives the default, and it is the one that hurts
+            # — the model was dropped by the idle watcher and the user is
+            # pressing while it comes back. Without this the whole queued-press
+            # feature was unreachable as shipped.
+            if state in (State.PROCESSING, State.LOADING):
                 self._pending_press = time.monotonic()
                 # Otherwise the pill still reads "Расшифровка" from the
                 # dictation before, which looks exactly like the press having

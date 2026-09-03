@@ -288,7 +288,14 @@ class Transcriber:
     # their own internal errors, and the driver reports "out of memory" for a
     # context it can no longer allocate in — none of which is fixed by trying
     # the same model object again.
-    _CONTEXT_IS_GONE = ("cublas", "cudnn", "cuda failed", "out of memory",
+    # What a WEDGED context reports. Deliberately not "out of memory" on its
+    # own: a card that is merely full — a game started, another model loaded —
+    # says that too, and rebuilding then walks the backend ladder and can land
+    # the app on the CPU for the rest of the session, which is a permanent
+    # penalty for a temporary condition. The failure actually observed here
+    # was CUBLAS_STATUS_INTERNAL_ERROR with 3 GB free; a real OOM is already
+    # handled by the ladder at load time.
+    _CONTEXT_IS_GONE = ("cublas", "cudnn", "cuda failed",
                         "invalid resource handle", "device-side assert")
 
     @classmethod
@@ -305,14 +312,22 @@ class Transcriber:
         the card free — and the only cure was quitting from the tray. Rebuilt
         once, in place, so the dictation the user just spoke survives it.
         """
+        broken = self._model
         try:
             return self._transcribe_once(samples)
         except Exception as exc:  # noqa: BLE001 - re-raised below if not ours
             if not self._is_context_failure(exc):
                 raise
             logger.warning("the GPU context died (%s) — rebuilding the model", exc)
-        self.unload(force=True)
-        self.load()
+        # Only the model that failed. Between the exception and here another
+        # thread may have rebuilt it already, or started a decode on a
+        # perfectly good one — forcing the gate away from that would break a
+        # dictation that was going fine to fix one that is already over.
+        with self._lock:
+            same_model = self._model is broken
+        if same_model:
+            self.unload(force=True)
+            self.load()
         return self._transcribe_once(samples)
 
     def _transcribe_once(self, samples: np.ndarray) -> Result:
