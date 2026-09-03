@@ -239,6 +239,17 @@ def _set_locked(key: str, value: Any) -> None:
     global _cache_mtime, _stored
     path = paths.config_file()
     current = dict(_load())
+    # The hotkey has come back as the default more than once, and every
+    # time the question was WHO wrote it. A write that changes it is
+    # rare and worth a line with the call stack: the next time it
+    # reverts, the log names the culprit instead of leaving us guessing
+    # from the outside.
+    if key == "FVHotkey" and current.get(key) != value:
+        import traceback
+
+        logger.warning("FVHotkey %r -> %r, from:%s%s", current.get(key),
+                       value, chr(10),
+                       "".join(traceback.format_stack(limit=8)[:-1]))
     current[key] = value
     if _read_failed:
         # The file on disk could not be parsed, so it is about to be replaced.
