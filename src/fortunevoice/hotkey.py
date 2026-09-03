@@ -503,6 +503,11 @@ class HotkeyListener:
                 self._check_still_hooked()
             if message.message == WM_TIMER and self._reinstall:
                 self._reinstall = False
+                if self._held:
+                    # The user is holding the key right now. Taking the
+                    # hook away and putting it back loses the key-up
+                    # that ends this dictation.
+                    logger.warning("reinstalling WHILE a dictation is held")
                 logger.warning("reinstalling the keyboard hook after a slow callback")
                 self._uninstall()
                 if not self._install():
@@ -703,6 +708,13 @@ class HotkeyListener:
 
         if not self._held:
             return False
+        # Which key ended it, and whether the others are still down.
+        # A dictation cut mid-word is either a real release, a keyboard
+        # sending a spurious one, or the hook being reinstalled under
+        # us — and from the outside all three look identical.
+        still = [hex(vk) for vk in self._spec.keys if _key_is_down(vk)]
+        logger.info("press ended by key-up of %s (still down: %s)",
+                    hex(event.vkCode), still or "nothing")
         self._held = False
         self._end_press()
         return eat
