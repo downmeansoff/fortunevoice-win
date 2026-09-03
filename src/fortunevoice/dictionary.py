@@ -40,8 +40,37 @@ def set_terms(values: list[str]) -> None:
     tmp.replace(path)
 
 
+# Whisper copies the STYLE of its initial prompt. With an empty one it
+# decides punctuation per utterance, which is why a long natural sentence came
+# back fully punctuated and a short abrupt one came back as a bare lowercase
+# run of words. A punctuated example costs a few tokens and asks for the
+# register the user actually writes in.
+_STYLE = {
+    "ru": "Привет! Вот пример: короткая фраза, запятая, и точка в конце.",
+    "en": "Hello! Here is an example: a short phrase, a comma, and a full stop.",
+}
+
+
+def style_prompt() -> str:
+    """A punctuated sentence in the dictation language, or "" for auto.
+
+    Not sent when the language is auto-detected: a Russian example in front of
+    English audio biases the detector as well as the style, and getting the
+    language wrong costs far more than the punctuation is worth.
+    """
+    from . import config
+
+    return _STYLE.get(config.get_str("FVLanguage"), "")
+
+
 def prompt_string() -> str:
+    """What Whisper is primed with: the style example, then the user's terms."""
     joined = ", ".join(terms())
+    style = style_prompt()
+    if style and joined:
+        joined = f"{style} {joined}"
+    elif style:
+        joined = style
     return joined[:MAX_PROMPT_CHARS]
 
 

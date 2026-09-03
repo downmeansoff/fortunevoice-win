@@ -1073,3 +1073,44 @@ def test_the_wait_is_bounded(app, monkeypatch):
     waited = real_time.monotonic() - started
 
     assert 0.15 < waited < 2.0, waited
+
+
+# -- one dictation after another must not arrive glued to it -------------
+
+
+def test_a_second_dictation_into_the_same_field_gets_a_space(app):
+    """From the user's history, five seconds apart into one window:
+    "...все молодцы все супер" then "Привет!" -- typed as
+    "...все суперПривет!". The app types exactly what it transcribed, and
+    Whisper never returns a leading space."""
+    deliver(app, "все молодцы все супер")
+    deliver(app, "Привет!")
+
+    assert app.typed == ["все молодцы все супер", " Привет!"]
+
+
+def test_the_first_dictation_is_not_indented(app):
+    deliver(app, "первая фраза")
+    assert app.typed == ["первая фраза"]
+
+
+def test_punctuation_does_not_get_a_space_before_it(app):
+    """Dictating a trailing comma or full stop on its own is rare but real,
+    and " ," is worse than the gluing this fixes."""
+    deliver(app, "мысль")
+    deliver(app, ", а потом продолжение")
+
+    assert app.typed == ["мысль", ", а потом продолжение"]
+
+
+def test_a_different_window_starts_afresh(app):
+    """The space is only right when it continues text we ourselves put in the
+    same field. Somewhere else it lands at the start of whatever is there.
+
+    Asserted on `_separated` rather than through `_deliver`: a dictation whose
+    target window is not the one in front is held rather than typed, which is
+    a different rule and would hide this one.
+    """
+    assert app._separated("в первом окне", 1) == "в первом окне"
+    assert app._separated("во втором окне", 2) == "во втором окне"
+    assert app._separated("и ещё раз", 2) == " и ещё раз"

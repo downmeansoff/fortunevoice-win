@@ -113,3 +113,40 @@ def test_a_latin_term_is_learned_wherever_it_sits():
 def test_nothing_is_learned_when_only_the_case_changed():
     dictionary.set_terms([])
     assert dictionary.learn_from_correction("привет мир", "Привет мир") == []
+
+
+def test_whisper_is_shown_a_punctuated_example():
+    """Whisper copies the STYLE of its initial prompt. With an empty one it
+    decides punctuation per utterance -- a long natural sentence came back
+    fully punctuated and a short abrupt one as a bare lowercase run of
+    words."""
+    from fortunevoice import config, dictionary
+
+    config.set("FVLanguage", "ru")
+    prompt = dictionary.prompt_string()
+
+    assert prompt, "an empty prompt tells the decoder nothing"
+    assert "," in prompt and "." in prompt, prompt
+
+
+def test_the_example_is_not_sent_when_the_language_is_detected():
+    """A Russian example in front of English audio biases the detector as well
+    as the style, and getting the language wrong costs far more than the
+    punctuation is worth."""
+    from fortunevoice import config, dictionary
+
+    config.set("FVLanguage", "auto")
+    assert dictionary.prompt_string() == ""
+
+
+def test_the_users_terms_come_after_the_example():
+    from fortunevoice import config, dictionary
+
+    config.set("FVLanguage", "ru")
+    dictionary.set_terms(["Анторопик", "КТранслейт"])
+    try:
+        prompt = dictionary.prompt_string()
+        assert "Анторопик" in prompt
+        assert prompt.index("Анторопик") > prompt.index("пример")
+    finally:
+        dictionary.set_terms([])

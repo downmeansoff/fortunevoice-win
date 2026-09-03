@@ -174,6 +174,9 @@ class App:
         # A press that arrived while the app was busy, waiting for the state
         # to come back. Zero when there is none.
         self._pending_press = 0.0
+        # (window, when, last character) of the last text typed, so a second
+        # dictation into the same field does not arrive glued to the first.
+        self._last_typed: tuple[int, float, str] | None = None
         # Counts dictations. A pipeline captures it at the start and only
         # touches shared state afterwards while it is still the current one —
         # checking the state alone is not enough, because a *second* dictation
@@ -1179,6 +1182,33 @@ class App:
     # remove: past this the text goes out of order rather than not at all.
     DELIVERY_ORDER_WAIT = 20.0
 
+    # How long a previous dictation still counts as "the sentence before
+    # this one". Past it the user has moved on and may well have typed,
+    # clicked or scrolled, and a space we add lands somewhere arbitrary.
+    SEPARATE_WITHIN_SECONDS = 60.0
+
+    def _separated(self, text: str, target_window: int) -> str:
+        """A space in front, when this continues the last dictation.
+
+        Two dictations into the same field arrived as "...все суперПривет!":
+        the app types exactly what it transcribed, and Whisper never returns a
+        leading space. We cannot read the target field, so the decision is
+        made from what we ourselves last put there — same window, recently,
+        and it ended in something a space belongs after.
+        """
+        previous, self._last_typed = self._last_typed, None
+        separated = text
+        if previous is not None:
+            window, when, last_char = previous
+            if (window == target_window
+                    and time.monotonic() - when < self.SEPARATE_WITHIN_SECONDS
+                    and not last_char.isspace()
+                    and not text[:1].isspace()
+                    and text[:1] not in ",.!?;:)»"):
+                separated = " " + text
+        self._last_typed = (target_window, time.monotonic(), text[-1:] or " ")
+        return separated
+
     def _await_predecessor(self, generation: int) -> None:
         """Let the dictation before this one finish typing first.
 
@@ -1214,6 +1244,7 @@ class App:
         if not text:
             return
         self._await_predecessor(generation)
+        text = self._separated(text, target_window)
         # Before anything else sees the text, so History, the result panel and
         # the typed output all agree on what was said.
         if profiles.get_bool("FVVoiceCommands", winapi.foreground_app_name()):
