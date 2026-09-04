@@ -240,14 +240,15 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-534 tests, run on every push by CI: the macOS project's own suite ported over (sentence splitting,
+586 tests, run on every push by CI: the macOS project's own suite ported over (sentence splitting,
 repeat collapsing, the cleanup skip heuristic and cost model, the streaming
 silence rules, the decoder gate's bounded waits, timeouts, history, recovery,
 stats) plus Windows-specific ones for hotkey parsing, the hook's swallow/fire
 decisions, the config file, the generated icon, the prompt-tier routing, the
 learned cleanup cost model and the remembered window geometry.
 
-Two more opt-in suites, both needing a desktop session:
+Three more suites are opt-in, 33 tests held out of the default run because
+CI has no desktop session to run them in.
 
 ```powershell
 pytest -m ui      # builds every window for real
@@ -266,6 +267,17 @@ pytest -m live
 It needs a desktop session with nothing stealing focus, and it **skips**
 (never types) unless it can prove its own window is in the foreground. Run
 it from a normal terminal, not from a remote or automated session.
+
+Last, an end-to-end suite that speaks a phrase out loud and decodes it with
+the real model:
+
+```powershell
+pytest -m e2e
+```
+
+It is slow and it needs the weights already on disk, which is why it is not
+part of the default run. 619 tests in total: 586 by default, 21 UI, 8 live
+and 4 end-to-end.
 
 ## Measured on this machine
 
