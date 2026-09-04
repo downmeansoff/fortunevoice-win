@@ -1,6 +1,6 @@
 """The app icon, drawn in code rather than shipped as a binary blob.
 
-One generator produces every size the app needs — the multi-resolution .ico
+One generator produces every size the app needs: the multi-resolution .ico
 for the shortcut, the taskbar and Alt-Tab, and the per-state bitmaps for the
 tray. Generating it means the icon is reviewable in a diff and regenerates if
 the palette changes, instead of being a file nobody can edit.
@@ -8,7 +8,7 @@ the palette changes, instead of being a file nobody can edit.
 Two different marks, deliberately:
 
 * **The app icon** is the product logo: a glass sphere. It has room to be
-  itself at 48 px and up, which is every place Windows shows it — the desktop
+  itself at 48 px and up, which is every place Windows shows it: the desktop
   shortcut, the taskbar, Alt-Tab, the window corner.
 * **The tray icon** is a monochrome silhouette on a transparent background,
   tinted by state. It sits directly on the user's taskbar colour, so a plate
@@ -77,7 +77,7 @@ def _microphone(draw, px: int, fill: tuple, stroke: float = 0.062) -> None:
 def logo(size: int):
     """The product icon: a glass sphere.
 
-    Drawn rather than shipped as a bitmap, like everything else here — the
+    Drawn rather than shipped as a bitmap, like everything else here: the
     shape is reviewable in a diff and regenerates at whatever size the OS asks
     for.
 
@@ -112,7 +112,7 @@ def logo(size: int):
     image.paste(Image.new("RGBA", (px, px), _SPHERE_CREAM + (255,)), (0, 0),
                 Image.composite(reflection, Image.new("L", (px, px), 0), mask))
 
-    # Thick glass darkens where you look through more of it — the rim.
+    # Thick glass darkens where you look through more of it: the rim.
     inner = Image.new("L", (px, px), 0)
     ImageDraw.Draw(inner).ellipse((0, 0, px - 1, px - 1), outline=255,
                                   width=int(px * 0.05))
@@ -131,7 +131,7 @@ def _sphere(px: int, tint: tuple[int, int, int] | None, strength: float,
             box: tuple[float, float, float, float]):
     """The glass sphere inside `box`, its body pulled towards `tint`.
 
-    Shared by the app icon and the tray, so the two can never drift apart —
+    Shared by the app icon and the tray, so the two can never drift apart:
     an icon that does not match the app it opens looks like the wrong
     shortcut.
     """
@@ -187,7 +187,7 @@ def tray_image(colour: tuple[int, int, int], level: float = 0.0):
     """The sphere in the notification area, tinted by state.
 
     The tray is a status light before it is a logo: at a glance it has to say
-    idle, recording, or transcribing. So the body takes the state colour —
+    idle, recording, or transcribing. So the body takes the state colour:
     idle keeps the natural glass, and the rest are pulled far enough for a
     16 px blob to read as red or amber rather than "the icon".
 
@@ -225,7 +225,7 @@ def write_ico(path: Path) -> Path:
 
     All the sizes Windows actually asks for. Pillow's ICO writer silently
     DISCARDS any requested size larger than the image being saved, so the
-    largest frame has to be the base — building from the 16 px render produced
+    largest frame has to be the base: building from the 16 px render produced
     a one-frame icon that Explorer upscaled, with no error anywhere.
     """
     path.parent.mkdir(parents=True, exist_ok=True)

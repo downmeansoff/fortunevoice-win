@@ -7,7 +7,7 @@ inside CTranslate2 would ignore the attempt anyway.
 
 Abandoning is enough because the thing being protected is the app's state
 machine, not the CPU. The hotkey is gated on the app being idle, so a step
-that never returns doesn't just lose one dictation — it kills dictation for
+that never returns doesn't just lose one dictation; it kills dictation for
 the rest of the session. A bounded wait hands control back; the orphaned
 worker finishes into a result nobody reads, and the decoder gate (see
 transcriber.py) keeps it from corrupting the next decode.
@@ -51,7 +51,7 @@ def run(seconds: float, work: Callable[[], T]) -> T:
 
 
 def run_or(seconds: float, work: Callable[[], T], fallback: T) -> T:
-    """`run`, but any failure — timeout or exception — yields `fallback`."""
+    """`run`, but any failure (timeout or exception) yields `fallback`."""
     try:
         return run(seconds, work)
     except BaseException:  # noqa: BLE001 - the fallback is the whole point

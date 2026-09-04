@@ -1,6 +1,6 @@
 """The main window: History, Insights, Dictionary, Settings.
 
-Laid out like the macOS build — a nav rail on the left, one page at a time on
+Laid out like the macOS build: a nav rail on the left, one page at a time on
 the right, everything sitting in rounded cards on a deep navy surface.
 
 Two structural notes:
@@ -46,9 +46,9 @@ _PAGE_LABEL = {"History": "nav.history", "Insights": "nav.insights",
 
 # Icon tint per settings row. Colour still carries the grouping when the eye
 # skims, but from one muted earth family rather than the saturated system
-# palette — a row of Apple-bright tiles was the single loudest thing on the
+# palette: a row of Apple-bright tiles was the single loudest thing on the
 # page and read as macOS Settings, not as this app.
-TINT_BLUE = "#CC785C"    # book cloth — the brand's own clay
+TINT_BLUE = "#CC785C"    # book cloth, the brand's own clay
 TINT_INDIGO = "#B0705C"
 TINT_TEAL = "#7D9A8E"    # sage
 TINT_GREEN = "#7D9A72"
@@ -95,7 +95,7 @@ class MainWindow:
         self._select(self._page)
         # The tray can change the same settings this window shows, so the
         # switches and chips would be painted with values that are no
-        # longer true — a toggle reading "off" for something that is on.
+        # longer true: a toggle reading "off" for something that is on.
         self._repaint_settings()
         self._repaint_hotkey_chip()
 
@@ -143,7 +143,7 @@ class MainWindow:
 
         There were three key bindings in the whole UI, all inside the inline
         history editor. A window you open from a tray icon has to close on
-        Escape, and a list with a search field has to focus it on Ctrl+F —
+        Escape, and a list with a search field has to focus it on Ctrl+F:
         those are not conveniences, they are what the OS taught everyone the
         keyboard does. Ctrl+1..4 for the tabs because this window has exactly
         four pages and they never change.
@@ -200,7 +200,7 @@ class MainWindow:
         """Re-read every Settings control from config.
 
         The tray changes several of the same settings this window shows, and
-        the pages are built once and raised rather than rebuilt — so a switch
+        the pages are built once and raised rather than rebuilt, so a switch
         could sit there reading "off" for something the tray had turned on.
 
         Walks the widget tree rather than keeping a register of controls: the
@@ -259,7 +259,7 @@ class MainWindow:
         """The wordmark and the four tabs, across the top.
 
         The 200 px rail this replaces cost every page a fifth of its width to
-        say four words, and it boxed those words in — Russian labels are ~15%
+        say four words, and it boxed those words in: Russian labels are ~15%
         longer than English and had nowhere to go. Across the top they have
         the whole window, the pages get their full measure, and the tabs sit
         on the masthead rule, which is what makes them read as tabs rather
@@ -331,7 +331,7 @@ class MainWindow:
 
     def _scroll_area(self, parent):
         """A vertically scrolling region that still stretches its content to
-        the full width — the default canvas window does not."""
+        the full width; the default canvas window does not."""
         import tkinter as tk
 
         holder = tk.Frame(parent, bg=theme.INK)
@@ -355,7 +355,7 @@ class MainWindow:
 
         # Windows sends 120 per notch, but a precision touchpad or a free-spin
         # wheel sends fractions of it. `-delta // 120` floors, so +40 scrolled
-        # a whole line up while -40 became 0 and did nothing at all — scrolling
+        # a whole line up while -40 became 0 and did nothing at all: scrolling
         # up worked and scrolling down did not. Accumulate instead, and spend
         # whole notches.
         pending = {"delta": 0}
@@ -384,7 +384,7 @@ class MainWindow:
         bar = self._header(page, t("nav.history"))
         # Words, not tiles. Two 34 px rounded squares put "export" and "delete
         # everything" side by side in the same shape and the same weight, in
-        # the corner where the eye expects the window's own close button —
+        # the corner where the eye expects the window's own close button,
         # identified only by a glyph and a tooltip that arrives after a pause.
         theme.text_button(bar, t("history.delete_action"), self._clear_history,
                           danger=True).pack(side="right")
@@ -435,7 +435,7 @@ class MainWindow:
 
         search.bind("<Escape>", clear)
         # Debounced. Every keystroke tore down and rebuilt every card in the
-        # list — canvas-backed, one per dictation — so typing into the search
+        # list (canvas-backed, one per dictation), so typing into the search
         # box on a long history stuttered, and each character cost the same
         # work again. 160 ms is below the gap between keystrokes in ordinary
         # typing, so the list settles once the user pauses.
@@ -476,7 +476,7 @@ class MainWindow:
         if body is None:
             return
         # Switching tabs called this every time, and it destroys every card in
-        # the list and builds them all again — one canvas-backed row per
+        # the list and builds them all again: one canvas-backed row per
         # dictation. The usual case is that nothing changed since it was last
         # drawn: the user is moving between tabs, not dictating. A new
         # dictation, a deletion, an edit, a search term or an undo strip all
@@ -523,8 +523,8 @@ class MainWindow:
         """One dictation, set as a line of type rather than boxed in a card.
 
         The transcript is in the serif on purpose: it is the thing the user
-        made, and everything else on this page — the time, the application,
-        the delete — is administration, set small and grey in the margins
+        made, and everything else on this page (the time, the application,
+        the delete) is administration, set small and grey in the margins
         either side of it. A rounded rectangle around each one made a list of
         someone's own sentences look like a list of database rows.
         """
@@ -571,7 +571,7 @@ class MainWindow:
         def hover(_event=None) -> None:
             for widget in painted:
                 widget.configure(bg=theme.PAPER_2)
-            # INK_FAINT on the hover band measures 4.44:1, under the floor —
+            # INK_FAINT on the hover band measures 4.44:1, under the floor,
             # so the quiet labels step up as the row lights up. The row
             # getting more legible as you point at it is also the cheapest
             # responsive feeling in the app.
@@ -605,7 +605,7 @@ class MainWindow:
         """Turn the card's text into an editable field.
 
         The transcript is the vault's copy of what was said, and a misheard
-        word made it wrong for good — the history, the search and anything
+        word made it wrong for good: the history, the search and anything
         retyped from it all carried the mistake forever.
         """
         import tkinter as tk
@@ -623,7 +623,7 @@ class MainWindow:
 
         def finish(save: bool) -> str:
             # Escape destroys the box, and a <FocusOut> queued behind it would
-            # then call box.get() on a widget that no longer exists — an
+            # then call box.get() on a widget that no longer exists: an
             # exception inside a Tk callback, which surfaces to the user as a
             # window that failed, for something they cannot see.
             if done["already"]:
@@ -634,7 +634,7 @@ class MainWindow:
             label.pack(fill="x")
             if save and self._store.edit(record, text):
                 # The one moment the app knows for certain that a word was
-                # misheard AND what the right one was — the user just typed it.
+                # misheard AND what the right one was: the user just typed it.
                 learned = dictionary.learn_from_correction(record.transcript, text)
                 if learned:
                     # The count, not the words. These are by construction the
@@ -663,8 +663,8 @@ class MainWindow:
         flash.place(relx=1.0, y=0, anchor="ne")
 
         def remove() -> None:
-            # The list can be rebuilt before this fires — a search keystroke, a
-            # deletion, a dictation arriving — and destroying a widget that is
+            # The list can be rebuilt before this fires (a search keystroke, a
+            # deletion, a dictation arriving), and destroying a widget that is
             # already gone raises inside the Tk callback, which takes the UI
             # thread's error path for something the user cannot even see.
             try:
@@ -680,7 +680,7 @@ class MainWindow:
 
         No confirmation: it is one row, and a dialog on every deletion is
         worse than the mistake. But the argument for skipping the dialog only
-        holds if the mistake is recoverable, and it was not — the × is a 9 px
+        holds if the mistake is recoverable, and it was not: the × is a 9 px
         glyph on a row whose whole surface copies, and the rows shift under
         the cursor whenever the list refreshes. History is called the vault
         everywhere else in this codebase.
@@ -729,7 +729,7 @@ class MainWindow:
         """Turn the Startup shortcut on or off, and admit it when it did not.
 
         `set_launch_at_login` swallows every exception and returns the state
-        it actually reached, and the Switch repaints from the filesystem — so
+        it actually reached, and the Switch repaints from the filesystem, so
         a Startup folder that is redirected, locked, or watched by an
         antivirus made the toggle flick on and snap straight back with no
         message anywhere. The user tries it three times and concludes the app
@@ -752,7 +752,7 @@ class MainWindow:
 
         records = self._store.all()
         # Both of these used to return in silence, which is the same thing the
-        # button does when it works — so a failed export and a successful one
+        # button does when it works, so a failed export and a successful one
         # were indistinguishable from the outside.
         if not records:
             messagebox.showinfo(t("history.export_empty"),
@@ -861,7 +861,7 @@ class MainWindow:
     def _activity_card(self, parent, records) -> None:
         import tkinter as tk
 
-        # The card is invisible padding now — its own gap is the section gap.
+        # The card is invisible padding now: its own gap is the section gap.
         card = widgets.Card(parent, radius=0, padx=0, pady=0)
         card.pack(fill="x", pady=(theme.px(32), 0))
         widgets.section_title(card.body, t("insights.last_30")).pack(
@@ -920,7 +920,7 @@ class MainWindow:
         import tkinter as tk
 
         by_app = stats.words_by_app(records)[:6]
-        # The card is invisible padding now — its own gap is the section gap.
+        # The card is invisible padding now: its own gap is the section gap.
         card = widgets.Card(parent, radius=0, padx=0, pady=0)
         card.pack(fill="x", pady=(theme.px(32), 0))
         widgets.section_title(card.body, t("insights.where")).pack(
@@ -960,7 +960,7 @@ class MainWindow:
             return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
 
         typed = [r for r in rows if str(r.get("outcome", "")).startswith("pasted")]
-        # The card is invisible padding now — its own gap is the section gap.
+        # The card is invisible padding now: its own gap is the section gap.
         card = widgets.Card(parent, radius=0, padx=0, pady=0)
         card.pack(fill="x", pady=(theme.px(32), 0))
         widgets.section_title(card.body, t("insights.speed")).pack(
@@ -992,7 +992,7 @@ class MainWindow:
                   add="+")
 
         # Outlined. CARD is an alias of PAPER, so an unbordered panel on the
-        # page is invisible — the whole page read as a title, a caption, a
+        # page is invisible: the whole page read as a title, a caption, a
         # large nothing, and a Save button in the corner, with no sign that
         # the nothing was the thing you type into.
         card = widgets.Card(page, radius=14, padx=16, pady=14,
@@ -1015,7 +1015,7 @@ class MainWindow:
         theme.button(footer, t("dict.save"), self._save_dictionary, primary=True).pack(side="right")
 
     def _dictionary_contents(self) -> str:
-        """What the user typed — never the example shown in its place.
+        """What the user typed, never the example shown in its place.
 
         Without this the page opened announcing unsaved changes it did not
         have, and closing it would have written the four example words into
@@ -1032,7 +1032,7 @@ class MainWindow:
         return self._dictionary_contents() != getattr(self, "_dictionary_saved", "")
 
     def _refresh_dictionary(self) -> None:
-        """Reload from disk — unless the user has typed something.
+        """Reload from disk, unless the user has typed something.
 
         This runs on every tab switch and every window open, and it used to
         overwrite the box unconditionally: typing three terms and clicking
@@ -1174,7 +1174,7 @@ class MainWindow:
                            colour=theme.TEXT_FAINT)
         note.pack(anchor="w", fill="x", pady=(2, 0))
         # Both of these run past the right edge and are cut mid-word at the
-        # window's own minimum size — the note ended at "рядом с обр". Same
+        # window's own minimum size: the note ended at "рядом с обр". Same
         # binding the Dictionary caption uses; add="+" because a plain bind
         # would replace the scroll-area's own <Configure> handler.
         for label in (self._ollama_status, note):
@@ -1244,7 +1244,7 @@ class MainWindow:
         the hook would swallow it and start a dictation instead of recording
         the key.
         """
-        # Ctrl and Alt are accepted, but only when held — say so at the moment
+        # Ctrl and Alt are accepted, but only when held, say so at the moment
         # the user is actually choosing, or a held Ctrl reads as "not working".
         row = getattr(self, "_hotkey_row", None)
         if row is not None and row.subtitle is not None:
@@ -1316,8 +1316,8 @@ class MainWindow:
     def _refresh_ollama_status(self) -> None:
         """Say whether the cleanup model is actually reachable.
 
-        Cleanup degrades silently by design — every failure path returns the
-        raw transcript — which is right for a dictation app and terrible for
+        Cleanup degrades silently by design: every failure path returns the
+        raw transcript, which is right for a dictation app and terrible for
         discoverability: with Ollama not running, the switch reads ON and
         nothing it promises happens. Ollama does not install a startup entry
         on Windows, so "not running" is the normal state after a reboot.
@@ -1372,12 +1372,12 @@ def _whisper_models() -> list[tuple[str, str]]:
     translated, and a module-level list would freeze whatever language was
     active when the module first loaded."""
     return [
-        ("tiny", f"tiny — {t('model.fastest')}"),
+        ("tiny", f"tiny: {t('model.fastest')}"),
         ("base", "base"),
         ("small", "small"),
         ("medium", "medium"),
-        ("large-v3-turbo", f"large-v3-turbo — {t('model.recommended')}"),
-        ("large-v3", f"large-v3 — {t('model.most_accurate')}"),
+        ("large-v3-turbo", f"large-v3-turbo: {t('model.recommended')}"),
+        ("large-v3", f"large-v3: {t('model.most_accurate')}"),
     ]
 
 
@@ -1495,7 +1495,7 @@ def _set_cleanup_model(name: str) -> None:
 
     `cleaner._fit()` learns how long this model takes per character from the
     metrics file and caches it for five minutes. Left alone across a model
-    change, the new model is budgeted with the old one's timings — a 3b sized
+    change, the new model is budgeted with the old one's timings: a 3b sized
     like a 1.5b, so chunks are sent that cannot come back in time.
     """
     from .. import cleaner
@@ -1508,7 +1508,7 @@ def _ghost_lines(widget, sample: str):
     """Show `sample` in a text box until the user types into it.
 
     An empty multi-line field with no border and no prompt does not look like
-    an input at all — and this one wants a specific shape, one term per line,
+    an input at all, and this one wants a specific shape, one term per line,
     which a caption above the field describes and an example demonstrates in
     a tenth of the time.
     """

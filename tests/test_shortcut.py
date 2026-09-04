@@ -64,7 +64,7 @@ def test_the_project_venv_is_preferred(tmp_path, monkeypatch):
 
 
 def test_it_is_the_windowed_interpreter():
-    """python.exe keeps a console window open for the life of the app — a
+    """python.exe keeps a console window open for the life of the app: a
     black box on screen that closes the tray app when someone tidies it away."""
     assert shortcut.interpreter().name in ("pythonw.exe", "python.exe")
 
@@ -96,7 +96,7 @@ def test_the_script_launches_the_app_as_a_module(fake_folders, powershell):
 
 def test_the_script_is_utf8_with_a_bom(fake_folders, powershell):
     """PowerShell 5.1 decodes a script without a BOM using the console code
-    page, which turns a Cyrillic Desktop path into mojibake — and the shortcut
+    page, which turns a Cyrillic Desktop path into mojibake, and the shortcut
     lands somewhere else, or nowhere. This is exactly how the first attempt at
     this failed."""
     desktop, _ = fake_folders
@@ -133,7 +133,7 @@ def test_the_switch_reflects_the_startup_folder(fake_folders, powershell):
 
 def test_the_switch_reports_what_was_achieved_not_what_was_asked(fake_folders,
                                                                  monkeypatch):
-    """A failed write must not leave the switch showing something untrue —
+    """A failed write must not leave the switch showing something untrue:
     the user would believe the app starts with Windows when it does not."""
     def refuse(*args, **kwargs):
         raise PermissionError("locked-down profile")
@@ -157,7 +157,7 @@ def test_the_link_name_is_a_shortcut():
 def test_an_apostrophe_in_the_path_does_not_break_the_script():
     """A Windows account named O'Brien was enough: the single-quoted literal
     closed early, PowerShell failed to parse the script, and "Launch at login"
-    refused to turn on — the switch snapping back with no message anywhere."""
+    refused to turn on, the switch snapping back with no message anywhere."""
     escaped = shortcut._literal("C:" + chr(92) + "Users" + chr(92) + "O'Brien")
     assert escaped == "C:" + chr(92) + "Users" + chr(92) + "O''Brien"
 

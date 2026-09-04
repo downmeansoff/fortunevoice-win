@@ -1,22 +1,22 @@
 """One palette and a few primitives, so every window looks like the same app.
 
 **Paper.** A warm off-white page, ink-dark text, hairlines where a boundary
-genuinely exists, and one accent — an iron-gall blue that appears on the
+genuinely exists, and one accent: an iron-gall blue that appears on the
 active tab, the primary button, the bars and the meters, and nowhere else.
 
 Three decisions carry it, and all three are subtractions:
 
 * **There are no cards.** Content sits directly on the page, separated by
   space and a hairline. The window used to be a dark app wearing card-shaped
-  jewellery — a rounded rectangle inside a rounded rectangle, each with its
-  own fill — which is what made it read as a dashboard template. `CARD` is now
+  jewellery: a rounded rectangle inside a rounded rectangle, each with its
+  own fill, which is what made it read as a dashboard template. `CARD` is now
   the page colour, so a card is simply padding.
 * **Colour is rationed to one.** Not six tinted icon tiles down the left of
   the settings rows. Grouping is done by a heading and a rule, which is what
   headings and rules are for.
 * **The serif earns its place exactly three times**: the page title, the big
   figures, and the transcript itself. Setting a person's own words in a text
-  serif is the whole argument of this design — the transcript is the thing the
+  serif is the whole argument of this design: the transcript is the thing the
   user made, and everything else on the page is administration.
 
 Light, and deliberately not theme-aware. The pill and the result panel appear
@@ -51,7 +51,7 @@ def px(value: float) -> int:
     """Layout pixels, scaled for this display.
 
     Tk sizes widgets in raw pixels, and a DPI-aware process gets *physical*
-    pixels — so a 40 px row really is 40 dots, which is right at 100% and half
+    pixels, so a 40 px row really is 40 dots, which is right at 100% and half
     the intended size at 200%. Fonts are handled separately, by Tk's own
     `tk scaling`.
     """
@@ -64,7 +64,7 @@ def px(value: float) -> int:
 PAPER = "#F7F4EE"        # the window, the masthead, every page, every row
 PAPER_2 = "#F1EDE4"      # row hover; secondary button hover
 WELL = "#EDE8DE"         # sunken: the dictionary editor, meter tracks
-RAISED = "#FCFAF6"       # popup menus and tooltips — the only lighter surface
+RAISED = "#FCFAF6"       # popup menus and tooltips, the only lighter surface
 
 # ── rules and strokes ────────────────────────────────────────────────────
 # Two weights of hairline, because a structural rule and a list separator are
@@ -73,16 +73,16 @@ RAISED = "#FCFAF6"       # popup menus and tooltips — the only lighter surface
 # would make every control boundary a suggestion.
 RULE = "#CFC5B2"         # masthead, section headings, chart baseline
 RULE_SOFT = "#E6E0D4"    # between rows in a list
-STROKE = "#766E60"       # control boundaries — 4.65:1, never lighter
+STROKE = "#766E60"       # control boundaries, 4.65:1, never lighter
 
 # ── text, four tiers and no fifth ────────────────────────────────────────
-TEXT = "#1B1917"         # 15.8:1 — titles, row titles, transcripts, values
-TEXT_MID = "#4A453D"     # 8.8:1  — numbers in lists, secondary body
-TEXT_MUTED = "#6E675C"   # 5.2:1  — captions, row hints, inactive nav
+TEXT = "#1B1917"         # 15.8:1, titles, row titles, transcripts, values
+TEXT_MID = "#4A453D"     # 8.8:1,  numbers in lists, secondary body
+TEXT_MUTED = "#6E675C"   # 5.2:1,  captions, row hints, inactive nav
 # The floor. Nothing lighter carries a word: the tempting #8C8477 measures
 # 3.36:1, which is the same mistake this file already made once in the dark
 # palette with #7C766C.
-TEXT_FAINT = "#756D5F"   # 4.7:1  — timestamps, footnotes, placeholders
+TEXT_FAINT = "#756D5F"   # 4.7:1,  timestamps, footnotes, placeholders
 
 # ── the one accent, and it is ink rather than paint ──────────────────────
 ACCENT = "#26456B"       # 9.0:1 on paper; white on it is 9.9:1
@@ -105,7 +105,7 @@ PILL_EDGE = "#4A453D"
 PILL_LIFT = "#FFFFFF"
 
 # Old names, pointed at their new roles, so every existing call site keeps
-# working while the layout is rewritten page by page. INK is the page — a
+# working while the layout is rewritten page by page. INK is the page: a
 # `widgets.Card` on it is now invisible padding, which is exactly right.
 INK = PAPER
 SIDEBAR = PAPER
@@ -140,7 +140,7 @@ def _first_installed(*candidates: str) -> str:
 
 # Windows 11's own UI face, in its three optical sizes. This is the single
 # biggest difference between "a Tk app" and "a Windows app": Segoe UI Variable
-# is drawn differently at each size — Small tightens the spacing and thickens
+# is drawn differently at each size: Small tightens the spacing and thickens
 # the strokes so 9 px stays legible, Display opens it up so a heading does not
 # look like a grown-up caption. Plain Segoe UI is one drawing stretched to
 # every size, which is exactly what made the small type look weak.
@@ -189,8 +189,8 @@ def label(parent, text: str = "", size: int = 10, colour: str = TEXT,
 
 
 def button(parent, text: str, command, primary: bool = False):
-    """A flat button. ttk's themed buttons refuse a dark background on Windows
-    — the native renderer wins — so these are plain tk widgets."""
+    """A flat button. ttk's themed buttons refuse a dark background on Windows:
+    the native renderer wins, so these are plain tk widgets."""
     import tkinter as tk
 
     widget = tk.Button(
@@ -235,7 +235,7 @@ def text_button(parent, text: str, command, danger: bool = False):
     """A word that acts, for the actions that live beside a page title.
 
     Not a tile. A 34 px rounded square with a glyph in it is how "export" and
-    "delete everything" came to look like the same control — and how the most
+    "delete everything" came to look like the same control, and how the most
     destructive action in the app ended up as an unlabelled icon next to the
     window's own close button.
     """
@@ -263,11 +263,11 @@ class scrollbar:  # noqa: N801 - stands in for tk.Scrollbar, keeps its name
     `tk.Scrollbar` on Windows renders through the native theme and ignores
     `bg` and `troughcolor` outright: the thumb came out #F0F0F0 whatever it was
     told, a bright light slab down the edge of a dark window. `ttk` is no help
-    either — its Windows themes are equally unstyleable, and the one theme that
+    either: its Windows themes are equally unstyleable, and the one theme that
     would take colours (`clam`) can only be selected for the whole interpreter.
 
     So: a rounded thumb on the page's own background. Speaks the two halves of
-    Tk's scrollbar protocol that a scrolling canvas needs — `set(first, last)`
+    Tk's scrollbar protocol that a scrolling canvas needs: `set(first, last)`
     from the canvas, `command("moveto", …)` back to it.
     """
 
@@ -361,7 +361,7 @@ def text_width(text: str, font_spec: tuple) -> int:
     typeface and the actual characters.
 
     Falls back to a rough estimate when no Tk interpreter exists yet (import
-    time, or a headless test) — a wrong width is survivable, an exception at
+    time, or a headless test): a wrong width is survivable, an exception at
     module import is not.
     """
     try:

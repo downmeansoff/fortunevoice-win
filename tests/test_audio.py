@@ -2,7 +2,7 @@
 
 No microphone is touched: the tests call the audio-thread callback directly
 with blocks of samples, which is exactly what PortAudio does. That covers the
-parts that decide whether a recording comes out whole — accumulation, buffer
+parts that decide whether a recording comes out whole: accumulation, buffer
 growth, the straggler guard, and the resampler's tail carry.
 """
 
@@ -72,7 +72,7 @@ def test_snapshot_is_a_copy(recording):
 
 
 def test_levels_are_reported_to_the_meter(recording):
-    """A dead microphone must not look like a working one — the tray bars and
+    """A dead microphone must not look like a working one: the tray bars and
     the overlay waveform are driven from here."""
     levels: list[float] = []
     recording.on_level = levels.append
@@ -92,7 +92,7 @@ def test_downsampling_keeps_the_duration(recording):
 
 def test_the_resampler_carries_its_remainder_across_blocks(recording):
     """A block whose length is not a whole multiple of the ratio leaves a
-    remainder. Dropping it would lose samples at every block boundary — a
+    remainder. Dropping it would lose samples at every block boundary: a
     steady, quiet erosion of the recording."""
     recording._source_rate = 48_000
     for _ in range(100):
@@ -156,7 +156,7 @@ def test_stop_releases_the_reservation():
 def test_the_resampler_tail_does_not_borrow_the_callers_buffer():
     """PortAudio hands the callback a buffer it reuses for the next block. A
     tail kept as a view into it is overwritten with newer audio before it is
-    ever consumed — a torn sample at the seam, on exactly the small-block
+    ever consumed: a torn sample at the seam, on exactly the small-block
     devices this branch exists for."""
     import numpy as np
 

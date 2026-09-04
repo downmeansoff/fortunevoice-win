@@ -10,7 +10,7 @@ Key names are kept identical to the macOS `FV*` defaults so the two ports'
 documentation, metrics and bug reports stay comparable.
 
 Reads are cached with an mtime check: the dictation hot path touches config
-several times per keypress, and re-parsing the file each time is pointless —
+several times per keypress, and re-parsing the file each time is pointless,
 but a user editing the file mid-session should still see it take effect
 without a restart.
 """
@@ -44,7 +44,7 @@ DEFAULTS: dict[str, Any] = {
     # "ru", "en", … or "auto" to detect per dictation.
     "FVLanguage": "ru",
     # Language of the app's own windows and menus: "ru", "en", or "auto"
-    # (follow Windows). Deliberately separate from FVLanguage — the language
+    # (follow Windows). Deliberately separate from FVLanguage: the language
     # you dictate in has nothing to do with the language you want the buttons
     # in, and dictating English notes should not flip the UI.
     "FVUILanguage": "auto",
@@ -54,14 +54,14 @@ DEFAULTS: dict[str, Any] = {
     "FVSmartFix": True,
     # Turn a spoken "новая строка" into a line break. Enter sends the message
     # in most chat applications, so a dictated multi-line note cannot be typed
-    # by hand afterwards. Only whole sentences match — see
+    # by hand afterwards. Only whole sentences match: see
     # textclean.apply_voice_commands.
     "FVVoiceCommands": True,
     # Measured on a 6 GB card with large-v3-turbo already resident, four Russian
     # samples each: qwen2.5:3b cleaned all four in 546-657 ms. gemma3:4b was
     # cleaner still but 1141 ms and prefixed its answer with a bullet.
-    # qwen2.5:1.5b answered in ~330 ms and TRANSLATED all four — into English
-    # three times and Chinese once — so every one was thrown away by the safety
+    # qwen2.5:1.5b answered in ~330 ms and TRANSLATED all four (into English
+    # three times and Chinese once), so every one was thrown away by the safety
     # check and the user silently got no cleanup at all. Small is not free.
     "FVOllamaModel": "qwen2.5:3b",
     "FVOllamaHost": "http://localhost:11434",
@@ -69,7 +69,7 @@ DEFAULTS: dict[str, Any] = {
     #
     # Measured on a 6 GB card with Whisper large-v3-turbo resident (3150 MiB
     # free): qwen2.5:3b on the GPU kills llama-server with "cudaMalloc failed:
-    # out of memory", and qwen2.5:1.5b — which does fit — produced zero usable
+    # out of memory", and qwen2.5:1.5b (which does fit) produced zero usable
     # cleanups out of four, every one rejected by the safety guards. On the
     # CPU the same 3b takes 10.5 s cold and 4.2 s warm, uses no video memory
     # at all, and comes back properly cleaned.
@@ -79,12 +79,12 @@ DEFAULTS: dict[str, Any] = {
     # trade the user gets to make.
     "FVCleanupDevice": "gpu",
     # Per-application overrides, keyed by executable name. Dictating a shell
-    # command and dictating a chat message want opposite things — see
+    # command and dictating a chat message want opposite things: see
     # profiles.py, which also lists what may be overridden.
     "FVAppProfiles": {},
     # Start Ollama when cleanup needs it and nothing is listening. Its Windows
     # app does not stay up, and when it is down cleanup silently stops
-    # happening — the dictation still types, just as raw Whisper text, which
+    # happening: the dictation still types, just as raw Whisper text, which
     # is indistinguishable from the feature being switched off.
     "FVAutoStartOllama": True,
     # How long Ollama holds the cleanup model after the last dictation. Was
@@ -101,15 +101,15 @@ DEFAULTS: dict[str, Any] = {
     "FVMiniPrompt": True,
     # Minutes of no dictation after which Whisper is dropped from video
     # memory. 0 = never, which is the default: the app should be instant.
-    # Measured here — idle with the model is 3180 MiB against 1088 with the
+    # Measured here: idle with the model is 3180 MiB against 1088 with the
     # app closed, so it holds ~2.1 GB of a 6 GB card doing nothing; reloading
     # costs 5.6 s, paid once by the next dictation. Worth it on a small card
     # left running all day, not worth it otherwise.
     "FVUnloadModelAfter": 0,
     # Transcribe while the user is still talking.
     # Start the next dictation while the previous one is still being decoded
-    # and delivered. The recorder is free by then — the decode works on a copy
-    # of the samples — and the decoder serialises itself, so the second
+    # and delivered. The recorder is free by then (the decode works on a copy
+    # of the samples), and the decoder serialises itself, so the second
     # dictation queues behind the first rather than fighting it. Off means the
     # press waits for the app to become idle, which is a second or two of
     # standing still between sentences.
@@ -118,19 +118,19 @@ DEFAULTS: dict[str, Any] = {
     # Paste the stitched streaming result (vs. a full batch re-decode).
     "FVStreamingV2": True,
     # Compute both and paste the batch one, logging the diff. Costs a second
-    # full decode per dictation — for validating a change, not for daily use.
+    # full decode per dictation, for validating a change, not for daily use.
     "FVStreamingShadow": False,
     # How the transcript gets into the focused window.
     #
-    #   "auto"  — type it when it is short, paste it when it is long
-    #   "type"  — always synthesize keystrokes
-    #   "paste" — always go through the clipboard + Ctrl+V
+    #   "auto" : type it when it is short, paste it when it is long
+    #   "type" : always synthesize keystrokes
+    #   "paste": always go through the clipboard + Ctrl+V
     #
     # Typing leaves the clipboard alone, which is why it was the only route
     # for a long time. But the cost is per keystroke and it is paid by the
     # RECEIVING app: measured into a bare Tk text field, 732 characters take
     # 1.9 s to arrive, and an editor or an Electron app that runs handlers on
-    # every keystroke is far slower than that — long dictations became half a
+    # every keystroke is far slower than that: long dictations became half a
     # minute of watching letters appear one at a time. A paste is one event
     # regardless of length.
     "FVDelivery": "auto",
@@ -159,14 +159,14 @@ DEFAULTS: dict[str, Any] = {
 _lock = threading.Lock()
 # Held across the whole read-modify-write in `set()`. `_lock` guards the cache
 # for the duration of one read; it does nothing for two threads that each read
-# the file, change their own key and write the lot back — the second write
+# the file, change their own key and write the lot back: the second write
 # silently drops the first one's change. Which is not theoretical: the tray
 # sets the microphone, the window saves its geometry as it closes, and the app
 # writes FVOnboarded, all from different threads.
 _write_lock = threading.RLock()
 _cache: dict[str, Any] = {}
 _cache_mtime: float | None = None
-# The last contents successfully parsed out of the file, as written — not
+# The last contents successfully parsed out of the file, as written, not
 # merged with DEFAULTS. `set()` rebuilds the file from this, so one unreadable
 # read cannot turn into a file with every setting erased. See _load().
 _stored: dict[str, Any] = {}
@@ -191,7 +191,7 @@ def _load() -> dict[str, Any]:
                 data = parsed if isinstance(parsed, dict) else {}
             except (OSError, ValueError):
                 # A corrupt or briefly locked config must never stop the app
-                # from dictating — but it must not erase the user's settings
+                # from dictating, but it must not erase the user's settings
                 # either. Falling back to `{}` used to do exactly that: the
                 # next `set()` rebuilt the file from DEFAULTS alone, so one
                 # unreadable read silently reset the hotkey to ctrl+alt+space
@@ -268,7 +268,7 @@ def _set_locked(key: str, value: Any) -> None:
     tmp = path.with_suffix(".json.tmp")
     # Flushed to the platter before the rename, not just to the OS cache. The
     # rename is atomic, but without the fsync the *contents* may still be in
-    # flight when the machine loses power — and what survives is then a
+    # flight when the machine loses power, and what survives is then a
     # config.json of the right name and zero length. Which is exactly the
     # unreadable file the fallback above exists to survive; better not to
     # create it in the first place.

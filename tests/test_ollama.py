@@ -49,7 +49,7 @@ def test_no_spawn_when_ollama_is_not_installed(monkeypatch):
 
 def test_a_failure_is_not_retried_immediately(monkeypatch, tmp_path):
     """A machine without a working Ollama must not pay a spawn attempt on
-    every dictation — warmup runs on every hotkey press."""
+    every dictation: warmup runs on every hotkey press."""
     binary = tmp_path / "ollama app.exe"
     binary.write_bytes(b"")
     monkeypatch.setattr(ollama, "is_up", lambda timeout=1.0: False)

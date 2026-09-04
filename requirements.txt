@@ -9,7 +9,7 @@ pillow>=10.0
 #
 # CTranslate2 needs cuBLAS and cuDNN 9 and does NOT bundle them. Installing
 # them from pip is ~1 GB, which is why they are commented out rather than
-# pulled in silently — uncomment (or run the pip line by hand) if you want GPU
+# pulled in silently: uncomment (or run the pip line by hand) if you want GPU
 # decoding, which on an RTX 3060 is roughly 10x faster than the CPU path:
 #
 #   pip install nvidia-cublas-cu12 nvidia-cudnn-cu12

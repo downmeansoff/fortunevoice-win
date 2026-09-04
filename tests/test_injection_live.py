@@ -1,8 +1,8 @@
 """A real SendInput round trip.
 
 Typing text into another process is the part of this port with the most ways
-to be silently wrong — surrogate pairs, newlines, held modifiers, dropped
-characters under a fast burst — and none of them show up in a unit test of the
+to be silently wrong: surrogate pairs, newlines, held modifiers, dropped
+characters under a fast burst, and none of them show up in a unit test of the
 encoding helpers.
 
 So this drives the real Win32 path: it opens a Tk window **we own**, focuses
@@ -11,7 +11,7 @@ the widget.
 
 **Never type without proving we own the foreground window.** Windows refuses
 `SetForegroundWindow` from a process that is not already in front, and Tk's
-`focus_force()` does not report that refusal — it just leaves the window
+`focus_force()` does not report that refusal: it just leaves the window
 topmost but not focused. An earlier version of this test trusted it and typed
 its Cyrillic samples straight into the terminal that launched pytest. Every
 case now checks `GetForegroundWindow()` belongs to this process and skips
@@ -37,7 +37,7 @@ pytestmark = [
 CASES = [
     ("ascii", "hello world"),
     ("cyrillic", "Привет, мир! Как дела?"),
-    ("mixed", "Fortune VPN — релиз v2, 30 июля"),
+    ("mixed", "Fortune VPN, релиз v2, 30 июля"),
     ("punctuation", "«ёлки» … — 42%"),
     ("surrogate pair", "готово 🎤"),
     ("newline", "первая строка\nвторая строка"),
@@ -82,7 +82,7 @@ def _own_the_foreground(root, timeout: float = 3.0) -> bool:
 
     Compares process IDs rather than window handles: Tk's toplevel HWND is not
     what `winfo_id()` returns (that is the client area), and the PID check is
-    both simpler and strictly stronger — it can only be true if the window in
+    both simpler and strictly stronger: it can only be true if the window in
     front is one of ours.
     """
     import os
@@ -120,12 +120,12 @@ def test_types_into_a_focused_field(text_widget, name, text):
 
     if not _own_the_foreground(root):
         pytest.skip(
-            "another window holds the foreground — refusing to type into it. "
+            "another window holds the foreground, refusing to type into it. "
             "Run this from a normal desktop session with nothing stealing focus."
         )
 
     # Owning the foreground is not enough. `_own_the_foreground` ends on
-    # `root.focus_force()`, which puts Tk's keyboard focus on the TOPLEVEL —
+    # `root.focus_force()`, which puts Tk's keyboard focus on the TOPLEVEL,
     # and a toplevel is not a text field. The keystrokes then arrived at a
     # window with nowhere to put them and were dropped, which reads exactly
     # like SendInput doing nothing, for every case in this file.
@@ -133,7 +133,7 @@ def test_types_into_a_focused_field(text_widget, name, text):
     root.update()
 
     # Checked again, right here. Winning the foreground a moment ago is not
-    # the same as holding it now — a notification, an installer, anything that
+    # the same as holding it now: a notification, an installer, anything that
     # steals focus between the two lands this dictation in someone else's
     # window. Which is the one outcome this file must never produce, so it is
     # a skip and not a failure.

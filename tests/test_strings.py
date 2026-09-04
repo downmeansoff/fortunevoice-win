@@ -1,7 +1,7 @@
 """The user-visible text catalogue.
 
 Two languages and ~157 keys, kept in one flat dict. The rules in that module's
-docstring are the kind that hold until someone adds a key in a hurry — and the
+docstring are the kind that hold until someone adds a key in a hurry, and the
 failure lands on the user, in the language they did not test in.
 """
 
@@ -20,7 +20,7 @@ SOURCE = pathlib.Path(__file__).resolve().parents[1] / "src"
 
 
 def test_every_key_exists_in_every_language():
-    """A missing translation falls back to English, which is survivable — but
+    """A missing translation falls back to English, which is survivable, but
     silently shipping English into a Russian window is not what anyone meant."""
     missing = [(key, language)
                for key, langs in CATALOGUE.items()
@@ -31,7 +31,7 @@ def test_every_key_exists_in_every_language():
 
 def test_placeholders_match_across_languages():
     """`t()` formats with str.format. A key that has {count} in English and
-    not in Russian raises in Russian and nowhere else — a crash that only
+    not in Russian raises in Russian and nowhere else: a crash that only
     appears for users whose UI language nobody ran."""
     mismatched = {
         key: {language: sorted(PLACEHOLDER.findall(langs.get(language, "")))
@@ -44,7 +44,7 @@ def test_placeholders_match_across_languages():
 
 
 def test_every_key_the_code_asks_for_exists():
-    """A typo'd key renders as the key itself — "settings.hotkey" sitting in
+    """A typo'd key renders as the key itself: "settings.hotkey" sitting in
     the middle of a window."""
     used: set[str] = set()
     for path in SOURCE.rglob("*.py"):

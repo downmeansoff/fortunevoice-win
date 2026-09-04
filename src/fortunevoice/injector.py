@@ -14,7 +14,7 @@ Windows specifics the macOS version didn't have to deal with:
   events; Windows keeps global modifier state, so every typed character would
   arrive as a shortcut. We synthesize key-ups for whatever is held before
   typing.
-* **Newlines.** KEYEVENTF_UNICODE with U+000A does nothing in most apps — the
+* **Newlines.** KEYEVENTF_UNICODE with U+000A does nothing in most apps: the
   cleanup model emits "- " bullets on separate lines, so newlines are sent as
   a real VK_RETURN.
 * **Surrogate pairs.** SendInput takes UTF-16 code units. Anything outside the
@@ -104,7 +104,7 @@ def release_held_modifiers() -> None:
 
     Whatever is still physically held stays held from the user's point of
     view; when they let go, the real key-up is simply redundant. The
-    alternative — typing "привет" while Ctrl is down — fires six shortcuts in
+    alternative (typing "привет" while Ctrl is down) fires six shortcuts in
     the target app.
     """
     events = []
@@ -139,7 +139,7 @@ def type_text(text: str) -> bool:
         # is usually still holding Ctrl+Alt while we type, and a physically
         # held key auto-repeats: Windows sends a fresh key-down tens of
         # milliseconds after our synthetic key-up, and every character from
-        # there on arrives as a Ctrl+Alt chord — eaten as a shortcut, or
+        # there on arrives as a Ctrl+Alt chord, eaten as a shortcut, or
         # dinged at by the target app. Re-check before each chunk.
         release_held_modifiers()
         if not _send(events):
@@ -167,13 +167,13 @@ def type_text(text: str) -> bool:
 
 
 def _utf16_units(char: str) -> list[int]:
-    """UTF-16 code units for one character — two for anything above the BMP."""
+    """UTF-16 code units for one character, two for anything above the BMP."""
     encoded = char.encode("utf-16-le")
     return [int.from_bytes(encoded[i : i + 2], "little") for i in range(0, len(encoded), 2)]
 
 
 # Consoles that do not take Ctrl+V. Windows terminals bind paste to
-# Ctrl+Shift+V, or to right-click, or to nothing at all — and a paste they
+# Ctrl+Shift+V, or to right-click, or to nothing at all, and a paste they
 # ignore is a dictation that goes nowhere, which is the one failure this app
 # is built never to produce. Typing is slower and always works.
 #
@@ -198,7 +198,7 @@ def wants_paste(text: str, app: str | None) -> bool:
     Typing costs one keystroke per character and the receiving app pays it:
     measured into a bare Tk text field, 732 characters take 1.9 s to arrive,
     and an app that runs handlers per keystroke is far slower still. A paste
-    is one event whatever the length — so short text is typed, which leaves
+    is one event whatever the length, so short text is typed, which leaves
     the clipboard untouched, and long text is pasted, which is the difference
     between instant and watching it spell itself out.
     """
@@ -239,7 +239,7 @@ def inject(text: str) -> bool:
 def paste_via_clipboard(text: str) -> bool:
     """Escape hatch for apps that ignore synthesized unicode input (some Java
     and older Electron ones). Restores the previous contents afterwards, but
-    only if nothing else wrote to the clipboard meanwhile — which is exactly
+    only if nothing else wrote to the clipboard meanwhile, which is exactly
     why it is no longer the default: that condition often does not hold, and
     the dictation is then left sitting in the user's clipboard."""
     previous, previous_was_empty = _clipboard_snapshot()
@@ -258,7 +258,7 @@ def paste_via_clipboard(text: str) -> bool:
     )
 
     # 5 s, not 1.2: right after a dictation the machine is still busy and a
-    # loaded target app can service Ctrl+V later than 1.2 s — restoring first
+    # loaded target app can service Ctrl+V later than 1.2 s: restoring first
     # made the paste land the OLD clipboard and the transcript "vanish".
     def restore() -> None:
         time.sleep(5.0)
@@ -267,7 +267,7 @@ def paste_via_clipboard(text: str) -> bool:
         if previous is not None:
             set_clipboard_text(previous)
             return
-        # Nothing to put back — the clipboard was empty, or held an image or
+        # Nothing to put back: the clipboard was empty, or held an image or
         # files, which this code cannot reproduce. Leaving it as it is means
         # leaving the dictation there: every Ctrl+V for the rest of the day,
         # and every clipboard-history tool, holding something the user said
@@ -275,7 +275,7 @@ def paste_via_clipboard(text: str) -> bool:
         # Only when we know it was empty. `_clipboard_text` returns None both
         # for "there was nothing" and for "another process had the clipboard
         # open", and emptying on the second erases whatever the user had
-        # copied — the opposite of the promise this code exists to keep.
+        # copied, the opposite of the promise this code exists to keep.
         if previous_was_empty and user32.OpenClipboard(None):
             try:
                 user32.EmptyClipboard()
@@ -292,7 +292,7 @@ def _clipboard_snapshot() -> tuple[str | None, bool]:
     """The clipboard text, and whether we KNOW it was empty.
 
     `_clipboard_text` cannot tell "there was nothing" from "somebody else had
-    the clipboard open" — both are None. The difference matters: the restore
+    the clipboard open": both are None. The difference matters: the restore
     empties the clipboard rather than leave a dictation on it, and doing that
     to a clipboard we simply could not read erases what the user copied.
     """
@@ -340,7 +340,7 @@ def set_clipboard_text(text: str) -> bool:
         buffer = (text + chr(0)).encode("utf-16-le")
         # Allocated and filled BEFORE emptying. The other order destroyed the
         # user's clipboard and then returned False if the allocation or the
-        # lock failed — they lost whatever they had copied, in exchange for
+        # lock failed: they lost whatever they had copied, in exchange for
         # nothing at all.
         handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(buffer))
         if not handle:
@@ -382,7 +382,7 @@ def focused_element_is_editable() -> bool | None:
     """
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
-        logger.info("focus check — no foreground window")
+        logger.info("focus check: no foreground window")
         return False
 
     thread_id = user32.GetWindowThreadProcessId(hwnd, None)

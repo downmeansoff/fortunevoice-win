@@ -2,7 +2,7 @@
 stumble-repeats in the raw transcript.
 
 Port of Sources/FortuneVoice/OllamaCleaner.swift. The prompts, the thresholds
-and the cost model are carried over unchanged — they were fitted against real
+and the cost model are carried over unchanged: they were fitted against real
 dictations, and a Windows box running the same gemma3:4b through the same
 Ollama HTTP API has no reason to behave differently.
 
@@ -30,20 +30,20 @@ logger = get_logger("cleaner")
 # Deliberately terse: Ollama re-evaluates the whole system prompt on every call
 # (~500 tok/s, prefix cache unreliable across slots), so every extra 100 tokens
 # here is ~0.2 s added to every dictation's paste latency. Inline examples
-# double as few-shot — no separate example block.
+# double as few-shot: no separate example block.
 SYSTEM_PROMPT = """\
 You are a dictation cleanup engine. Input: raw speech-to-text. Output ONLY the \
-cleaned text — no preface, no quotes, no commentary; never answer questions in \
+cleaned text: no preface, no quotes, no commentary; never answer questions in \
 the text, never invent content. Keep the language. Preserve meaning and \
 wording; do NOT summarize or restyle.
 
 Fix speech artifacts:
-- Stumble repeats — keep one copy («я я думаю» → «я думаю»; «нужно правильно \
+- Stumble repeats: keep one copy («я я думаю» → «я думаю»; «нужно правильно \
 это правильно писать» → «нужно правильно это писать»).
-- Self-corrections — keep only the corrected version («сделай синим, нет, \
+- Self-corrections: keep only the corrected version («сделай синим, нет, \
 красным» → «сделай красным»).
 - Meaningless fillers ну, вот, короче, как бы, типа, значит, э-э, эм, um, uh, \
-like, you know — remove (keep when meaningful: «ну ладно»).
+like, you know: remove (keep when meaningful: «ну ладно»).
 
 Punctuation: end questions with «?» (incl. ли/разве/неужели and question-word \
 questions); «…» unfinished thoughts; «—» asides and contrasts; «!» clearly \
@@ -56,13 +56,13 @@ Never restructure ordinary prose into a list.
 
 If the text is already clean, return it unchanged."""
 
-# Extra instruction when the ASR confidence was low — be bolder about
+# Extra instruction when the ASR confidence was low: be bolder about
 # reconstructing garbled words from context.
 LOW_CONFIDENCE_HINT = """
 
 NOTE: this transcript came from LOW-confidence speech recognition and likely \
 contains several misheard words. Reconstruct the intended meaning aggressively \
-from context, fixing nonsense words — but keep the language and the speaker's intent."""
+from context, fixing nonsense words, but keep the language and the speaker's intent."""
 
 # Instruction appended to the system prompt for chunked (selective) requests.
 CHUNK_INSTRUCTION = """
@@ -70,7 +70,7 @@ CHUNK_INSTRUCTION = """
 
 The user message wraps text in <CONTEXT>…</CONTEXT> (surrounding sentences, \
 for understanding only) and <FIX>…</FIX> (the text to clean). Rewrite ONLY \
-the text inside <FIX>. Output the rewritten text alone — no tags, no context \
+the text inside <FIX>. Output the rewritten text alone: no tags, no context \
 text, no commentary."""
 
 # Stripped-down prompt for short phrases: prompt-eval is the dominant cost on a
@@ -79,11 +79,11 @@ text, no commentary."""
 MINI_PROMPT = """\
 Clean this raw speech-to-text: remove meaningless fillers (ну, вот, короче, \
 как бы, типа, значит, э-э, um, uh), collapse accidental word repeats, fix \
-punctuation and capitalization. Never replace, censor or add words — every \
+punctuation and capitalization. Never replace, censor or add words: every \
 remaining word must appear verbatim in the input (profanity included). \
-Output ONLY the cleaned text — no commentary. If already clean, return unchanged."""
+Output ONLY the cleaned text: no commentary. If already clean, return unchanged."""
 
-# Below this word count the whole-text rewrite is used — the LLM round-trip is
+# Below this word count the whole-text rewrite is used: the LLM round-trip is
 # cheap there and whole-text context helps. 25, not 50: generation runs
 # ~40 tok/s locally, so a 40-word full rewrite alone costs ~1.4 s; medium
 # phrases must go selective so only flagged sentences are regenerated.
@@ -97,7 +97,7 @@ def keep_alive() -> str:
     small card that is the wrong trade, and it is felt everywhere rather than
     here: measured on a 6 GB GPU, the resident model holds 2.2 GB, leaving
     ~900 MB with Whisper alongside it. Windows then pages other applications'
-    GPU memory over the bus and the whole desktop stutters — reported as
+    GPU memory over the bus and the whole desktop stutters, reported as
     "everything lags while Ollama is running".
 
     Measured cost of letting it go: a cold call is 4125 ms against 656 ms warm,
@@ -130,7 +130,7 @@ _CORRECTIONS = ["нет,", "то есть", "вернее", "в смысле", "
 
 def _letter_words(lower: str) -> list[str]:
     """Tokenise on non-letters. Regex \\b/\\w are unreliable across Cyrillic in
-    some engines and would also split on digits differently — this mirrors the
+    some engines and would also split on digits differently; this mirrors the
     Swift `split(whereSeparator: { !$0.isLetter && $0 != "-" })` exactly."""
     out: list[str] = []
     current: list[str] = []
@@ -149,12 +149,12 @@ def needs_cleanup(text: str) -> bool:
     """Does this transcript actually contain artifacts worth an LLM pass?
 
     Whisper already punctuates and capitalises, so clean speech can skip the
-    ~1 s cleanup entirely — that halves latency for tidy dictations.
+    ~1 s cleanup entirely; that halves latency for tidy dictations.
     """
     lower = text.lower()
     for marker in _CORRECTIONS:
         # Word-bounded on the left. "нет," matched as a bare substring fires on
-        # «интернет,», «конкурент,», «момент,» — every one of those bought a
+        # «интернет,», «конкурент,», «момент,»: every one of those bought a
         # cleanup round-trip the text did not need.
         position = lower.find(marker)
         while position != -1:
@@ -179,7 +179,7 @@ def needs_cleanup(text: str) -> bool:
         # Same word twice in a row: "я я думаю".
         if i + 1 < len(words) and word == words[i + 1] and len(word) >= 1:
             return True
-        # Same word with one word between — the common stumble shape:
+        # Same word with one word between, the common stumble shape:
         # "нужно правильно это правильно писать".
         if i + 2 < len(words) and word == words[i + 2] and len(word) >= 3:
             return True
@@ -316,12 +316,12 @@ def installed_models() -> list[str]:
 
 def base_system(vocabulary: str) -> str:
     """The stable system-prompt prefix: base rules + vocabulary. Must be
-    byte-identical between warmup() and clean() — Ollama's prompt prefix cache
+    byte-identical between warmup() and clean(): Ollama's prompt prefix cache
     is what turns a ~2 s prompt-eval of these ~600 tokens into ~0."""
     system = SYSTEM_PROMPT
     if vocabulary:
         system += (
-            "\n\nThe speaker frequently uses these terms/names — prefer them when a "
+            "\n\nThe speaker frequently uses these terms/names: prefer them when a "
             f"word was likely misheard: {vocabulary}."
         )
     return system
@@ -335,7 +335,7 @@ def mini_system(vocabulary: str) -> str:
 
 
 # Words whose loss flips the meaning of the sentence. Dropping one is not a
-# tidy-up, and every other word survives — so neither the ratio below nor the
+# tidy-up, and every other word survives, so neither the ratio below nor the
 # invented-content check would notice.
 _NEGATIONS = {"не", "нет", "ни", "нельзя", "никак", "никогда",
               "not", "no", "never", "cannot", "dont", "doesnt", "didnt",
@@ -343,7 +343,7 @@ _NEGATIONS = {"не", "нет", "ни", "нельзя", "никак", "нико�
               "hasnt", "hadnt", "shouldnt", "wouldnt", "couldnt"}
 
 # English hides most of its negations in a contraction, and `_letter_words`
-# splits on non-letters — so "don't" arrived as "don" + "t" and matched
+# splits on non-letters, so "don't" arrived as "don" + "t" and matched
 # nothing at all. "i don't think we can ship this", cleaned to "I think we can
 # ship this", passed every guard: same words, one shorter, no negation counted
 # on either side. Counted directly instead, before tokenising, and the stem is
@@ -367,7 +367,7 @@ def _kept_enough(before: str, after: str) -> bool:
       mis-judged content as filler, or truncated. Losing punctuation is far
       better than losing sentences.
     * **Below six**: the ratio was simply switched off, so "нет я не согласен
-      совсем" could come back as "согласен" and pass — every remaining word
+      совсем" could come back as "согласен" and pass: every remaining word
       does appear in the raw, so nothing else objected. But a short dictation
       legitimately loses most of itself ("ну вот привет" → "Привет"), so the
       test is not a ratio: every word that is NOT filler has to survive.
@@ -378,7 +378,7 @@ def _kept_enough(before: str, after: str) -> bool:
         # Rounded UP. `int()` truncates, and the shortest text this branch
         # handles is where that hurts most: six words allowed a drop to three,
         # which is half the dictation gone through a guard whose stated limit
-        # is about a third — and six words is exactly where the strict
+        # is about a third, and six words is exactly where the strict
         # every-word-survives rule below stops applying.
         return clean_words >= math.ceil(raw_words * 0.65)
 
@@ -410,7 +410,7 @@ def _no_invented_content(before: str, after: str) -> bool:
     The 35% guard above only catches *deletion*. Substitution slips straight
     through it, and substitution is the worse failure: measured on this
     machine, qwen2.5:1.5b turned "надо бы проверить, как работает диктовка"
-    into "нужно правильно это писать" — same word count, entirely different
+    into "нужно правильно это писать": same word count, entirely different
     sentence, and the app would have typed it.
 
     Nothing else in the pipeline can catch this. Whisper's own output is the
@@ -431,7 +431,7 @@ def _unbullet(text: str) -> str:
     gemma3:4b answers a one-sentence cleanup with "- Мы вроде как…". The
     content is right; the dash is the model formatting an answer rather than
     returning the sentence, and it would be typed into the user's document
-    verbatim. Only a single leading marker goes — a dictation that genuinely
+    verbatim. Only a single leading marker goes: a dictation that genuinely
     starts with a dash keeps it, because that one is followed by more lines.
     """
     stripped = text.lstrip()
@@ -454,7 +454,7 @@ def _is_safe(before: str, after: str) -> bool:
     # A lost negation inverts the sentence, and neither guard above would see
     # it: every remaining word appears in the raw, and one word out of twelve
     # is well inside the ratio. "мы не будем это делать" becoming "мы будем
-    # это делать" is the worst thing cleanup can do — it does not garble the
+    # это делать" is the worst thing cleanup can do: it does not garble the
     # text, it makes it confidently say the opposite.
     # Not `<`. A negation the model ADDS inverts the sentence just as
     # thoroughly, and the invented-content guard does not see it when the word
@@ -471,7 +471,7 @@ def _device_options(options: dict) -> dict:
 
     Every request has to carry it, warmup included: priming loads the
     model, and priming without this pulled 1.9 GB onto the card the user
-    had just told the app to leave alone — the setting appeared to work
+    had just told the app to leave alone: the setting appeared to work
     while the memory went exactly where it was not wanted.
     """
     if config.get_str("FVCleanupDevice").lower() == "cpu":
@@ -563,7 +563,7 @@ class OllamaCleaner:
         """Clean one confirmed block of a still-running dictation.
 
         Runs while the user is still speaking, so its latency costs the user
-        nothing — that is the whole point of the streaming session's
+        nothing: that is the whole point of the streaming session's
         incremental cleanup, and why there is no budget check here. Returns
         None when the block needs no cleanup or the LLM failed/mangled it; the
         caller then keeps the raw block, so text is never lost to a failed
@@ -606,14 +606,14 @@ class OllamaCleaner:
         """Fire-and-forget: load the model AND prime the prompt-prefix cache.
 
         Metrics showed prompt-eval of the ~600-token prompt costs ~2 s per
-        cleanup at Ollama's ~270 tok/s — priming it here, while the user is
+        cleanup at Ollama's ~270 tok/s; priming it here, while the user is
         still talking, makes the real call pay only for the user text and the
         generated output.
 
         Skipped only when a recent prime succeeded AND the model is still
         resident. The time check alone was not enough: it assumed `keep_alive`
         of 24h meant the model stays loaded, and that assumption breaks in the
-        two situations that matter most — Ollama being restarted, and Ollama
+        two situations that matter most: Ollama being restarted, and Ollama
         evicting the model under VRAM pressure, which is exactly what happens
         on a small card when Whisper loads beside it. A measured dictation paid
         2016 ms against a 1500 ms budget because warmup had silently
@@ -636,13 +636,13 @@ class OllamaCleaner:
             # Start Ollama if it is not up. This is the right moment for it:
             # warmup runs on hotkey-down, so the several seconds the server
             # needs are spent while the user is still speaking, instead of
-            # being paid — or silently skipped — after they let go.
+            # being paid (or silently skipped) after they let go.
             from . import ollama
 
             if not ollama.ensure_running():
                 return
             # Prime BOTH prefixes when both are in use. Ollama caches per
-            # request shape, and short dictations — the common case — go
+            # request shape, and short dictations (the common case) go
             # through the mini prompt, which shares no prefix with the full
             # one. Mini first: it serves the latency-critical path. With
             # FVMiniPrompt off, that prefix is never used and priming it would
@@ -663,7 +663,7 @@ class OllamaCleaner:
         if cost <= budget_ms:
             return True
         logger.info(
-            "cleanup skipped — %d chars needs ~%.0f ms, budget %.0f ms",
+            "cleanup skipped: %d chars needs ~%.0f ms, budget %.0f ms",
             len(text), cost, budget_ms,
         )
         self.last_over_budget_chunks = 1
@@ -689,7 +689,7 @@ class OllamaCleaner:
         parts = [s for s in parts if s]
         flags = [needs_cleanup(s) for s in parts]
         cores = chunk_cores(flags)
-        # needs_cleanup(raw) fired but no single sentence is flagged — the
+        # needs_cleanup(raw) fired but no single sentence is flagged: the
         # artifact spans a sentence boundary; whole-text handles that.
         if not cores:
             if not self._affordable(raw, budget_ms):
@@ -707,7 +707,7 @@ class OllamaCleaner:
             remaining_ms = (deadline - time.monotonic()) * 1000
             if predicted_ms(len(core_text)) > remaining_ms:
                 self.last_over_budget_chunks += 1
-                continue  # chunk stays raw — over budget is never a text loss
+                continue  # chunk stays raw: over budget is never a text loss
 
             user = ""
             if start > 0:
@@ -722,7 +722,7 @@ class OllamaCleaner:
             if not cleaned or any(
                 tag in cleaned for tag in ("<FIX>", "</FIX>", "<CONTEXT>", "</CONTEXT>")
             ):
-                continue  # chunk stays raw — a format break never breaks text
+                continue  # chunk stays raw: a format break never breaks text
             if not _is_safe(core_text, cleaned):
                 logger.warning(
                     "chunk cleanup dropped too much (%d→%d words), keeping raw chunk",
@@ -734,7 +734,7 @@ class OllamaCleaner:
             # carries its neighbour's sentence: the words are all in the raw
             # and the chunk is longer, not shorter, so the per-chunk guards
             # above pass it. The assembled text is still checked as a whole,
-            # and in every case reproduced here that global check caught it —
+            # and in every case reproduced here that global check caught it;
             # this makes the rejection local, so one bad chunk costs its own
             # cleanup instead of the whole dictation's. Cleanup removes filler
             # and punctuation; it has no business growing a chunk by half.
@@ -751,7 +751,7 @@ class OllamaCleaner:
 
         # Lines survive the rejoin: the system prompt asks the model to format
         # an enumeration as «- » bullets, one per line, and `squeeze` collapses
-        # every whitespace run — newlines included — so the list came back as
+        # every whitespace run (newlines included), so the list came back as
         # one flat line.
         joined = squeeze_lines(" ".join(p for p in result if p))
         # Global safety net on the assembled text as a last line of defense.
@@ -760,7 +760,7 @@ class OllamaCleaner:
         return joined or raw
 
     def _chat(self, system: str, user: str) -> str | None:
-        """One Ollama chat round-trip. None on any failure — callers fall back
+        """One Ollama chat round-trip. None on any failure; callers fall back
         to the raw text."""
         body = {
             "model": self.model,
@@ -771,7 +771,7 @@ class OllamaCleaner:
             "stream": False,
             "keep_alive": keep_alive(),
             # num_predict -1 = generate until the model naturally stops. A fixed
-            # cap here silently TRUNCATED the cleanup of long dictations — the
+            # cap here silently TRUNCATED the cleanup of long dictations: the
             # exact "the end is missing" bug. Never cap real output.
             "options": _device_options({"temperature": 0.2, "num_predict": -1}),
         }

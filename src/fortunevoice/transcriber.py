@@ -10,7 +10,7 @@ What is genuinely different on Windows:
 * **Backend selection.** There is no ANE. We try CUDA int8_float16 (half the
   VRAM, which is what a 6 GB laptop card holding a browser's compositor
   actually has), then CUDA float16, then CPU int8. A machine with no working CUDA
-  runtime still dictates, just slower — that is the whole point of the ladder.
+  runtime still dictates, just slower: that is the whole point of the ladder.
 * **The gate is a real lock.** WhisperKit was a class with one decoder cache;
   CTranslate2 models are likewise not safe to enter twice concurrently.
 """
@@ -95,7 +95,7 @@ def _add_cuda_dll_directories() -> None:
     try:
         import nvidia  # noqa: PLC0415
     except ImportError:
-        return  # system-wide CUDA install (or none) — nothing to register
+        return  # system-wide CUDA install (or none), nothing to register
 
     directories: list[Path] = []
     for root in getattr(nvidia, "__path__", []):
@@ -126,8 +126,8 @@ class SerialGate:
 
     Every wait is bounded on purpose. An unbounded version of this turned a
     wedged decode from something the timeout could abandon into a permanent
-    hang: the holder never released, so every later decode — and the whole
-    dictation state machine behind it — blocked forever. A caller that cannot
+    hang: the holder never released, so every later decode (and the whole
+    dictation state machine behind it) blocked forever. A caller that cannot
     get in fails fast instead, and the dictation falls back or errors the way
     it does for any other decode failure.
     """
@@ -139,7 +139,7 @@ class SerialGate:
         self._ticket = 0
 
     def acquire(self, timeout: float) -> bool:
-        """True when the gate was acquired; False when the wait expired — the
+        """True when the gate was acquired; False when the wait expired: the
         caller must NOT release in that case."""
         deadline = time.monotonic() + timeout
         with self._condition:
@@ -173,8 +173,8 @@ class TranscriberError(RuntimeError):
 
 
 class Transcriber:
-    # How long a real decode may wait for the gate. Generous — a long batch
-    # decode legitimately holds it for a while — but never infinite.
+    # How long a real decode may wait for the gate. Generous: a long batch
+    # decode legitimately holds it for a while, but never infinite.
     GATE_WAIT_LIMIT = 180.0
     # The warmup is optional work; it must never queue behind a long decode.
     WARMUP_GATE_WAIT_LIMIT = 5.0
@@ -197,7 +197,7 @@ class Transcriber:
         self._warmup_cancel = threading.Event()
         self._warmup_in_flight = False
         # Serialises load(). Two loaders would build two WhisperModels on the
-        # same card — 2 GB each here — and the loser's would be dropped on the
+        # same card (2 GB each here), and the loser's would be dropped on the
         # floor after paying for it. Reachable now that a dictation reloads a
         # model the idle unload dropped: the background reload at key-down and
         # the pipeline's own load at key-up are two different threads.
@@ -227,7 +227,7 @@ class Transcriber:
             from faster_whisper import WhisperModel  # noqa: PLC0415
         except ImportError as exc:
             raise TranscriberError(
-                "faster-whisper is not installed — run: pip install -r requirements.txt"
+                "faster-whisper is not installed; run: pip install -r requirements.txt"
             ) from exc
 
         wanted = config.get_str("FVModel")
@@ -249,7 +249,7 @@ class Transcriber:
                         num_workers=1,
                         # And a cap on the CPU side. CTranslate2 defaults to
                         # one intra-op thread per core and spawns them at
-                        # construction, on the GPU path too — threads that
+                        # construction, on the GPU path too: threads that
                         # exist for the life of the app to serve a decode
                         # that is not happening. Four is enough for the CPU
                         # fallback, where they are the only thing working.
@@ -294,10 +294,10 @@ class Transcriber:
 
     # What a broken CUDA context says on the way out. cuBLAS and cuDNN report
     # their own internal errors, and the driver reports "out of memory" for a
-    # context it can no longer allocate in — none of which is fixed by trying
+    # context it can no longer allocate in, none of which is fixed by trying
     # the same model object again.
     # What a WEDGED context reports. Deliberately not "out of memory" on its
-    # own: a card that is merely full — a game started, another model loaded —
+    # own: a card that is merely full (a game started, another model loaded)
     # says that too, and rebuilding then walks the backend ladder and can land
     # the app on the CPU for the rest of the session, which is a permanent
     # penalty for a temporary condition. The failure actually observed here
@@ -317,7 +317,7 @@ class Transcriber:
         A wedged context does not heal: the model object is still loaded, so
         nothing reloads it, and every dictation from then on is lost. Observed
         here as cuBLAS_STATUS_INTERNAL_ERROR three times running, with 3 GB of
-        the card free — and the only cure was quitting from the tray. Rebuilt
+        the card free, and the only cure was quitting from the tray. Rebuilt
         once, in place, so the dictation the user just spoke survives it.
         """
         broken = self._model
@@ -326,10 +326,10 @@ class Transcriber:
         except Exception as exc:  # noqa: BLE001 - re-raised below if not ours
             if not self._is_context_failure(exc):
                 raise
-            logger.warning("the GPU context died (%s) — rebuilding the model", exc)
+            logger.warning("the GPU context died (%s), rebuilding the model", exc)
         # Only the model that failed. Between the exception and here another
         # thread may have rebuilt it already, or started a decode on a
-        # perfectly good one — forcing the gate away from that would break a
+        # perfectly good one; forcing the gate away from that would break a
         # dictation that was going fine to fix one that is already over.
         with self._lock:
             same_model = self._model is broken
@@ -356,7 +356,7 @@ class Transcriber:
         prompt = dictionary.prompt_string() or None
 
         if not self._gate.acquire(self.GATE_WAIT_LIMIT):
-            raise TranscriberError("decoder busy — a previous transcription never finished")
+            raise TranscriberError("decoder busy: a previous transcription never finished")
         try:
             segments_iter, info = model.transcribe(
                 audio,
@@ -365,7 +365,7 @@ class Transcriber:
                 # Greedy: the macOS build decoded at temperature 0, and beam
                 # search costs latency the dictation loop cannot spare.
                 beam_size=1,
-                # Temperature fallback stays intact — it re-decodes windows that
+                # Temperature fallback stays intact: it re-decodes windows that
                 # fail the checks below instead of accepting truncated output.
                 # Disabling it is exactly why long dictations used to lose text.
                 temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
@@ -419,7 +419,7 @@ class Transcriber:
         Measured here: the app holds 3180 MiB at idle against 1088 with it
         closed, so Whisper sits on ~2.1 GB of a 6 GB card while nothing is
         happening. Reloading costs 5.6 s, which is why nothing calls this
-        unless the user asks for it — see FVUnloadModelAfter.
+        unless the user asks for it, see FVUnloadModelAfter.
 
         False when there was nothing loaded, or when a decode holds the gate:
         unloading mid-transcription would take that dictation with it.
@@ -429,13 +429,13 @@ class Transcriber:
         held = self._gate.acquire(0.5)
         if not held:
             if not force:
-                logger.debug("not unloading — a decode is in progress")
+                logger.debug("not unloading: a decode is in progress")
                 return False
             # A rebuild after a dead context is not an optional tidy-up: the
             # decode "in progress" is the one that just failed, and refusing
             # here would leave the broken model in place for every dictation
             # that follows.
-            logger.warning("forcing the unload — the model is unusable")
+            logger.warning("forcing the unload: the model is unusable")
         try:
             with self._lock:
                 self._model = None
@@ -456,7 +456,7 @@ class Transcriber:
         return self._model is not None
 
     def reset_session_language(self) -> None:
-        """Forget the detected language so the next dictation detects afresh —
+        """Forget the detected language so the next dictation detects afresh:
         the user may well switch languages between one and the next."""
         self._session_language = None
 

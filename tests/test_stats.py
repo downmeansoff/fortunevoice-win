@@ -39,7 +39,7 @@ def test_streak_broken_by_gap():
 
 
 def test_streak_survives_no_dictation_today():
-    # Nothing today, but yesterday + the day before — the streak still counts.
+    # Nothing today, but yesterday + the day before: the streak still counts.
     records = [rec(1, 1, 1), rec(2, 1, 1)]
     assert streak_days(records, now=NOW) == 2
 

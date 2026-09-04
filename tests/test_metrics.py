@@ -1,7 +1,7 @@
 """Per-dictation timings.
 
-Every tuning decision in this app — the cleanup cost model, the streaming
-defaults, the tail-capture length — came from reading this file. Numbers that
+Every tuning decision in this app (the cleanup cost model, the streaming
+defaults, the tail-capture length) came from reading this file. Numbers that
 are quietly wrong are worse than no numbers, because they are still trusted.
 """
 
@@ -106,7 +106,7 @@ def test_a_small_file_is_never_trimmed():
 
 def test_trimming_keeps_the_newest(monkeypatch):
     """A year of heavy use is ~130k lines. When the cap does bite, the lines
-    worth keeping are the recent ones — the cost model is fitted on those."""
+    worth keeping are the recent ones: the cost model is fitted on those."""
     monkeypatch.setattr(metrics, "MAX_LINES", 10)
     real = paths.metrics_file()
     real.write_text("".join(json.dumps({"chars": i}) + "\n" for i in range(40)),
@@ -162,7 +162,7 @@ def test_one_torn_byte_does_not_take_the_whole_file_with_it(tmp_path, monkeypatc
     """A machine that loses power mid-append leaves a Cyrillic character cut
     in half. UnicodeDecodeError is a ValueError, not an OSError, so it went
     straight past the guard and out of the Insights page and out of `doctor
-    stats` — permanently, until the user found and hand-edited the file."""
+    stats`, permanently, until the user found and hand-edited the file."""
     target = tmp_path / "metrics.jsonl"
     newline = chr(10).encode("utf-8")
     good = json.dumps({"date": "2026-08-28", "chars": 7}).encode("utf-8")

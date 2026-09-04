@@ -1,4 +1,4 @@
-"""Tray icon and menu — the app's only visible surface.
+"""Tray icon and menu: the app's only visible surface.
 
 macOS put this in the menubar with SF Symbols and a tinted template image.
 Windows tray icons are 16×16 bitmaps with no tinting, so the state is carried
@@ -140,7 +140,7 @@ class Tray:
         state = self.app.state
         label = t(_LABEL_KEYS.get(state, "state.idle"))
         if self.app.status_note:
-            label = f"{label} — {self.app.status_note}"
+            label = f"{label} · {self.app.status_note}"
         if state is State.IDLE and self.app.transcriber.loaded_model:
             label = (
                 f"{label} · {self.app.transcriber.loaded_model}"
@@ -210,8 +210,8 @@ class Tray:
         try:
             self._icon.icon = _icon_image(state)
             self._icon.title = self._status_text()
-            # Menu labels are computed lazily, but the tooltip and icon are not
-            # — nudge pystray to redraw.
+            # Menu labels are computed lazily, but the tooltip and icon are not:
+            # nudge pystray to redraw.
             self._icon.update_menu()
         except Exception:  # noqa: BLE001 - a tray hiccup must not break dictation
             logger.debug("could not update the tray icon", exc_info=True)

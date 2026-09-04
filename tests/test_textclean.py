@@ -32,7 +32,7 @@ def test_collapses_run_but_keeps_following():
 
 
 def test_non_adjacent_repeat_survives():
-    # Repetition separated by other content is not a loop — keep both.
+    # Repetition separated by other content is not a loop: keep both.
     text = "Начали. Работаем. Начали."
     assert collapse_repeats(text) == text
 
@@ -58,7 +58,7 @@ def test_word_diff_insert_delete():
 def test_measured_room_silence_is_rejected(rms):
     """The four RMS values recorded from a real laptop microphone in a quiet
     room, each of which Whisper transcribed as "Продолжение следует." with
-    no_speech_prob = 0.000 — total confidence that the room noise was speech."""
+    no_speech_prob = 0.000, total confidence that the room noise was speech."""
     assert is_hallucinated_silence("Продолжение следует.", rms) is True
 
 
@@ -89,7 +89,7 @@ def test_subtitle_boilerplate_over_a_noisy_room_is_rejected(text):
 
 
 def test_the_phrase_net_stops_at_speech_volume():
-    """Above the band, only the audio decides — no phrase is ever blocked at a
+    """Above the band, only the audio decides: no phrase is ever blocked at a
     volume a person actually reaches."""
     assert is_hallucinated_silence("Спасибо за просмотр", 0.05) is False
 
@@ -162,7 +162,7 @@ def test_empty_input():
 def test_squeeze_lines_keeps_the_line_breaks():
     """The cleanup prompt explicitly asks the model to format an enumeration as
     «- » bullets, one per line. The selective path then rejoined the pieces
-    through `squeeze`, which collapses ANY whitespace run — newlines included —
+    through `squeeze`, which collapses ANY whitespace run, newlines included,
     so the list the model was asked for came back as one flat line:
     "- первое - второе - третье"."""
     from fortunevoice.textclean import squeeze_lines
@@ -192,7 +192,7 @@ def test_a_bullet_list_keeps_its_line_breaks():
 
 
 def test_a_repeat_across_a_line_break_is_still_dropped():
-    """The filter has to keep spanning lines — a hallucinated repeat does not
+    """The filter has to keep spanning lines: a hallucinated repeat does not
     stop at one."""
     assert collapse_repeats("Потерял.\nПотерял.") == "Потерял."
 

@@ -1,7 +1,7 @@
 """Which prompt tier a transcript is routed to.
 
-The routing is invisible at runtime — a dictation just comes back better or
-worse — so it is worth pinning down. Measured on this machine, the mini tier
+The routing is invisible at runtime: a dictation just comes back better or
+worse, so it is worth pinning down. Measured on this machine, the mini tier
 costs a fast model most of its accuracy (see PORT_NOTES.md), which is why
 FVMiniPrompt exists; these tests make sure the flag actually changes the
 request and that nothing else about the routing moved.
@@ -52,7 +52,7 @@ def test_mini_prompt_can_be_turned_off(recorded):
 
 def test_long_text_still_goes_selective_with_the_flag_off(recorded):
     """The flag governs the mini tier only. Long transcripts must keep being
-    cleaned sentence by sentence — sending the whole thing would blow the
+    cleaned sentence by sentence: sending the whole thing would blow the
     budget, which is what the selective path exists to avoid."""
     config.set("FVMiniPrompt", False)
     C.OllamaCleaner().clean(LONG, budget=float("inf"))
@@ -61,7 +61,7 @@ def test_long_text_still_goes_selective_with_the_flag_off(recorded):
 
 
 def test_low_confidence_ignores_the_flag(recorded):
-    """Garbled text always gets the full prompt and the whole transcript —
+    """Garbled text always gets the full prompt and the whole transcript:
     reconstructing misheard words needs every rule and all the context."""
     C.OllamaCleaner().clean(SHORT, low_confidence=True)
     assert [tier(s) for s, _ in recorded] == ["full"]
@@ -87,14 +87,14 @@ def test_over_budget_declines_before_calling(recorded):
 def test_warmup_skips_only_when_the_model_is_really_loaded(monkeypatch):
     """The bug this fixes: warmup() skipped for 10 minutes after a success,
     assuming keep_alive=24h meant the model stayed. Ollama restarting, or
-    evicting it under VRAM pressure — which is what happens on a small card
-    when Whisper loads beside it — broke that assumption silently, and the next
+    evicting it under VRAM pressure (which is what happens on a small card
+    when Whisper loads beside it) broke that assumption silently, and the next
     dictation paid a 2 s cold load inside a 1.5 s budget."""
     import time
 
     from fortunevoice import ollama
 
-    # About the priming throttle, not about starting Ollama — which warmup now
+    # About the priming throttle, not about starting Ollama, which warmup now
     # also does, and which conftest makes fail fast.
     monkeypatch.setattr(ollama, "ensure_running", lambda wait=0: True)
 
@@ -119,7 +119,7 @@ def test_warmup_skips_only_when_the_model_is_really_loaded(monkeypatch):
 
 
 def test_residency_check_treats_a_dead_ollama_as_not_loaded(monkeypatch):
-    """`/api/ps` unreachable must mean "prime anyway", never "wait" — the call
+    """`/api/ps` unreachable must mean "prime anyway", never "wait": the call
     sits on hotkey-down and its answer is only used to skip work."""
     def boom(*_args, **_kwargs):
         raise OSError("connection refused")

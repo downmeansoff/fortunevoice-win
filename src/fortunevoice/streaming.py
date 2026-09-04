@@ -2,13 +2,13 @@
 
 Port of Sources/FortuneVoice/StreamingSession.swift. This is the piece that
 makes a long dictation paste in roughly the time of its last few seconds
-instead of the whole utterance, so it is ported behaviour-for-behaviour —
+instead of the whole utterance, so it is ported behaviour-for-behaviour,
 including the two conditions that took the macOS build three attempts to get
 right.
 
 A background loop transcribes the growing audio buffer every ~1 s. Segments
-become *confirmed* — their text locked in and the buffer offset advanced past
-them — only when BOTH hold:
+become *confirmed* (their text locked in and the buffer offset advanced past
+them) only when BOTH hold:
 
  1. **Double agreement (LocalAgreement-2):** two consecutive passes decoded the
     same text for the segment. One pass can mis-hear a boundary; two identical
@@ -41,10 +41,10 @@ logger = get_logger("streaming")
 
 SAMPLE_RATE = 16_000
 
-# Segments must end this far before the buffer edge to be trusted — the decoder
+# Segments must end this far before the buffer edge to be trusted: the decoder
 # often revises the trailing in-progress phrase.
 STABLE_MARGIN = 1.5
-# Short utterances are faster as plain batch — don't burn the pipeline on them
+# Short utterances are faster as plain batch: don't burn the pipeline on them
 # (a pass in flight at key-up delays the final decode).
 FIRST_PASS_DELAY = 3.0
 PASS_INTERVAL = 1.0
@@ -59,7 +59,7 @@ QUIET_RMS = 0.008
 # the cleanup saves on a handful of words.
 CLEANUP_BLOCK_WORDS = 12
 # At key-up, let an in-flight block cleanup land rather than throwing away work
-# already paid for — but never wait out a stalled Ollama.
+# already paid for, but never wait out a stalled Ollama.
 CLEANUP_SETTLE_SECONDS = 0.6
 
 
@@ -91,7 +91,7 @@ def silence_threshold(noise_floor: float) -> float:
 
     A fixed floor is what made streaming useless in practice: with a fan or
     street noise the gaps between sentences never drop under 0.008, so no cut
-    is ever taken — metrics showed 63 of 91 dictations running streaming passes
+    is ever taken: metrics showed 63 of 91 dictations running streaming passes
     that confirmed nothing at all. Anchoring to the quietest window actually
     observed adapts to the room, while the hard cap keeps the threshold well
     below speech (~0.02+).
@@ -103,7 +103,7 @@ def quiet_cut(samples: np.ndarray, at_seconds: float, threshold: float = QUIET_R
     """Is the ±0.2 s neighborhood of `at_seconds` genuinely quiet?
 
     Max RMS over 0.1 s windows stepped by 0.05 s must stay under `threshold`.
-    Points too close to the buffer edges are NOT quiet — we can't verify, so we
+    Points too close to the buffer edges are NOT quiet: we can't verify, so we
     don't cut.
     """
     data = np.asarray(samples, dtype=np.float32)
@@ -121,7 +121,7 @@ def quiet_cut(samples: np.ndarray, at_seconds: float, threshold: float = QUIET_R
 
 
 def max_window_rms(samples: np.ndarray, upto: int, window: int = 8_000) -> float:
-    """Loudest window RMS in samples[:upto] — the long-pause detector."""
+    """Loudest window RMS in samples[:upto], the long-pause detector."""
     data = np.asarray(samples, dtype=np.float32)[:upto]
     if data.size < window:
         return 0.0
@@ -137,7 +137,7 @@ def v2_enabled() -> bool:
 
     Default ON: 17 shadow runs in the macOS metrics had the stitched decode
     finish faster in 16 of them (median 1242 ms vs 1961 ms) with a content diff
-    of 0–6 words in 15 of 17. The old default computed the fast result and then
+    of 0-6 words in 15 of 17. The old default computed the fast result and then
     pasted the slow one.
     """
     return config.get_bool("FVStreamingV2")
@@ -145,7 +145,7 @@ def v2_enabled() -> bool:
 
 def shadow_enabled() -> bool:
     """Compute both results, paste batch, log the diff. Default OFF now that V2
-    is validated — leaving it on made every dictation pay for two full decodes
+    is validated: leaving it on made every dictation pay for two full decodes
     and then paste the slower one."""
     return config.get_bool("FVStreamingShadow")
 
@@ -175,7 +175,7 @@ class StreamingSession:
         self._confirmed_offset = 0
         self.pass_count = 0
         # Candidate segment keys from the previous pass, for the double-agreement
-        # check. None after the offset moves — a new slice start makes old
+        # check. None after the offset moves: a new slice start makes old
         # candidates incomparable.
         self._previous_keys: list[str] | None = None
         self._noise_floor = float("inf")
@@ -183,7 +183,7 @@ class StreamingSession:
         self.last_shadow: ShadowStats | None = None
         # After finish(): the confirmed prefix already cleaned during recording,
         # and the raw remainder that still needs a pass. None when no
-        # incremental cleanup applies — the caller then cleans everything.
+        # incremental cleanup applies: the caller then cleans everything.
         self.last_pre_cleaned: tuple[str, str] | None = None
 
         # Incremental cleanup: one confirmed block at a time, in order.
@@ -216,7 +216,7 @@ class StreamingSession:
     def _stop_cleanup_worker(self) -> None:
         """End the block-cleanup thread.
 
-        Only `abort()` used to do this. The normal path — `finish()` — left it
+        Only `abort()` used to do this. The normal path (`finish()`) left it
         blocked on `queue.get()` forever, so every dictation that cleaned a
         block leaked a thread, and each one held its whole session alive:
         blocks, samples, the transcriber reference. Daemon threads, so nothing
@@ -249,7 +249,7 @@ class StreamingSession:
 
         Cleanup is the largest single term in key-up → paste (median 1.9 s of a
         4.0 s total on macOS). A confirmed prefix will never change, so it can
-        be cleaned while the user is still speaking — by key-up only the
+        be cleaned while the user is still speaking; by key-up only the
         unconfirmed tail is left, and that is short by construction.
         """
         if self._cleaner is None or self._cleaned_upto >= len(self._confirmed_texts):
@@ -294,7 +294,7 @@ class StreamingSession:
                 logger.info(
                     "stream cleaned block %d (%d words) in %.0f ms%s",
                     index, words, (time.monotonic() - started) * 1000,
-                    "" if cleaned else " — kept raw",
+                    "" if cleaned else ", kept raw",
                 )
 
     def _pre_cleaned_split(self, tail_text: str) -> tuple[str, str] | None:
@@ -352,7 +352,7 @@ class StreamingSession:
         threshold = silence_threshold(self._noise_floor)
 
         # Within the agreed prefix, find the LAST candidate whose end sits in
-        # real silence — that's the only safe place to cut the audio.
+        # real silence: that's the only safe place to cut the audio.
         cut_index: int | None = None
         for i in range(agreed - 1, -1, -1):
             if quiet_cut(audio, candidates[i][1], threshold):
@@ -368,7 +368,7 @@ class StreamingSession:
             self._schedule_cleanup()  # clean the new prefix while the user talks on
             if self.debug:
                 logger.info(
-                    "stream pass %d — confirmed %d segs @%.1fs (slice %.1fs → %.0f ms, floor %.4f)",
+                    "stream pass %d: confirmed %d segs @%.1fs (slice %.1fs → %.0f ms, floor %.4f)",
                     self.pass_count, cut_index + 1, candidates[cut_index][1],
                     slice_seconds, (time.monotonic() - started) * 1000, threshold,
                 )
@@ -376,7 +376,7 @@ class StreamingSession:
 
         self._previous_keys = keys
 
-        # Nothing confirmable for many seconds — almost always a long pause.
+        # Nothing confirmable for many seconds: almost always a long pause.
         # Gate on raw energy: if the whole stable region is quiet, skip past it
         # so the tail doesn't grow unboundedly.
         if not candidates and slice_seconds > 8:
@@ -391,7 +391,7 @@ class StreamingSession:
 
         if self.debug:
             logger.info(
-                "stream pass %d — slice %.1fs → %.0f ms, %d candidates, %d agreed, no quiet cut",
+                "stream pass %d: slice %.1fs → %.0f ms, %d candidates, %d agreed, no quiet cut",
                 self.pass_count, slice_seconds, (time.monotonic() - started) * 1000,
                 len(candidates), agreed,
             )
@@ -452,7 +452,7 @@ class StreamingSession:
             self.last_shadow = ShadowStats(diff, stitched_ms, batch_ms)
             if self.debug:
                 logger.info(
-                    "shadow — stitched %.0f ms vs batch %.0f ms, diff %d words "
+                    "shadow: stitched %.0f ms vs batch %.0f ms, diff %d words "
                     "(%d passes, %d confirmed)",
                     stitched_ms, batch_ms, diff, self.pass_count, len(self._confirmed_texts),
                 )
@@ -482,7 +482,7 @@ class StreamingSession:
     def _settle_cleanup(self, seconds: float) -> None:
         """Wait briefly for queued block cleanups, then move on regardless.
 
-        A block that hasn't answered by the deadline keeps its raw text — the
+        A block that hasn't answered by the deadline keeps its raw text: the
         user gets their words now rather than perfect words late.
         """
         deadline = time.monotonic() + seconds

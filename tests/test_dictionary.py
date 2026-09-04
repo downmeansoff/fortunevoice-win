@@ -85,7 +85,7 @@ def test_a_capitalised_word_opening_a_later_sentence_is_not_learned():
     """`_words()` throws punctuation away, so the sentence-start flag was set
     once and never again: every capitalised word after the first counted as
     mid-sentence. An ordinary word opening the second sentence was learned as
-    vocabulary and then fed to Whisper as a prompt bias on every dictation —
+    vocabulary and then fed to Whisper as a prompt bias on every dictation,
     the opposite of what the dictionary is for."""
     dictionary.set_terms([])
     learned = dictionary.learn_from_correction(

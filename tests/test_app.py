@@ -1,6 +1,6 @@
 """The dictation pipeline.
 
-`decide_delivery` — which route a transcript takes — is pinned in
+`decide_delivery` (which route a transcript takes) is pinned in
 test_delivery. This is the rest: what actually happens to the user's words
 once that decision is made, and the promise the whole app is built on, that
 nothing is ever silently discarded.
@@ -28,7 +28,7 @@ def app(monkeypatch):
     """An App with every edge stubbed and every side effect recorded."""
     application = App()
     application._set_state(State.IDLE)
-    # The pipeline loads the model when it finds none — correct in the app,
+    # The pipeline loads the model when it finds none, correct in the app,
     # and a real 5.6 s Whisper load inside a unit test. A placeholder is
     # enough: every test that decodes stubs `transcribe` anyway.
     application.transcriber._model = object()
@@ -184,8 +184,8 @@ def test_the_outcome_is_recorded(app):
 
 
 def test_blind_typing_is_recorded_as_such(app, monkeypatch):
-    """Windows would not confirm an editable field. It is typed anyway — most
-    terminals and Electron apps answer "unknown" — but the distinction has to
+    """Windows would not confirm an editable field. It is typed anyway: most
+    terminals and Electron apps answer "unknown", but the distinction has to
     survive into the numbers, or a wrong-window problem is invisible."""
     monkeypatch.setattr(app_module.injector, "focused_element_is_editable",
                         lambda: None)
@@ -334,7 +334,7 @@ def test_escape_drops_the_recording_without_decoding_it(app, monkeypatch):
 def test_cancelling_tells_the_user_it_worked(app):
     """`_on_cancel` used to raise on a `recovery.clear()` that does not exist,
     which skipped the sound and the pill below it. The recording did stop and
-    the controller's error handler put the state back — so Esc "worked" while
+    the controller's error handler put the state back, so Esc "worked" while
     giving the user no sign of it at all."""
     app.recorder = FakeRecorder(np.zeros(16_000, dtype=np.float32))
     app._set_state(State.RECORDING)
@@ -440,7 +440,7 @@ def pipeline_with(app, monkeypatch, text, level):
 
 
 def test_words_invented_out_of_silence_are_never_typed(app, monkeypatch):
-    """Whisper answers silence with subtitle boilerplate — «Продолжение
+    """Whisper answers silence with subtitle boilerplate: «Продолжение
     следует», "Thanks for watching". Typing that puts words in the user's
     document that nobody said. Reported live: it happened on a silent press."""
     pipeline_with(app, monkeypatch, "Продолжение следует.", level=0.0005)
@@ -448,7 +448,7 @@ def test_words_invented_out_of_silence_are_never_typed(app, monkeypatch):
 
 
 def test_but_they_are_still_saved_so_a_false_positive_is_recoverable(app, monkeypatch):
-    """Judged on the audio, not the model's own confidence — which reported
+    """Judged on the audio, not the model's own confidence, which reported
     0.000 on four out of four recordings of real silence here. A wrong call
     must not be a silent drop."""
     pipeline_with(app, monkeypatch, "Продолжение следует.", level=0.0005)
@@ -491,7 +491,7 @@ def test_a_negative_setting_reads_as_never(app):
 
 def test_a_dictation_reloads_a_model_that_was_dropped(app, monkeypatch):
     """Without this the next dictation after an unload would raise inside the
-    pipeline and be filed as a failed transcription — the words gone."""
+    pipeline and be filed as a failed transcription, the words gone."""
     loads: list[int] = []
     monkeypatch.setattr(app.transcriber, "cancel_warmup", lambda: None)
     monkeypatch.setattr(app, "_load_model",
@@ -522,7 +522,7 @@ def test_a_model_reload_during_a_recording_does_not_cancel_it(app, monkeypatch):
     """`_start_dictation` reloads the model in the background when the idle
     unload dropped it. `_load_model` drove global state unconditionally, so
     that background load announced LOADING and then IDLE *while the user was
-    speaking* — and `_finish_dictation` returns early unless the state is
+    speaking*, and `_finish_dictation` returns early unless the state is
     RECORDING. The whole dictation was dropped at key-up."""
     monkeypatch.setattr(app.transcriber, "load", lambda: None)
     app._set_state(State.RECORDING)
@@ -549,7 +549,7 @@ def test_a_finished_pipeline_does_return_an_idle_app_to_idle(app):
 
 def test_toggle_mode_still_stops_on_silence(app, monkeypatch):
     """The auto-stop posts its stop through the same "release" event the
-    hotkey uses — and `_on_release` returns early in toggle mode, so it was
+    hotkey uses, and `_on_release` returns early in toggle mode, so it was
     discarded. Silence never ended a toggled recording, and neither did the
     300 s cap: the microphone stayed open until the user noticed."""
     from fortunevoice import config
@@ -567,7 +567,7 @@ def test_toggle_mode_still_stops_on_silence(app, monkeypatch):
 
 def test_a_dictation_that_could_not_be_saved_says_so(app, monkeypatch):
     """The vault is why every later failure is survivable. If it fails the text
-    is still typed — it is the user's dictation — but they have to be told this
+    is still typed: it is the user's dictation, but they have to be told this
     one is not recoverable, rather than finding out later that History has been
     quietly empty for a week."""
     said: list[str] = []
@@ -601,7 +601,7 @@ def test_recovery_reloads_a_model_that_the_idle_unload_dropped(app, monkeypatch)
 
 def test_a_wedged_pipeline_keeps_the_audio_and_explains(app, monkeypatch):
     """The backstop for a step nobody bounded. It played a tone and forced
-    IDLE — but the words exist nowhere yet at that point, so the dictation was
+    IDLE, but the words exist nowhere yet at that point, so the dictation was
     simply gone and the user had a beep to go on."""
     said: list[str] = []
     app.on_notify = lambda title, body: said.append(title)
@@ -637,7 +637,7 @@ def test_a_late_pipeline_does_not_touch_a_newer_dictation(app):
 
 
 def test_a_late_release_still_stops_the_recording(app, monkeypatch):
-    """A release is a TERMINATOR — acting on it late is strictly better than
+    """A release is a TERMINATOR: acting on it late is strictly better than
     not at all. It used to be dropped with the press filter, which left the app
     recording with the key already up, the microphone open and the pill saying
     "Listening", until the 300 s cap typed five minutes of room noise into
@@ -681,7 +681,7 @@ def test_the_key_down_reload_does_not_announce_over_the_recording(app, monkeypat
     `_load_model` defaulted to announce=True that background load set LOADING
     and then IDLE *underneath a live recording*. `_stop_dictation` returns
     early unless the state is RECORDING, so the dictation was dropped at
-    key-up with nothing typed, nothing saved and no sound — and the microphone
+    key-up with nothing typed, nothing saved and no sound, and the microphone
     left open, because the matching stop never ran either.
     """
     import threading
@@ -714,7 +714,7 @@ def test_the_key_down_reload_does_not_announce_over_the_recording(app, monkeypat
     assert entered.wait(3), "the reload thread never reached the load"
     assert State.LOADING not in announced, (
         "a reload running underneath a dictation must not announce its own "
-        "state — the pill flashed 'Loading' over 'Listening'")
+        "state: the pill flashed 'Loading' over 'Listening'")
 
     release.set()
     for thread in threading.enumerate():
@@ -773,7 +773,7 @@ def test_a_press_abandoned_during_a_load_is_still_dropped(app, monkeypatch):
 
 def test_a_successful_retry_leaves_the_error_state(app, monkeypatch):
     """The tray's "Retry model" loaded the model and then left the app in
-    ERROR — where the hotkey is gated — so the only real fix was a restart."""
+    ERROR, where the hotkey is gated, so the only real fix was a restart."""
     monkeypatch.setattr(app.transcriber, "unload", lambda: True)
     monkeypatch.setattr(app.transcriber, "load",
                         lambda: setattr(app.transcriber, "_model", object()))
@@ -806,7 +806,7 @@ def test_changing_the_model_actually_drops_the_old_one(app, monkeypatch):
 def test_a_dropped_stale_press_closes_the_pre_roll_microphone(app, monkeypatch):
     """The arm that came with the press had already opened the microphone.
     Dropping only the press left it open with the buffer growing, and
-    `AudioRecorder.start` returns early when it is already recording — so the
+    `AudioRecorder.start` returns early when it is already recording, so the
     next dictation was handed that buffer, with everything said in the room in
     between."""
     stops: list[int] = []
@@ -823,7 +823,7 @@ def test_a_dropped_stale_press_closes_the_pre_roll_microphone(app, monkeypatch):
 
 def test_streaming_honours_a_per_app_profile(app, monkeypatch):
     """FVStreaming is listed in profiles.OVERRIDABLE, and `_start_dictation`
-    read it straight from config — so the profile was accepted, reported as
+    read it straight from config, so the profile was accepted, reported as
     applied, and ignored. The fixture's foreground app is "Code.exe"."""
     from fortunevoice import config
 
@@ -848,7 +848,7 @@ def test_streaming_honours_a_per_app_profile(app, monkeypatch):
 
 
 def test_a_normal_voice_keeps_the_toggle_recording_alive(app):
-    """The threshold was a bare 0.2 RMS — four times the level at which the
+    """The threshold was a bare 0.2 RMS, four times the level at which the
     app warns the microphone is dead. A normal voice never reached it, so in
     toggle mode `_last_loud` stayed pinned at the start and the recording was
     cut off four seconds in, mid-sentence, with the pill still saying
@@ -963,7 +963,7 @@ def test_a_stale_press_is_not_resumed(app, monkeypatch):
 def test_the_pill_says_the_press_was_heard(app, monkeypatch):
     """A remembered press is invisible otherwise: the pill still reads
     "Расшифровка" from the dictation before, which looks exactly like the
-    press having been lost — the behaviour that taught the user to press
+    press having been lost, the behaviour that taught the user to press
     twice."""
     shown: list[str] = []
 
@@ -995,7 +995,7 @@ def _ready_to_record(app, monkeypatch):
 
 
 def test_a_dictation_can_start_while_the_last_one_is_still_decoding(app, monkeypatch):
-    """The recorder is free by then — `_finish_dictation` has already stopped
+    """The recorder is free by then, `_finish_dictation` has already stopped
     it and taken its samples, and the decode works on that copy. Waiting cost
     a second or two of standing still between every pair of sentences."""
     from fortunevoice import config
@@ -1027,7 +1027,7 @@ def test_the_older_pipeline_does_not_take_the_state_back(app, monkeypatch):
 
 
 def test_overlap_can_be_switched_off(app, monkeypatch):
-    """Off means the press waits, exactly as it did before — remembered, not
+    """Off means the press waits, exactly as it did before: remembered, not
     dropped."""
     from fortunevoice import config
 

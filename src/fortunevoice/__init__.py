@@ -1,4 +1,4 @@
-"""FortuneVoice for Windows — local, offline voice dictation.
+"""FortuneVoice for Windows: local, offline voice dictation.
 
 Hold a hotkey, speak, release; the transcribed text is typed into whatever app
 has focus. Audio never leaves the machine.

@@ -1,6 +1,6 @@
 """The tray menu.
 
-The menu is a tree of lambdas — `enabled=`, `visible=`, `checked=`, and text
+The menu is a tree of lambdas: `enabled=`, `visible=`, `checked=`, and text
 callables that pystray evaluates when the user right-clicks. None of them had
 ever been executed by a test, so a name that no longer existed would surface
 as a menu that fails to open, on a right-click, in front of the user.
@@ -52,7 +52,7 @@ def test_every_menu_label_survives_being_evaluated(tray):
 
 
 def test_the_menu_reflects_having_a_last_dictation(tray):
-    """Copy and retype are disabled until there is something to act on —
+    """Copy and retype are disabled until there is something to act on:
     offering them with nothing behind them looks like a broken app."""
     def state():
         return {str(i.text): i.enabled for i in walk(tray._menu())}
@@ -104,7 +104,7 @@ def test_the_level_meter_changes_the_icon():
 
 
 def test_a_failing_ui_callback_reaches_the_user(monkeypatch):
-    """Twice during this port a window silently did not appear — a renamed
+    """Twice during this port a window silently did not appear: a renamed
     colour constant, and a missing helper. Both were found by reading the log.
     The user clicked "Settings" and nothing happened, with no other sign."""
     from fortunevoice.ui import ui
@@ -133,7 +133,7 @@ def test_the_same_failure_is_reported_only_once():
 
 
 def test_the_pump_itself_reports_a_raising_job():
-    """Not the wrapper — the real queue drain. A test that only called
+    """Not the wrapper, the real queue drain. A test that only called
     `ui.on_error` would pass even if `_pump` never invoked it, which is
     precisely the wiring that was missing before."""
     from fortunevoice.ui import UiThread
@@ -177,7 +177,7 @@ class RecordingRoot:
 
 def test_the_pump_slows_down_once_nothing_is_happening():
     """Measured: draining an empty queue forty times a second costs 1.4% of a
-    core, all day, for a tray app doing nothing — the largest thing this
+    core, all day, for a tray app doing nothing: the largest thing this
     process burns while idle. Backing off took it to 0.6%."""
     from fortunevoice.ui import _IDLE_AFTER_EMPTY, _IDLE_PUMP_MS, _PUMP_MS, UiThread
 
@@ -191,7 +191,7 @@ def test_the_pump_slows_down_once_nothing_is_happening():
 
 
 def test_one_job_puts_it_straight_back_to_the_fast_rate():
-    """A dictation's overlay and waveform must never be the slow ones — the
+    """A dictation's overlay and waveform must never be the slow ones: the
     pill appearing late reads as the app not having heard the key."""
     from fortunevoice.ui import _IDLE_AFTER_EMPTY, _PUMP_MS, UiThread
 

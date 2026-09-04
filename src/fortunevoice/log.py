@@ -41,7 +41,7 @@ def setup(debug: bool = False) -> None:
         handler.setFormatter(fmt)
         root.addHandler(handler)
     except OSError:
-        pass  # read-only profile, roaming glitch — never block startup on logging
+        pass  # read-only profile, roaming glitch; never block startup on logging
 
     # `pythonw.exe` has no usable stderr; guard so a write there can't crash us.
     if sys.stderr is not None:

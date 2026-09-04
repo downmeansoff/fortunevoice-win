@@ -17,7 +17,7 @@ tray already opens, and a window for it would be more code than the feature.
 
 Only settings in OVERRIDABLE can be overridden. A profile that could change
 anything would be a config file able to point the app at a different Ollama
-host or a different microphone depending on which window is in front —
+host or a different microphone depending on which window is in front,
 surprising in the specific way that makes a bug impossible to find.
 """
 
@@ -29,7 +29,7 @@ from .log import get as get_logger
 logger = get_logger("profiles")
 
 # Per-dictation behaviour, and nothing else. Not hosts, not paths, not the
-# hotkey — those are properties of the installation, not of the window that
+# hotkey: those are properties of the installation, not of the window that
 # happens to be in front.
 OVERRIDABLE = frozenset({
     "FVCleanupEnabled",
@@ -43,7 +43,7 @@ OVERRIDABLE = frozenset({
     "FVDelivery",
 })
 # Not FVMiniPrompt. It is read inside the cleaner, on a worker thread, after
-# the user has already let go and may well have switched windows — so "the app
+# the user has already let go and may well have switched windows, so "the app
 # in front" is no longer a meaningful question by then. It was listed here and
 # read straight from config, which is the worst of both: a documented override
 # that silently did nothing.
@@ -70,7 +70,7 @@ def overrides_for(app: str | None) -> dict:
         allowed = {k: v for k, v in values.items() if k in OVERRIDABLE}
         ignored = set(values) - set(allowed)
         if ignored:
-            logger.warning("profile for %s ignores %s — not overridable",
+            logger.warning("profile for %s ignores %s: not overridable",
                            app, ", ".join(sorted(ignored)))
         return allowed
     return {}

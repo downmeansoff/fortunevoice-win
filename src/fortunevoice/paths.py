@@ -1,7 +1,7 @@
 """Where FortuneVoice keeps its state on Windows.
 
 macOS put everything under ~/Library/Application Support/FortuneVoice. The
-Windows equivalent is %APPDATA%\\FortuneVoice — roaming, per-user, and not
+Windows equivalent is %APPDATA%\\FortuneVoice, roaming, per-user, and not
 synced by OneDrive's Desktop/Documents redirection (which would push dictation
 history and recovery audio into the cloud without the user asking).
 

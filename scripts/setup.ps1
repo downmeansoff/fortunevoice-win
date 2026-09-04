@@ -42,8 +42,8 @@ if (-not $python) {
 
 Python 3.10 or newer is required and was not found.
 
-Install it from https://www.python.org/downloads/ — tick "Add python.exe to
-PATH" in the installer — then run this script again.
+Install it from https://www.python.org/downloads/, tick "Add python.exe to
+PATH" in the installer, then run this script again.
 "@ -ForegroundColor Red
     exit 1
 }
@@ -77,23 +77,23 @@ try {
 if ($hasNvidia) {
     $gpu = (& nvidia-smi --query-gpu=name,memory.total --format=csv,noheader) -join ", "
     Ok "found: $gpu"
-    Step "Installing CUDA runtime libraries (~1 GB — this is the slow part)"
+    Step "Installing CUDA runtime libraries (~1 GB, this is the slow part)"
     & $venvPython -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 --quiet
-    Ok "done — dictation will run about 10x faster than on the CPU"
+    Ok "done: dictation will run about 10x faster than on the CPU"
 } else {
-    Warn "no NVIDIA GPU — FortuneVoice will run on the CPU."
+    Warn "no NVIDIA GPU, FortuneVoice will run on the CPU."
     Warn "It works, but expect a few seconds per dictation instead of under one."
 }
 
 # ── optional cleanup model ───────────────────────────────────────────────
-Step "Checking Ollama (optional — it tidies filler words out of the text)"
+Step "Checking Ollama (optional, it tidies filler words out of the text)"
 $ollama = Get-Command ollama -ErrorAction SilentlyContinue
 if ($ollama) {
-    Ok "installed — pulling qwen2.5:1.5b (~1 GB)"
+    Ok "installed, pulling qwen2.5:1.5b (~1 GB)"
     & ollama pull qwen2.5:1.5b
     Ok "done"
 } else {
-    Warn "not installed. Dictation works fine without it — you just get the raw"
+    Warn "not installed. Dictation works fine without it, you just get the raw"
     Warn "transcript. To add it later: https://ollama.com/download, then"
     Warn "  ollama pull qwen2.5:1.5b"
 }
@@ -105,7 +105,7 @@ Ok "done"
 
 # ── prove it works ───────────────────────────────────────────────────────
 Step "Checking this machine can actually run it"
-Write-Host "    (the Whisper model downloads now — about 1.6 GB, once)`n"
+Write-Host "    (the Whisper model downloads now, about 1.6 GB, once)`n"
 & $venvPython -m fortunevoice doctor
 
 Write-Host @"
@@ -115,6 +115,6 @@ Setup finished.
 Start it from the Desktop shortcut, then hold Ctrl+Alt+Space, speak, and let
 go. The text is typed wherever your cursor is.
 
-The icon lives in the notification area, next to the clock — right-click it
+The icon lives in the notification area, next to the clock; right-click it
 for History, Settings and the rest.
 "@ -ForegroundColor Green

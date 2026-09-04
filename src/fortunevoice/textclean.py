@@ -10,7 +10,7 @@ import re
 from .segmenter import sentences
 
 _WHITESPACE = re.compile(r"\s+")
-# Spaces and tabs only — newlines are structure, see squeeze_lines.
+# Spaces and tabs only: newlines are structure, see squeeze_lines.
 _HORIZONTAL = re.compile("[^" + chr(92) + "S" + chr(10) + "]+")
 # Whisper emits control tokens like <|0.00|> or <|nospeech|> when timestamps
 # are on; they must never reach the user's text field.
@@ -37,7 +37,7 @@ def squeeze_lines(text: str) -> str:
     `squeeze` collapses every whitespace run into one space, newlines
     included. That is right for joining decoded segments, and wrong for text
     the cleanup model was explicitly asked to format as «- » bullets, one per
-    line — the selective path rejoined through it and served the list back as
+    line: the selective path rejoined through it and served the list back as
     one flat line.
 
     Runs of blank lines collapse to a single blank line, so a paragraph break
@@ -157,8 +157,8 @@ def is_hallucinated_silence(text: str, rms: float) -> bool:
        floor while still containing no speech.
 
     Deliberately NOT using Whisper's `no_speech_prob`: measured on real
-    silence from this machine's microphone it reported **0.000** — total
-    confidence that the room noise was speech — on four runs out of four,
+    silence from this machine's microphone it reported **0.000** (total
+    confidence that the room noise was speech) on four runs out of four,
     while RMS correctly read 0.0003-0.0015. The old guard required both, so it
     never fired and "Продолжение следует" was typed into the user's document.
     """
@@ -196,7 +196,7 @@ def apply_voice_commands(text: str) -> str:
 
     The matching rule is deliberately strict: the phrase counts only when it
     is a whole sentence of its own. "Я начал с новой строки" is a sentence
-    ABOUT a line break and must survive intact — a substring match would eat
+    ABOUT a line break and must survive intact: a substring match would eat
     it, and the user would have no way to say the words at all.
     """
     from .segmenter import sentences
@@ -220,7 +220,7 @@ def apply_voice_commands(text: str) -> str:
         after_command = True
 
     joined = "".join(parts)
-    # A break at either end is an accident of where the command fell — unless
+    # A break at either end is an accident of where the command fell, unless
     # the break is all there is, which is a user who asked for exactly that.
     trimmed = joined.strip("\n")
     return trimmed if trimmed else joined
