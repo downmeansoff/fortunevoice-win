@@ -179,7 +179,7 @@ def _ollama_report(monkeypatch, capsys, installed):
     import json
     import urllib.request
 
-    from fortunevoice import ollama as ollama_app
+    from fortunevoice import ollama_service as ollama_app
 
     class _Response:
         def __enter__(self):

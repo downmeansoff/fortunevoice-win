@@ -294,11 +294,11 @@ class App:
         being off. Said once at startup and never again: a notification per
         dictation would be worse than the silence it replaces.
         """
-        from . import ollama
+        from . import ollama_service
 
-        if ollama.ensure_running():
+        if ollama_service.ensure_running():
             return
-        detail = (t("notify.ollama_missing") if ollama.executable() is None
+        detail = (t("notify.ollama_missing") if ollama_service.executable() is None
                   else t("notify.ollama_down"))
         self._notify(t("notify.no_cleanup"), detail)
 

@@ -31,7 +31,7 @@ def no_real_ollama(monkeypatch):
     Tests that are specifically about starting it override this with their own
     monkeypatch, which is applied after this fixture and therefore wins.
     """
-    from fortunevoice import ollama
+    from fortunevoice import ollama_service as ollama
 
     monkeypatch.setattr(ollama, "executable", lambda: None)
 

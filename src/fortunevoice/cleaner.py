@@ -637,9 +637,9 @@ class OllamaCleaner:
             # warmup runs on hotkey-down, so the several seconds the server
             # needs are spent while the user is still speaking, instead of
             # being paid (or silently skipped) after they let go.
-            from . import ollama
+            from . import ollama_service
 
-            if not ollama.ensure_running():
+            if not ollama_service.ensure_running():
                 return
             # Prime BOTH prefixes when both are in use. Ollama caches per
             # request shape, and short dictations (the common case) go

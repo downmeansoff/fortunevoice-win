@@ -149,7 +149,7 @@ def _check_ollama() -> bool:
     import urllib.error
     import urllib.request
 
-    from . import ollama as ollama_app
+    from . import ollama_service as ollama_app
 
     host = config.get_str("FVOllamaHost").rstrip("/")
     wanted = config.get_str("FVOllamaModel")

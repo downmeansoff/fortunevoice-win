@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from fortunevoice import config, ollama
+from fortunevoice import config, ollama_service as ollama
 
 
 @pytest.fixture(autouse=True)
