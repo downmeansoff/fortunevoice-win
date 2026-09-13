@@ -187,7 +187,10 @@ def _load() -> dict[str, Any]:
         failed = False
         if mtime is not None:
             try:
-                parsed = json.loads(path.read_text(encoding="utf-8"))
+                # utf-8-sig, not utf-8: Notepad and PowerShell's Set-Content -Encoding
+                # UTF8 both write a BOM, and json.loads rejects it, so a
+                # hand-edited config was silently ignored in favour of DEFAULTS.
+                parsed = json.loads(path.read_text(encoding="utf-8-sig"))
                 data = parsed if isinstance(parsed, dict) else {}
             except (OSError, ValueError):
                 # A corrupt or briefly locked config must never stop the app

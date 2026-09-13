@@ -64,6 +64,10 @@ $venvPython = Join-Path $root ".venv\Scripts\python.exe"
 Step "Installing dependencies (a few minutes, ~500 MB)"
 & $venvPython -m pip install --upgrade pip --quiet
 & $venvPython -m pip install -r requirements.txt --quiet
+# The package itself. src-layout means `python -m fortunevoice` cannot find
+# it otherwise, so the doctor step at the end of this script failed on every
+# fresh install. Editable so a `git pull` is enough to update.
+& $venvPython -m pip install -e . --quiet
 Ok "done"
 
 # ── CUDA, only if there is a GPU to use it ───────────────────────────────
