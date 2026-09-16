@@ -48,7 +48,23 @@ function Get-FreeGB {
 }
 
 # ---------------------------------------------------------------- install
+function Test-Elevated {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    (New-Object Security.Principal.WindowsPrincipal $id).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 function Install-Task {
+    # Registering a SYSTEM-principal task needs administrator rights, and
+    # without this check Register-ScheduledTask fails with a bare access
+    # denied while the rest of the function happily reports success.
+    if (-not (Test-Elevated)) {
+        Write-Host "NOT ELEVATED - open PowerShell as administrator and run this again." -ForegroundColor Red
+        Write-Host "  From a normal window, this elevates and installs in one step:"
+        Write-Host ("  Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','{0}','-Install'" -f $PSCommandPath)
+        return
+    }
+
     $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $action = New-ScheduledTaskAction -Execute $ps `
         -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $PSCommandPath)
@@ -71,9 +87,15 @@ function Install-Task {
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' `
         -LogonType ServiceAccount -RunLevel Highest
 
-    Register-ScheduledTask -TaskName $TaskName -Action $action `
-        -Trigger $atLogon, $every15 -Settings $settings -Principal $principal `
-        -Description 'Trims memory and clears duplicate MCP servers' -Force | Out-Null
+    try {
+        Register-ScheduledTask -TaskName $TaskName -Action $action `
+            -Trigger $atLogon, $every15 -Settings $settings -Principal $principal `
+            -Description 'Trims memory and clears duplicate MCP servers' `
+            -Force -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Host "FAILED to register the task: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
 
     Write-Host "task '$TaskName' registered" -ForegroundColor Green
     Write-Host "  script : $PSCommandPath"
