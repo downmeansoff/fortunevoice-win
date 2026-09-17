@@ -32,7 +32,7 @@ $elevated = ([Security.Principal.WindowsPrincipal] `
 Write-Host "elevated: $elevated"
 
 # ---------------------------------------------------------------- password
-Step "password for account HP" {
+Step "password for account $env:USERNAME" {
     if (-not $elevated) {
         throw "needs an elevated PowerShell (Run as administrator)"
     }
@@ -61,13 +61,15 @@ Step "password for account HP" {
         throw "password shorter than 8 characters, refusing (SMB network logon is open on this account)"
     }
 
-    $user = [ADSI]"WinNT://$env:COMPUTERNAME/HP,user"
+    # The account running this, whatever it is called. Hardcoding a name
+    # breaks the moment the machine is reinstalled under a different one.
+    $user = [ADSI]"WinNT://$env:COMPUTERNAME/$env:USERNAME,user"
     $user.SetPassword($plain)
     $user.SetInfo()
     Write-Host "  password changed" -ForegroundColor Green
 
     if ($generated) {
-        $file = "C:\Users\HP\new-password.txt"
+        $file = Join-Path $env:USERPROFILE 'new-password.txt'
         [IO.File]::WriteAllText($file, $plain, (New-Object Text.UTF8Encoding $false))
         Write-Host "  generated one, written to $file" -ForegroundColor Yellow
         Write-Host "  SAVE IT IN A PASSWORD MANAGER, THEN DELETE THAT FILE." -ForegroundColor Yellow
@@ -138,21 +140,46 @@ function Sync-Repo([string]$path, [string[]]$branches) {
     }
 }
 
+function Find-CloneOf([string]$repoName) {
+    # Path of the clone whose origin ends in <repoName>, or $null. Searched
+    # rather than hardcoded: the clone moves when the machine is reinstalled
+    # under a different account, and a stale path here would silently skip
+    # the whole step.
+    $roots = @($env:USERPROFILE, (Join-Path $env:USERPROFILE 'dev'),
+               (Join-Path $env:USERPROFILE 'Projects'), (Join-Path $env:USERPROFILE 'source\repos'))
+    foreach ($root in $roots) {
+        if (-not (Test-Path $root)) { continue }
+        foreach ($dir in (Get-ChildItem $root -Directory -ErrorAction SilentlyContinue)) {
+            if (-not (Test-Path (Join-Path $dir.FullName '.git'))) { continue }
+            $url = git -C $dir.FullName remote get-url origin 2>$null
+            if ($url -and $url -match "[/:].*$([regex]::Escape($repoName))(\.git)?/?$") {
+                return $dir.FullName
+            }
+        }
+    }
+    return $null
+}
+
 Step "repo fortunevoice-win" {
-    Sync-Repo "C:\Users\HP\dev\fortunevoice-win" @('fix/setup-installs-package', 'bench/decode-options')
+    $path = Find-CloneOf 'fortunevoice-win'
+    if (-not $path) {
+        Write-Host "  no local clone found; delete the merged branches at"
+        Write-Host "  https://github.com/downmeansoff/fortunevoice-win/branches"
+        return
+    }
+    Write-Host "  found at $path"
+    Sync-Repo $path @('fix/setup-installs-package', 'bench/decode-options')
 }
 
 Step "repo VPN" {
-    $candidates = @(
-        "C:\Users\HP\dev\VPN", "C:\Users\HP\VPN",
-        "C:\Users\HP\dev\vpn", "C:\Users\HP\Projects\VPN"
-    ) | Where-Object { Test-Path (Join-Path $_ '.git') }
-    if (-not $candidates) {
+    $path = Find-CloneOf 'VPN'
+    if (-not $path) {
         Write-Host "  no local VPN clone found; delete ci/guard-bare-push at"
         Write-Host "  https://github.com/downmeansoff/VPN/branches"
         return
     }
-    Sync-Repo $candidates[0] @('ci/guard-bare-push')
+    Write-Host "  found at $path"
+    Sync-Repo $path @('ci/guard-bare-push')
 }
 
 # ------------------------------------------------------------------ cleanup
@@ -174,7 +201,7 @@ Step "leftover weights and bench files" {
         Write-Host ("  kept: {0}" -f ($left -join ', '))
     }
 
-    Get-ChildItem "C:\Users\HP\claude-tuning" -Filter 'bench*' -ErrorAction SilentlyContinue |
+    Get-ChildItem (Join-Path $env:USERPROFILE 'claude-tuning') -Filter 'bench*' -ErrorAction SilentlyContinue |
         ForEach-Object {
             Remove-Item $_.FullName -Force -Recurse
             Write-Host "  removed $($_.Name)" -ForegroundColor Green
