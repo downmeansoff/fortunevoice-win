@@ -1,5 +1,6 @@
 # System-level trim for a 2-core / 8 GB dev laptop: telemetry, services
-# nobody on this machine uses, visual effects, hibernation file, temp junk.
+# nobody on this machine uses, hibernation file, temp junk. Animations and
+# transparency are left as they are: the owner wants them.
 #
 #   powershell -ExecutionPolicy Bypass -File system_trim.ps1           apply
 #   powershell -ExecutionPolicy Bypass -File system_trim.ps1 -Revert   undo
@@ -136,25 +137,11 @@ Set-Reg 'HKCU:\Software\Microsoft\Siuf\Rules' 'NumberOfSIUFInPeriod' 0
 Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo' 'DisabledByGroupPolicy' 1
 Write-Host "  $n tasks disabled, telemetry policy set to minimum" -ForegroundColor Green
 
-Write-Host "== visual effects" -ForegroundColor Cyan
-# 2 = "adjust for best performance". Integrated graphics on this machine
-# share system RAM, so every animation and blur is paid for twice.
-Set-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' 'VisualFXSetting' 2
-# VisualFXSetting alone is only the radio button; Explorer reads the actual
-# switches from this mask. Save the original so -Revert can put it back.
-$desk = 'HKCU:\Control Panel\Desktop'
-$orig = (Get-ItemProperty $desk -Name UserPreferencesMask -ErrorAction SilentlyContinue).UserPreferencesMask
-if ($orig) { $state.mask = [Convert]::ToBase64String([byte[]]$orig) }
-Set-ItemProperty $desk -Name UserPreferencesMask -Type Binary -Value ([byte[]](0x90,0x12,0x03,0x80,0x10,0x00,0x00,0x00))
-# Keep ClearType: "best performance" otherwise turns text jagged, which costs
-# nothing measurable to keep and makes a coding machine unpleasant to read.
-Set-Reg $desk 'FontSmoothing' '2' 'String'
-Set-Reg $desk 'FontSmoothingType' 2
-Set-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency' 0
-Set-Reg 'HKCU:\Control Panel\Desktop\WindowMetrics' 'MinAnimate' '0' 'String'
-Set-Reg 'HKCU:\Control Panel\Desktop' 'MenuShowDelay' '0' 'String'
+Write-Host "== startup delay" -ForegroundColor Cyan
+# Windows holds autostart apps back for a few seconds after logon. Invisible
+# change: nothing about how the desktop looks or animates is touched here.
 Set-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize' 'StartupDelayInMSec' 0
-Write-Host "  animations and transparency off, startup delay 0" -ForegroundColor Green
+Write-Host "  autostart delay 0 (animations and transparency untouched)" -ForegroundColor Green
 
 Write-Host "== hibernation file" -ForegroundColor Cyan
 $hib = 'C:\hiberfil.sys'
@@ -189,4 +176,4 @@ Write-Host "================ result ================" -ForegroundColor Cyan
 "disk C:  : {0:N1} -> {1:N1} GB free" -f $diskBefore, $diskAfter
 "state    : $StateFile  (undo with -Revert)"
 Write-Host ""
-Write-Host "Sign out and back in (or reboot) for the visual settings to apply." -ForegroundColor Yellow
+Write-Host "Reboot once so the stopped services and the startup delay take effect cleanly." -ForegroundColor Yellow
