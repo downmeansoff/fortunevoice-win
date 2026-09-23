@@ -82,8 +82,11 @@ Out-Line ("hibernation file: {0}" -f $(
 # ---------------------------------------------------------- memory manager
 Out-Section 'memory manager'
 $mm = Get-MMAgent
-Out-Line ("MemoryCompression {0}, PageCombining {1}, SysMain {2}" -f `
-    $mm.MemoryCompression, $mm.PageCombining, (Get-Service SysMain).Status)
+# Get-MMAgent is admin-only; without elevation it returns nothing, which
+# printed as blanks that read like "off".
+$mc = if ($mm) { $mm.MemoryCompression } else { 'needs admin' }
+$pc = if ($mm) { $mm.PageCombining } else { 'needs admin' }
+Out-Line ("MemoryCompression {0}, PageCombining {1}, SysMain {2}" -f $mc, $pc, (Get-Service SysMain).Status)
 if ($cs.AutomaticManagedPagefile) {
     Out-Line 'pagefile: managed by Windows'
 } else {
