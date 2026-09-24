@@ -89,6 +89,22 @@ function Format-Age($p) {
 function Get-Short($p) {
     $name = $p.Name -replace '\.exe$', ''
     $args_ = "$($p.CommandLine)" -replace '^\s*("[^"]*"|\S+)\s*', '' -replace '\s+', ' '
+    if ($name -match '^javaw?$') {
+        # JVM flags come first and say nothing; what runs is the main class,
+        # the module or the -jar file after them.
+        $toks = @([regex]::Matches($args_, '"[^"]*"|\S+') | ForEach-Object { $_.Value.Trim('"') })
+        for ($i = 0; $i -lt $toks.Count; $i++) {
+            $t = $toks[$i]
+            if ($t -match '^(-jar|-m|--module)$') {
+                if ($i + 1 -lt $toks.Count) { $args_ = ($toks[$i + 1] -split '[\\/]')[-1] + ' ' + (($toks | Select-Object -Skip ($i + 2)) -join ' ') }
+                break
+            }
+            if ($t -match '^(-cp|-classpath|--class-path|-p|--module-path|--add-modules|--add-exports|--add-opens|--add-reads|--patch-module)$') { $i++; continue }
+            if ($t -match '^[-@]') { continue }
+            $args_ = ($toks | Select-Object -Skip $i) -join ' '
+            break
+        }
+    }
     $s = "$name $args_".Trim()
     if ($s.Length -gt 72) { $s = $s.Substring(0, 69) + '...' }
     return $s
@@ -195,9 +211,9 @@ foreach ($l in @($left | Sort-Object MB -Descending)) {
     "{0,5} {1,-7} {2,5:N0} MB  {3}{4}" -f $l.Root.ProcessId, (Format-Age $l.Root), $l.MB, (Get-Short $l.Main), $tag
 }
 if ($StopLeftovers) {
-    Write-Host ("stopped {0} throwaway leftovers older than {1} h, about {2:N0} MB" -f $stale.Count, $MinAgeHours, ($stale | Measure-Object MB -Sum).Sum) -ForegroundColor Green
+    Write-Host ("stopped {0} throwaway leftovers older than {1} h, about {2:N0} MB" -f $stale.Count, $MinAgeHours, [double]($stale | Measure-Object MB -Sum).Sum) -ForegroundColor Green
 } elseif ($stale.Count) {
-    Write-Host ("{0} [throwaway] older than {1} h, about {2:N0} MB: stop them with -StopLeftovers" -f $stale.Count, $MinAgeHours, ($stale | Measure-Object MB -Sum).Sum) -ForegroundColor Yellow
+    Write-Host ("{0} [throwaway] older than {1} h, about {2:N0} MB: stop them with -StopLeftovers" -f $stale.Count, $MinAgeHours, [double]($stale | Measure-Object MB -Sum).Sum) -ForegroundColor Yellow
 }
 
 # -------------------------------------------------------- rest of machine
@@ -209,6 +225,8 @@ function Get-App($p) {
         $q = Get-Parent $q
     }
     if ($p.Name -match '^(vmmem|com\.docker\.|Docker Desktop|docker|wsl|vpnkit)') { return 'Docker / WSL' }
+    # "java" alone says nothing: a build daemon and a server look the same.
+    if ($p.Name -match '^javaw?\.exe$') { return Get-Short $p }
     return $p.Name -replace '\.exe$', ''
 }
 
