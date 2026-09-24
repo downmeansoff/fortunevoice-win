@@ -8,9 +8,15 @@
 #   1. Drop duplicate MCP server processes. Claude Desktop restarts a server
 #      without killing the previous one, so they pile up - 40 GitKraken
 #      processes where 2 belong. The newest one is the live one.
-#   2. Trim working sets, but ONLY when free memory is under the threshold.
-#      Doing it on a timer regardless would make applications re-fault their
-#      pages for no reason.
+#   2. Stop throwaway leftovers of closed Claude Code sessions older than
+#      two hours, through session_report.ps1 next to this file: static file
+#      servers, scripts run from the temp folder, sandbox scripts, Playwright
+#      browsers, idle command shells. Each one is written to the log.
+#
+# It used to trim every working set when free memory ran low. Under
+# sustained pressure that only pushed pages out to the page file and pulled
+# them back, adding to the very disk load it was meant to relieve; Windows
+# trims working sets on its own when it needs to.
 #
 # ASCII only: PowerShell 5.1 reads .ps1 in the system ANSI codepage, so
 # Cyrillic here would become mojibake and break the parser.
@@ -19,8 +25,7 @@
 param(
     [switch]$Install,
     [switch]$Uninstall,
-    [switch]$Status,
-    [double]$FreeGBThreshold = 1.5
+    [switch]$Status
 )
 
 $ErrorActionPreference = 'Continue'
@@ -82,15 +87,15 @@ function Install-Task {
         -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 
-    # SYSTEM: no window, no stored password, and enough rights to trim the
-    # working set of processes belonging to the logged-on user.
+    # SYSTEM: no window, no stored password, and enough rights to stop
+    # processes belonging to the logged-on user.
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' `
         -LogonType ServiceAccount -RunLevel Highest
 
     try {
         Register-ScheduledTask -TaskName $TaskName -Action $action `
             -Trigger $atLogon, $every15 -Settings $settings -Principal $principal `
-            -Description 'Trims memory and clears duplicate MCP servers' `
+            -Description 'Clears duplicate MCP servers and leftovers of closed Claude Code sessions' `
             -Force -ErrorAction Stop | Out-Null
     } catch {
         Write-Host "FAILED to register the task: $($_.Exception.Message)" -ForegroundColor Red
@@ -170,40 +175,19 @@ function Remove-DuplicateMcpServers {
     return $killed
 }
 
-function Compress-WorkingSets {
-    if (-not ('MemTrim' -as [type])) {
-        Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class MemTrim {
-  [DllImport("psapi.dll")] public static extern bool EmptyWorkingSet(IntPtr hProcess);
-}
-"@
-    }
-    $freed = 0
-    foreach ($p in Get-Process) {
-        try {
-            $before = $p.WorkingSet64
-            [MemTrim]::EmptyWorkingSet($p.Handle) | Out-Null
-            $p.Refresh()
-            $freed += ($before - $p.WorkingSet64)
-        } catch { }
-    }
-    return [math]::Round($freed / 1MB)
+function Stop-Leftovers {
+    $report = Join-Path (Split-Path -Parent $PSCommandPath) 'session_report.ps1'
+    if (-not (Test-Path $report)) { return @() }
+    return @(& $report -StopLeftovers -Quiet)
 }
 
 function Invoke-Pass {
-    $before = Get-FreeGB
     $killed = Remove-DuplicateMcpServers
-
-    if ($before -lt $FreeGBThreshold) {
-        $freedMB = Compress-WorkingSets
-        $after = Get-FreeGB
-        Write-Log ("free {0:N2} -> {1:N2} GB, trimmed {2} MB, killed {3} stale MCP" -f `
-            $before, $after, $freedMB, $killed)
-    } else {
-        Write-Log ("free {0:N2} GB, above threshold {1:N2}, no trim, killed {2} stale MCP" -f `
-            $before, $FreeGBThreshold, $killed)
+    $left = Stop-Leftovers
+    Write-Log ("free {0:N2} GB, killed {1} stale MCP, stopped {2} leftovers ({3:N0} MB)" -f `
+        (Get-FreeGB), $killed, $left.Count, [double]($left | Measure-Object MB -Sum).Sum)
+    foreach ($l in $left) {
+        Write-Log ("  stopped {0}, {1:N0} MB, {2} old: {3}" -f $l.Pid, $l.MB, $l.Age, $l.Command)
     }
 }
 

@@ -12,10 +12,13 @@
 # that were started to run a command and now run nothing. A leftover dev
 # server or long job is listed and left for you to decide.
 #
+# -Quiet prints nothing and returns those throwaway leftovers as objects;
+# autotune.ps1 uses it with -StopLeftovers on every pass.
+#
 # ASCII only: PowerShell 5.1 reads .ps1 in the ANSI codepage.
 
 [CmdletBinding()]
-param([switch]$StopLeftovers, [double]$MinAgeHours = 2)
+param([switch]$StopLeftovers, [switch]$Quiet, [double]$MinAgeHours = 2)
 
 $ErrorActionPreference = 'SilentlyContinue'
 $now = Get-Date
@@ -105,24 +108,13 @@ function Test-IdleShell($p, $tree) {
     return -not @($tree | Where-Object { $_.Name -ne 'conhost.exe' }).Count
 }
 
-# ------------------------------------------------------------------ memory
-$os = Get-CimInstance Win32_OperatingSystem
-$ramGB = $os.TotalVisibleMemorySize / 1MB
-$commitGB = ($os.TotalVirtualMemorySize - $os.FreeVirtualMemory) / 1MB
-$pf = @(Get-CimInstance Win32_PageFileUsage)
-$mc = Get-Process -Name 'Memory Compression' -ErrorAction SilentlyContinue
-
-Write-Host "=== memory ===" -ForegroundColor Cyan
-"RAM         : {0:N1} GB, available {1:N0} MB" -f $ramGB, ($os.FreePhysicalMemory / 1KB)
-"committed   : {0:N1} GB of {1:N1} GB possible" -f $commitGB, ($os.TotalVirtualMemorySize / 1MB)
-"page file   : {0:N0} MB allocated, {1:N0} MB in use" -f ($pf | Measure-Object AllocatedBaseSize -Sum).Sum, ($pf | Measure-Object CurrentUsage -Sum).Sum
-if ($mc) {
-    "compression : on, {0:N0} MB of RAM holds compressed pages" -f ($mc.WorkingSet64 / 1MB)
-} else {
-    Write-Host "compression : OFF - in an administrator PowerShell: Enable-MMAgent -MemoryCompression" -ForegroundColor Yellow
+# Memory figures are taken before anything is stopped.
+if (-not $Quiet) {
+    $os = Get-CimInstance Win32_OperatingSystem
+    $pf = @(Get-CimInstance Win32_PageFileUsage)
+    $mc = Get-Process -Name 'Memory Compression' -ErrorAction SilentlyContinue
+    $av = @(Get-CimInstance -Namespace root\SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { $_.displayName })
 }
-$av = @(Get-CimInstance -Namespace root\SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { $_.displayName })
-if ($av.Count) { "antivirus   : " + ($av -join ', ') }
 
 # ---------------------------------------------------------------- sessions
 $claimed = @{}
@@ -142,18 +134,6 @@ $rows = @(foreach ($s in @($procs | Where-Object { Test-Session $_ } | Sort-Obje
     }
 })
 
-$ownGB = ($rows | Measure-Object Own -Sum).Sum / 1KB
-$runsGB = ($rows | Measure-Object Runs -Sum).Sum / 1KB
-Write-Host ""
-Write-Host ("=== Claude Code sessions: {0}, {1:N1} GB themselves + {2:N1} GB in what they run ===" -f $rows.Count, $ownGB, $runsGB) -ForegroundColor Cyan
-if ($rows.Count) { "  PID  age     effort session   +runs  what they run" }
-foreach ($r in $rows) {
-    "{0,5} {1,-7} {2,-6} {3,5:N0} MB {4,5:N0} MB  {5}" -f $r.Proc.ProcessId, (Format-Age $r.Proc), $r.Effort, $r.Own, $r.Runs, $r.What
-    if ($r.Big.Count -and (Get-MB $r.Big) -ge 200) {
-        "{0,35}biggest: {1:N0} MB {2}" -f '', (Get-MB $r.Big), (Get-Short $r.Big[0])
-    }
-}
-
 # --------------------------------------------------------------- leftovers
 $left = @(foreach ($p in $procs) {
     if ($claimed[[int]$p.ProcessId] -or (Get-Parent $p)) { continue }
@@ -171,6 +151,42 @@ $left = @(foreach ($p in $procs) {
         Main      = @($members | Where-Object { $_.Name -ne 'conhost.exe' } | Sort-Object PrivatePageCount -Descending)[0]
     }
 })
+$stale = @($left | Where-Object { $_.Throwaway -and $_.Old })
+if ($StopLeftovers) {
+    foreach ($l in $stale) {
+        foreach ($m in $l.Members) { Stop-Process -Id $m.ProcessId -Force -ErrorAction SilentlyContinue }
+    }
+}
+if ($Quiet) {
+    foreach ($l in $stale) {
+        [PSCustomObject]@{ Pid = $l.Root.ProcessId; MB = $l.MB; Age = Format-Age $l.Root; Command = Get-Short $l.Main }
+    }
+    return
+}
+
+# ------------------------------------------------------------------ report
+Write-Host "=== memory ===" -ForegroundColor Cyan
+"RAM         : {0:N1} GB, available {1:N0} MB" -f ($os.TotalVisibleMemorySize / 1MB), ($os.FreePhysicalMemory / 1KB)
+"committed   : {0:N1} GB of {1:N1} GB possible" -f (($os.TotalVirtualMemorySize - $os.FreeVirtualMemory) / 1MB), ($os.TotalVirtualMemorySize / 1MB)
+"page file   : {0:N0} MB allocated, {1:N0} MB in use" -f ($pf | Measure-Object AllocatedBaseSize -Sum).Sum, ($pf | Measure-Object CurrentUsage -Sum).Sum
+if ($mc) {
+    "compression : on, {0:N0} MB of RAM holds compressed pages" -f ($mc.WorkingSet64 / 1MB)
+} else {
+    Write-Host "compression : OFF - in an administrator PowerShell: Enable-MMAgent -MemoryCompression" -ForegroundColor Yellow
+}
+if ($av.Count) { "antivirus   : " + ($av -join ', ') }
+
+$ownGB = ($rows | Measure-Object Own -Sum).Sum / 1KB
+$runsGB = ($rows | Measure-Object Runs -Sum).Sum / 1KB
+Write-Host ""
+Write-Host ("=== Claude Code sessions: {0}, {1:N1} GB themselves + {2:N1} GB in what they run ===" -f $rows.Count, $ownGB, $runsGB) -ForegroundColor Cyan
+if ($rows.Count) { "  PID  age     effort session   +runs  what they run" }
+foreach ($r in $rows) {
+    "{0,5} {1,-7} {2,-6} {3,5:N0} MB {4,5:N0} MB  {5}" -f $r.Proc.ProcessId, (Format-Age $r.Proc), $r.Effort, $r.Own, $r.Runs, $r.What
+    if ($r.Big.Count -and (Get-MB $r.Big) -ge 200) {
+        "{0,35}biggest: {1:N0} MB {2}" -f '', (Get-MB $r.Big), (Get-Short $r.Big[0])
+    }
+}
 
 Write-Host ""
 Write-Host ("=== left running after their session or shell closed: {0}, {1:N0} MB ===" -f $left.Count, ($left | Measure-Object MB -Sum).Sum) -ForegroundColor Cyan
@@ -178,11 +194,7 @@ foreach ($l in @($left | Sort-Object MB -Descending)) {
     $tag = if ($l.Throwaway) { '  [throwaway]' } else { '' }
     "{0,5} {1,-7} {2,5:N0} MB  {3}{4}" -f $l.Root.ProcessId, (Format-Age $l.Root), $l.MB, (Get-Short $l.Main), $tag
 }
-$stale = @($left | Where-Object { $_.Throwaway -and $_.Old })
 if ($StopLeftovers) {
-    foreach ($l in $stale) {
-        foreach ($m in $l.Members) { Stop-Process -Id $m.ProcessId -Force -ErrorAction SilentlyContinue }
-    }
     Write-Host ("stopped {0} throwaway leftovers older than {1} h, about {2:N0} MB" -f $stale.Count, $MinAgeHours, ($stale | Measure-Object MB -Sum).Sum) -ForegroundColor Green
 } elseif ($stale.Count) {
     Write-Host ("{0} [throwaway] older than {1} h, about {2:N0} MB: stop them with -StopLeftovers" -f $stale.Count, $MinAgeHours, ($stale | Measure-Object MB -Sum).Sum) -ForegroundColor Yellow
