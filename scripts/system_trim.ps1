@@ -97,11 +97,18 @@ if ($Revert) {
             -Value ([Convert]::FromBase64String($state.mask))
     }
     if ($state.hibernate) { powercfg /h on | Out-Null }
+    Remove-Item $StateFile -Force
     Write-Host "reverted; sign out and back in for the visual settings" -ForegroundColor Cyan
     return
 }
 
 # ------------------------------------------------------------------- apply
+if (Test-Path $StateFile) {
+    # A second run would find everything already disabled, record nothing,
+    # and overwrite the record of what the machine looked like before.
+    Write-Host "already applied (state file exists); run with -Revert first to re-apply" -ForegroundColor Yellow
+    return
+}
 $freeBefore = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB
 $diskBefore = (Get-PSDrive C).Free / 1GB
 $state = @{ services = @(); hibernate = $false; mask = $null }

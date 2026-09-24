@@ -51,11 +51,18 @@ if ($Revert) {
         if (-not $state.mmagent.MemoryCompression) { Disable-MMAgent -MemoryCompression -ErrorAction SilentlyContinue }
         if (-not $state.mmagent.PageCombining) { Disable-MMAgent -PageCombining -ErrorAction SilentlyContinue }
     }
+    Remove-Item $StateFile -Force
     Write-Host "reverted" -ForegroundColor Cyan
     return
 }
 
 # ------------------------------------------------------------------- apply
+if (Test-Path $StateFile) {
+    # A second run would find everything already off, record nothing, and
+    # overwrite the record of what the machine looked like before.
+    Write-Host "already applied (state file exists); run with -Revert first to re-apply" -ForegroundColor Yellow
+    return
+}
 $state = @{ services = @(); tasks = @(); mmagent = $null }
 
 Write-Host "== memory compression" -ForegroundColor Cyan
